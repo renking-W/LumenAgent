@@ -1,0 +1,11 @@
+# Web 框架与 OpenAPI（/docs、请求体验证、路由）
+fastapi>=0.115.0
+
+# ASGI 服务器（本地运行、reload、HTTP/1.1）
+uvicorn[standard]>=0.32.0
+
+# 读取环境变量与 .env（config.py 的 Settings）
+pydantic-settings>=2.6.0
+
+# 异步 HTTP 客户端（DeepSeek OpenAI 兼容 API）
+httpx>=0.27.0
