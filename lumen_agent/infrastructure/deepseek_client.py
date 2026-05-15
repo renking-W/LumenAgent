@@ -47,6 +47,8 @@ class DeepSeekHttpClient:
             payload["max_tokens"] = self._settings.deepseek_max_tokens
         if self._settings.deepseek_top_p is not None:
             payload["top_p"] = self._settings.deepseek_top_p
+        if self._settings.deepseek_enable_thinking is not None:
+            payload["enable_thinking"] = self._settings.deepseek_enable_thinking
         return payload
 
     async def chat(
@@ -83,8 +85,11 @@ class DeepSeekHttpClient:
         messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
-    ) -> AsyncIterator[str]:
-        """流式调用上游，解析 SSE ``data:`` 行，逐段 yield ``delta.content``。"""
+    ) -> AsyncIterator[tuple[str, str]]:
+        """流式调用上游，解析 SSE ``data:`` 行，逐段 yield ``(kind, delta)``。
+
+        ``kind`` 为 ``"content"`` 或 ``"reasoning_content"``（思维链）。
+        """
         url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
         headers = self._chat_headers()
         payload = self._build_chat_payload(messages, temperature=temperature, stream=True)
@@ -126,6 +131,8 @@ class DeepSeekHttpClient:
                     if not choices:
                         continue
                     delta = (choices[0] or {}).get("delta") or {}
-                    piece = delta.get("content")
-                    if isinstance(piece, str) and piece:
-                        yield piece
+                    # 先 yield reasoning_content（思维链），再 yield content（正文），与 DeepSeek 下发顺序一致
+                    for field in ("reasoning_content", "content"):
+                        piece = delta.get(field)
+                        if isinstance(piece, str) and piece:
+                            yield (field, piece)

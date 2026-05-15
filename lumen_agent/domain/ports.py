@@ -5,9 +5,21 @@ from typing import Any, Protocol, TypedDict, runtime_checkable
 
 
 class SessionRow(TypedDict):
+    """会话元数据行（不含摘要状态）。"""
+
     id: str
     created_at: str
     updated_at: str
+
+
+class SessionFullRow(TypedDict):
+    """完整会话行：含滑动窗口摘要状态 ``count`` / ``summary``。"""
+
+    id: str
+    created_at: str
+    updated_at: str
+    count: int
+    summary: str
 
 
 @runtime_checkable
@@ -28,8 +40,11 @@ class LLMClientPort(Protocol):
         messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
-    ) -> AsyncIterator[str]:
-        """流式对话：逐段 yield 助手文本增量。"""
+    ) -> AsyncIterator[tuple[str, str]]:
+        """流式对话：逐段 yield ``(kind, delta)``。
+
+        ``kind`` 取值：``"content"``（正文）/ ``"reasoning_content"``（思维链）。
+        """
         ...
 
 
@@ -51,4 +66,30 @@ class ConversationRepositoryPort(Protocol):
 
     async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
         """分页列出会话元数据（通常按更新时间倒序）。"""
+        ...
+
+    async def get_session(self, session_id: str) -> SessionFullRow | None:
+        """查询单个会话完整状态（含 ``count`` / ``summary``）。"""
+        ...
+
+    async def list_recent_messages(
+        self,
+        session_id: str,
+        n_messages: int,
+    ) -> list[dict[str, Any]]:
+        """按 ``seq`` 取最近 ``n_messages`` 条消息（返回时按时间正序）。"""
+        ...
+
+    async def update_summary(
+        self,
+        session_id: str,
+        *,
+        new_summary: str,
+        new_count: int,
+    ) -> None:
+        """单事务更新会话摘要与轮次计数。"""
+        ...
+
+    async def increment_round_counter(self, session_id: str) -> int:
+        """轮次 +1（助手落库后调用），返回新的 ``count``。"""
         ...

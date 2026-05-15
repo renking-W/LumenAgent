@@ -8,7 +8,7 @@ from typing import Any
 
 import aiosqlite
 
-from lumen_agent.domain.ports import SessionRow
+from lumen_agent.domain.ports import SessionFullRow, SessionRow
 
 
 def _utc_now() -> str:
@@ -33,7 +33,9 @@ class SqliteConversationRepository:
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                summary TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,6 +102,97 @@ class SqliteConversationRepository:
                 (now, session_id),
             )
             await db.commit()
+
+    async def get_session(self, session_id: str) -> SessionFullRow | None:
+        """读取单个会话的完整状态（含摘要、轮次）；不存在返回 ``None``。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            # 建表
+            await self._prepare(db)
+            cursor = await db.execute(
+                """
+                SELECT id, created_at, updated_at, count, summary
+                FROM sessions WHERE id = ?
+                """,
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "count": int(row["count"]),
+            "summary": row["summary"] or "",
+        }
+
+    async def list_recent_messages(
+        self,
+        session_id: str,
+        n_messages: int,
+    ) -> list[dict[str, Any]]:
+        """按 ``seq`` 倒序取最近 ``n_messages`` 条消息，返回时已反转为时间正序。"""
+        if n_messages <= 0:
+            return []
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                """
+                SELECT role, content FROM messages
+                WHERE session_id = ?
+                ORDER BY seq DESC
+                LIMIT ?
+                """,
+                (session_id, n_messages),
+            )
+            rows = await cursor.fetchall()
+        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+    async def update_summary(
+        self,
+        session_id: str,
+        *,
+        new_summary: str,
+        new_count: int,
+    ) -> None:
+        """单事务更新 ``sessions.summary`` 与 ``sessions.count``。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        now = _utc_now()
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            await db.execute(
+                """
+                UPDATE sessions
+                SET summary = ?, count = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (new_summary, new_count, now, session_id),
+            )
+            await db.commit()
+
+    async def increment_round_counter(self, session_id: str) -> int:
+        """``count += 1`` 并返回新值；助手消息成功落库后调用。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        now = _utc_now()
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            await db.execute(
+                """
+                UPDATE sessions
+                SET count = count + 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, session_id),
+            )
+            cursor = await db.execute(
+                "SELECT count FROM sessions WHERE id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            await db.commit()
+        return int(row["count"]) if row is not None else 0
 
     async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
         """分页返回会话列表（``updated_at`` 倒序）。"""

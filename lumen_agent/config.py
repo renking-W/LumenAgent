@@ -4,7 +4,7 @@ from functools import lru_cache
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     deepseek_temperature: float | None = None
     deepseek_max_tokens: int | None = None
     deepseek_top_p: float | None = None
+    # None = 不传该字段（由模型默认行为决定）；True/False = 显式开关思考模式
+    deepseek_enable_thinking: bool | None = None
 
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
@@ -61,6 +63,11 @@ class Settings(BaseSettings):
     # 会话 SQLite：相对路径基于包目录（`lumen_agent/`）
     conversation_db_path: str = "data/conversations.db"
     conversation_max_context_messages: int = Field(default=5, ge=1)
+
+    # 滑动窗口摘要：默认每 6 轮触发，前 4 轮压缩、后 2 轮保留为原文进入下一窗口
+    summary_threshold_turns: int = Field(default=6, ge=2)
+    summary_compress_turns: int = Field(default=4, ge=1)
+    summary_keep_turns: int = Field(default=2, ge=1)
 
     @field_validator("deepseek_base_url")
     @classmethod
@@ -109,6 +116,15 @@ class Settings(BaseSettings):
         if not p.is_absolute():
             p = _PACKAGE_DIR / p
         return p
+
+    @model_validator(mode="after")
+    def _check_summary_window(self) -> "Settings":
+        """启动期校验：compress + keep == threshold，避免窗口算法错位。"""
+        if self.summary_compress_turns + self.summary_keep_turns != self.summary_threshold_turns:
+            raise ValueError(
+                "summary_compress_turns + summary_keep_turns must equal summary_threshold_turns"
+            )
+        return self
 
 
 @lru_cache
