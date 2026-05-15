@@ -1,22 +1,4 @@
-"""基础设施：DeepSeek HTTP 客户端（`LLMClientPort` 的一个实现）。
-
-职责边界：
-- **只做 I/O 与 JSON 解析**：构造请求、处理响应、抛出可理解的 `RuntimeError`。
-- **不做** HTTP 状态码到业务错误的最终映射（那属于 `api/routers` 层的职责，便于返回统一 API 契约）。
-
-DeepSeek 使用 OpenAI 兼容接口：
-- Endpoint：`{base_url}/v1/chat/completions`
-- Header：`Authorization: Bearer <api_key>`
-
-关于 `httpx.AsyncClient` 的生命周期：
-- 当前实现为「每次 `chat()` / `chat_stream()` 临时创建 AsyncClient + 关闭」。
-  - 优点：代码简单，不会在全局泄漏连接。
-  - 缺点：极高 QPS 下连接复用差；后续可在 `lifespan` 创建全局 client，并通过 `api/dependency.py` 注入。
-
-超时策略：
-- `read=120s`：大模型生成可能较慢。
-- `connect=10s`：连接建立失败应尽快失败，避免线程/协程长时间悬挂。
-"""
+"""DeepSeek OpenAI 兼容 `POST /v1/chat/completions`；HTTP 错误映射在路由层。"""
 
 from __future__ import annotations
 
@@ -29,13 +11,14 @@ from lumen_agent.config import Settings
 
 
 class DeepSeekHttpClient:
-    """调用 DeepSeek「OpenAI 兼容 Chat Completions」的最小客户端。"""
+    """DeepSeek OpenAI 兼容 Chat Completions 客户端。"""
 
     def __init__(self, settings: Settings) -> None:
-        """保存配置引用；不在构造函数里发起网络请求。"""
+        """保存 ``Settings``，请求时再读其中的 base_url、key、模型等。"""
         self._settings = settings
 
     def _chat_headers(self) -> dict[str, str]:
+        """构造 Chat Completions 请求头（Bearer + JSON）。"""
         return {
             "Authorization": f"Bearer {self._settings.deepseek_api_key}",
             "Content-Type": "application/json",
@@ -48,6 +31,7 @@ class DeepSeekHttpClient:
         temperature: float | None,
         stream: bool = False,
     ) -> dict[str, Any]:
+        """组装请求 JSON：模型、messages、可选 stream / 采样参数。"""
         payload: dict[str, Any] = {
             "model": self._settings.deepseek_model,
             "messages": messages,
@@ -71,16 +55,7 @@ class DeepSeekHttpClient:
         *,
         temperature: float | None = None,
     ) -> str:
-        """POST `/v1/chat/completions` 并解析 assistant 文本。
-
-        采样相关字段优先顺序：`chat(..., temperature=...)` 实参 > `Settings`（`.env`）>
-        不传该键（由上游默认）。
-
-        Raises:
-            httpx.HTTPStatusError: 上游返回非 2xx（由 `raise_for_status()` 抛出）。
-            httpx.RequestError: DNS/连接超时等传输层错误。
-            RuntimeError: JSON 结构不符合最小可用形态（例如没有 choices / content 为空）。
-        """
+        """同步调用上游，解析 ``choices[0].message.content`` 为完整字符串。"""
         url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
         headers = self._chat_headers()
         payload = self._build_chat_payload(messages, temperature=temperature, stream=False)
@@ -109,21 +84,28 @@ class DeepSeekHttpClient:
         *,
         temperature: float | None = None,
     ) -> AsyncIterator[str]:
-        """POST `stream: true`，解析 SSE `data:` 行，逐段 yield 非空文本增量。"""
+        """流式调用上游，解析 SSE ``data:`` 行，逐段 yield ``delta.content``。"""
         url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
         headers = self._chat_headers()
         payload = self._build_chat_payload(messages, temperature=temperature, stream=True)
 
         timeout = httpx.Timeout(120.0, connect=10.0)
+        # 异步发http请求
         async with httpx.AsyncClient(timeout=timeout) as client:
+            # 异步调用会话流
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 response.raise_for_status()
+                # 获取大模型返回数据（异步获取）
                 async for line in response.aiter_lines():
+                    # 去除首尾空白
                     line = line.strip()
+                    # 去除注释行（以 : 开头的是 SSE 注释（heartbeat 或调试信息），不需要处理）
                     if not line or line.startswith(":"):
                         continue
+                    # 去除非数据行
                     if not line.startswith("data:"):
                         continue
+                    # 获取返回具体数据
                     data_str = line[5:].strip()
                     if data_str == "[DONE]":
                         break
@@ -131,7 +113,7 @@ class DeepSeekHttpClient:
                         obj: dict[str, Any] = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-
+                    # 有error数据直接中断
                     err = obj.get("error")
                     if err is not None:
                         if isinstance(err, dict):

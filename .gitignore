@@ -14,6 +14,10 @@ build/
 # Environment
 .env
 
-# OS
-Thumbs.db
-.DS_Store
+# Local data
+*.db
+
+# Development guides
+/LUMEN_AGENT_DEVELOPMENT_GUIDE.md
+/会话摘要开发指南.md
+
