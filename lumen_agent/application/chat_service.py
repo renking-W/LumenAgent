@@ -7,7 +7,9 @@ from typing import Any
 
 from lumen_agent.application.summary_service import build_llm_messages, maybe_trigger_summary
 from lumen_agent.config import Settings
-from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
+from lumen_agent.domain.messages import text_message
+from lumen_agent.domain.ports import ConversationRepositoryPort
+from lumen_agent.model_adapters.base import ModelAdapter
 
 
 async def _load_context(
@@ -26,7 +28,7 @@ async def _load_context(
 
 async def reply_single_turn(
     repo: ConversationRepositoryPort,
-    llm: LLMClientPort,
+    llm: ModelAdapter,
     session_id: str,
     user_message: str,
     settings: Settings,
@@ -34,7 +36,8 @@ async def reply_single_turn(
     """处理单轮会话请求——整体输出。"""
     # 1) 会话准备 + 用户消息落库（不增 count）
     await repo.ensure_session(session_id)
-    await repo.append_message(session_id, "user", user_message)
+    user_blocks = text_message("user", user_message)["content"]
+    await repo.append_message(session_id, "user", user_blocks)
 
     # 2) 读 summary + 最近原文（recent 含本轮 user，需剥离避免重复）
     summary, recent = await _load_context(repo, session_id)
@@ -48,7 +51,8 @@ async def reply_single_turn(
     content = await llm.chat(messages)
 
     # 4) 助手消息落库 + 轮次 +1 + 摘要触发
-    await repo.append_message(session_id, "assistant", content)
+    assistant_blocks = text_message("assistant", content)["content"]
+    await repo.append_message(session_id, "assistant", assistant_blocks)
     new_count = await repo.increment_round_counter(session_id)
     logging.info(f"session={session_id} 助手已落库 count={new_count}")
     # 后台异步触发摘要，不阻塞当前响应返回
@@ -59,7 +63,7 @@ async def reply_single_turn(
 
 async def reply_single_turn_stream(
     repo: ConversationRepositoryPort,
-    llm: LLMClientPort,
+    llm: ModelAdapter,
     session_id: str,
     user_message: str,
     settings: Settings,
@@ -67,7 +71,8 @@ async def reply_single_turn_stream(
     """处理单轮会话请求——流式输出，yield ``(kind, delta)``。"""
     # 1) 会话准备 + 用户消息落库
     await repo.ensure_session(session_id)
-    await repo.append_message(session_id, "user", user_message)
+    user_blocks = text_message("user", user_message)["content"]
+    await repo.append_message(session_id, "user", user_blocks)
 
     # 2) 读 summary + 最近原文，剥离本轮 user
     summary, recent = await _load_context(repo, session_id)
@@ -86,7 +91,8 @@ async def reply_single_turn_stream(
 
     # 4) 正常结束：助手落库 + 轮次 +1 + 摘要触发
     if accumulated.strip():
-        await repo.append_message(session_id, "assistant", accumulated)
+        assistant_blocks = text_message("assistant", accumulated)["content"]
+        await repo.append_message(session_id, "assistant", assistant_blocks)
         new_count = await repo.increment_round_counter(session_id)
         logging.info(f"session={session_id} 流式助手已落库 count={new_count}")
         asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))

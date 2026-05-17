@@ -33,7 +33,7 @@ async def get_session_messages(
 ) -> list[StoredMessage]:
     """返回指定会话下的全部消息（按存储顺序）。"""
     messages = await repo.list_messages(session_id)
-    return [StoredMessage(role=m["role"], content=m["content"]) for m in messages]
+    return [StoredMessage.model_validate(m) for m in messages]
 
 
 @router.get("/{session_id}/summary", response_model=SessionSummaryDetail)

@@ -1,0 +1,33 @@
+"""DeepSeek 模型适配器：当前先保持与既有 HTTP 客户端兼容。"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import Any
+
+from lumen_agent.infrastructure.deepseek_client import DeepSeekHttpClient
+from lumen_agent.model_adapters.base import ModelAdapter
+
+
+class DeepSeekAdapter(ModelAdapter):
+    """DeepSeek 适配器。"""
+
+    def __init__(self, client: DeepSeekHttpClient) -> None:
+        """保存底层 DeepSeek HTTP 客户端。"""
+        self._client = client
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+    ) -> str:
+        return await self._client.chat(messages, temperature=temperature)
+
+    def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+    ) -> AsyncIterator[tuple[str, str]]:
+        return self._client.chat_stream(messages, temperature=temperature)

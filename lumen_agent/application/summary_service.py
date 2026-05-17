@@ -28,8 +28,22 @@ def _format_rounds(messages: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for m in messages:
         role = _ROLE_LABEL.get(m.get("role", ""), m.get("role", ""))
-        content = m.get("content", "")
-        lines.append(f"{role}：{content}")
+        content = m.get("content", [])
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text" and isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+                elif block.get("type") == "thinking" and isinstance(block.get("thinking"), str):
+                    parts.append(block["thinking"])
+                elif block.get("type") == "tool_result" and isinstance(block.get("content"), str):
+                    parts.append(block["content"])
+            text = "".join(parts)
+        else:
+            text = str(content)
+        lines.append(f"{role}：{text}")
     return "\n".join(lines)
 
 
@@ -64,6 +78,23 @@ def _find_complete_turns(
     return turns
 
 
+def _message_to_text(message: dict[str, Any]) -> str:
+    content = message.get("content", [])
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+            elif block.get("type") == "thinking" and isinstance(block.get("thinking"), str):
+                parts.append(block["thinking"])
+            elif block.get("type") == "tool_result" and isinstance(block.get("content"), str):
+                parts.append(block["content"])
+        return "".join(parts)
+    return str(content)
+
+
 def _write_memory_file(
     session_id: str,
     messages: list[dict[str, Any]],
@@ -86,7 +117,7 @@ def _write_memory_file(
     ]
     for msg in messages:
         label = _ROLE_LABEL.get(msg.get("role", ""), msg.get("role", ""))
-        parts.append(f"**{label}**: {msg.get('content', '')}\n\n")
+        parts.append(f"**{label}**: {_message_to_text(msg)}\n\n")
     parts.append("---\n\n")
 
     with open(file_path, "a", encoding="utf-8") as f:
@@ -103,9 +134,9 @@ def build_llm_messages(
     """拼装本轮调 LLM 的 messages：可选 system summary + 最近原始消息 + 本轮 user。"""
     msgs: list[dict[str, Any]] = []
     if summary:
-        msgs.append({"role": "system", "content": f"会话摘要：\n{summary}"})
+        msgs.append({"role": "system", "content": [{"type": "text", "text": f"会话摘要：\n{summary}"}]})
     msgs.extend(recent)
-    msgs.append({"role": "user", "content": user_message})
+    msgs.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
     return msgs
 
 
@@ -188,7 +219,7 @@ async def maybe_trigger_summary(
             )
             return
 
-        new_summary = await llm.chat([{"role": "user", "content": prompt}])
+        new_summary = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
     except Exception:
         # 失败：不阻塞主响应，count 保持不变，等下一轮再尝试
         logging.exception(f"session={session_id} 摘要生成过程异常，跳过本次更新")

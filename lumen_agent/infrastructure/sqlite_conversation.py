@@ -8,6 +8,7 @@ from typing import Any
 
 import aiosqlite
 
+from lumen_agent.domain.messages import blocks_to_json, ensure_blocks
 from lumen_agent.domain.ports import SessionFullRow, SessionRow
 
 
@@ -34,6 +35,7 @@ class SqliteConversationRepository:
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '会话记录',
                 count INTEGER NOT NULL DEFAULT 0,
                 summary TEXT NOT NULL DEFAULT ''
             );
@@ -43,7 +45,7 @@ class SqliteConversationRepository:
                 seq INTEGER NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
-                UNIQUE(session_id, seq)
+                description TEXT NOT NULL DEFAULT '对话消息'
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session_seq
             ON messages(session_id, seq);
@@ -76,12 +78,13 @@ class SqliteConversationRepository:
                 (session_id,),
             )
             rows = await cursor.fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in rows]
+        return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in rows]
 
-    async def append_message(self, session_id: str, role: str, content: str) -> None:
+    async def append_message(self, session_id: str, role: str, content: Any) -> None:
         """分配下一个 ``seq`` 插入 ``messages``，并刷新 ``sessions.updated_at``。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
+        content_json = blocks_to_json(ensure_blocks(content))
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
@@ -95,7 +98,7 @@ class SqliteConversationRepository:
                 INSERT INTO messages (session_id, seq, role, content)
                 VALUES (?, ?, ?, ?)
                 """,
-                (session_id, next_seq, role, content),
+                (session_id, next_seq, role, content_json),
             )
             await db.execute(
                 "UPDATE sessions SET updated_at = ? WHERE id = ?",

@@ -1,5 +1,9 @@
 """HTTP JSON：对话请求 / 响应体与会话 REST DTO。"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,7 +17,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """整段对话响应，回传 ``session_id`` 便于客户端续接。"""
 
-    content: str
+    content: list[ContentBlock]
     session_id: str
 
 
@@ -25,11 +29,25 @@ class SessionSummary(BaseModel):
     updated_at: str
 
 
+class ContentBlock(BaseModel):
+    """统一内容块。"""
+
+    type: str
+    text: str | None = None
+    thinking: str | None = None
+    id: str | None = None
+    name: str | None = None
+    input: dict[str, Any] | None = None
+    tool_use_id: str | None = None
+    content: str | None = None
+    is_error: bool | None = None
+
+
 class StoredMessage(BaseModel):
     """单条历史消息。"""
 
     role: str
-    content: str
+    content: list[ContentBlock]
 
 
 class SessionSummaryDetail(BaseModel):

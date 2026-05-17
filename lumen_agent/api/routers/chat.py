@@ -20,7 +20,8 @@ from lumen_agent.application.llm_error_policy import (
     llm_chain_failure_http_status,
 )
 from lumen_agent.config import Settings, get_settings
-from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
+from lumen_agent.domain.ports import ConversationRepositoryPort
+from lumen_agent.model_adapters.base import ModelAdapter
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
@@ -57,7 +58,7 @@ def _resolve_session_id(body_session_id: str | None) -> str:
 async def post_chat(
     body: ChatRequest,
     settings: Settings = Depends(get_settings),
-    llm: LLMClientPort = Depends(get_llm_client),
+    llm: ModelAdapter = Depends(get_llm_client),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> ChatResponse:
     """整段对话：落库 user/assistant，返回 ``ChatResponse``（含 ``session_id``）。"""
@@ -85,7 +86,7 @@ async def post_chat(
 async def post_chat_stream(
     body: ChatRequest,
     settings: Settings = Depends(get_settings),
-    llm: LLMClientPort = Depends(get_llm_client),
+    llm: ModelAdapter = Depends(get_llm_client),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> StreamingResponse:
     """SSE 流式对话：首包前失败走 HTTP；流中失败发 ``error`` 事件；``X-Session-Id`` 在响应头回传。"""

@@ -1,15 +1,16 @@
-"""FastAPI `Depends` 工厂：集中装配 LLM 客户端等。"""
+"""FastAPI `Depends` 工厂：集中装配模型适配器与仓储。"""
 
 from fastapi import Depends
 
 from lumen_agent.config import Settings, get_settings
-from lumen_agent.infrastructure.deepseek_client import DeepSeekHttpClient
 from lumen_agent.infrastructure.sqlite_conversation import SqliteConversationRepository
+from lumen_agent.model_adapters import get_model_adapter
+from lumen_agent.model_adapters.base import ModelAdapter
 
 
-def get_llm_client(settings: Settings = Depends(get_settings)) -> DeepSeekHttpClient:
-    """注入 DeepSeek HTTP 客户端（每请求新建，配置来自 Settings）。"""
-    return DeepSeekHttpClient(settings)
+def get_llm_client(settings: Settings = Depends(get_settings)) -> ModelAdapter:
+    """注入模型适配器（当前返回 DeepSeek）。"""
+    return get_model_adapter(settings)
 
 
 def get_conversation_repo(settings: Settings = Depends(get_settings)) -> SqliteConversationRepository:
