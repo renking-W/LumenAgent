@@ -28,6 +28,7 @@ class DeepSeekAdapter(ModelAdapter):
         self,
         messages: list[dict[str, Any]],
         *,
+        tools: list[dict] | None = None,
         temperature: float | None = None,
-    ) -> AsyncIterator[tuple[str, str]]:
-        return self._client.chat_stream(messages, temperature=temperature)
+    ) -> AsyncIterator[tuple[str, str | dict]]:
+        return self._client.chat_stream(messages, temperature=temperature, tools=tools)

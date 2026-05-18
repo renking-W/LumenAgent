@@ -151,7 +151,7 @@ class SqliteConversationRepository:
                 (session_id, n_messages),
             )
             rows = await cursor.fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+        return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in reversed(rows)]
 
     async def update_summary(
         self,

@@ -96,3 +96,60 @@ async def reply_single_turn_stream(
         new_count = await repo.increment_round_counter(session_id)
         logging.info(f"session={session_id} 流式助手已落库 count={new_count}")
         asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))
+
+
+async def reply_with_agent(
+    repo: ConversationRepositoryPort,
+    llm: ModelAdapter,
+    session_id: str,
+    user_message: str,
+    settings: Settings,
+) -> AsyncIterator[tuple[str, Any]]:
+    """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
+
+    kind 取值同 AgentStreamExecutor.run_stream()，包含工具执行事件。
+    """
+    from lumen_agent.agent.agent import AgentStreamExecutor
+    from lumen_agent.agent.tools import init_tools
+    from lumen_agent.agent.tools.registry import ToolRegistry
+
+    # 确保工具已注册（幂等，多次调用无副作用）
+    init_tools()
+
+    # 1) 会话准备 + 用户消息落库
+    await repo.ensure_session(session_id)
+    user_blocks = text_message("user", user_message)["content"]
+    await repo.append_message(session_id, "user", user_blocks)
+
+    # 2) 加载历史（summary + recent），剥离本轮 user（已在上面落库）
+    summary, recent = await _load_context(repo, session_id)
+    history_recent = recent[:-1] if recent and recent[-1].get("role") == "user" else recent
+    messages = build_llm_messages(summary, history_recent, user_message)
+    logging.info(
+        f"[Agent] session={session_id} 上下文构建完成 "
+        f"summary={bool(summary)} recent={len(history_recent)}"
+    )
+
+    # 3) 创建 AgentStreamExecutor
+    executor = AgentStreamExecutor(
+        adapter=llm,
+        tools=ToolRegistry.create_all_tools(),
+        settings=settings,
+    )
+
+    # 4) 运行工具循环，收集最终回复文本
+    final_text = ""
+    async for kind, data in executor.run_stream(messages):
+        if kind == "done":
+            final_text = data  # type: ignore[assignment]
+        elif kind == "content":
+            final_text += data  # type: ignore[operator]
+        yield (kind, data)
+
+    # 5) 助手最终回复落库 + 轮次 +1 + 摘要触发
+    if final_text.strip():
+        assistant_blocks = text_message("assistant", final_text)["content"]
+        await repo.append_message(session_id, "assistant", assistant_blocks)
+        new_count = await repo.increment_round_counter(session_id)
+        logging.info(f"[Agent] session={session_id} 助手已落库 count={new_count}")
+        asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))

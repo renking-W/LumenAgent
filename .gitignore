@@ -16,6 +16,8 @@ build/
 
 # Local data
 *.db
+lumen_agent/data/
+lumen_agent/workspace/
 
 # Logs
 lumen_agent/log/

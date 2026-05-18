@@ -14,12 +14,13 @@ from lumen_agent.api.schemas.stream_events import (
     StreamErrorEvent,
     StreamEventDispatcher,
 )
-from lumen_agent.application.chat_service import reply_single_turn, reply_single_turn_stream
+from lumen_agent.application.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
 from lumen_agent.application.llm_error_policy import (
     llm_chain_failure_detail,
     llm_chain_failure_http_status,
 )
 from lumen_agent.config import Settings, get_settings
+from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter
 
@@ -79,7 +80,8 @@ async def post_chat(
             detail=llm_chain_failure_detail(e),
         ) from e
     logging.info(f"大模型返回结果：{content}")
-    return ChatResponse(content=content, session_id=session_id)
+    assistant_blocks = text_message("assistant", content)["content"]
+    return ChatResponse(content=assistant_blocks, session_id=session_id)
 
 
 @router.post("/chat/stream")
@@ -96,13 +98,22 @@ async def post_chat_stream(
 
     response_headers = {**_SSE_HEADERS, "X-Session-Id": session_id}
 
-    stream_it = reply_single_turn_stream(
-        repo,
-        llm,
-        session_id,
-        body.message,
-        settings,
-    )
+    if body.mode == "agent":
+        stream_it = reply_with_agent(
+            repo,
+            llm,
+            session_id,
+            body.message,
+            settings,
+        )
+    else:
+        stream_it = reply_single_turn_stream(
+            repo,
+            llm,
+            session_id,
+            body.message,
+            settings,
+        )
     agen = stream_it.__aiter__()
     try:
         first_kind, first_delta = await agen.__anext__()

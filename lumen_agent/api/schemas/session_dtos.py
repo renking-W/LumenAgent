@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    """``POST /v1/chat``：``session_id`` 可选，缺省由服务端生成。"""
+    """``POST /v1/chat`` / ``POST /v1/chat/stream``。
+
+    ``session_id`` 可选，缺省由服务端生成。
+    ``mode`` 控制处理路径：
+      - ``"simple"``（默认）：单轮流式对话，无工具调用
+      - ``"agent"``：多轮 Agent 工具循环
+    """
 
     message: str = Field(..., min_length=1)
     session_id: str | None = Field(default=None, min_length=1)
+    mode: Literal["simple", "agent"] = "simple"
 
 
 class ChatResponse(BaseModel):

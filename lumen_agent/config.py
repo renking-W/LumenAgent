@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # deepseek 相关配置
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-v4-flash"
     deepseek_temperature: float | None = None
     deepseek_max_tokens: int | None = None
     deepseek_top_p: float | None = None
@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     summary_threshold_turns: int = Field(default=6, ge=2)
     summary_compress_turns: int = Field(default=4, ge=1)
     summary_keep_turns: int = Field(default=2, ge=1)
+
+    # Agent 工具循环配置
+    agent_max_turns: int = Field(default=20, ge=1, le=100)
+    agent_max_tool_result_chars: int = Field(default=20000, ge=1000)
+    agent_workspace_dir: str = "workspace"
+    web_search_api_key: str = ""
 
     @field_validator("deepseek_base_url")
     @classmethod
