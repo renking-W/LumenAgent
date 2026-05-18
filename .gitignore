@@ -17,8 +17,9 @@ build/
 # Local data
 *.db
 
+# Logs
+lumen_agent/log/
+
 # Development guides
 /LUMEN_AGENT_DEVELOPMENT_GUIDE.md
 /会话摘要开发指南.md
-
-/lumen_agent/log/
