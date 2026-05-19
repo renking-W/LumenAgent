@@ -123,6 +123,13 @@ class Settings(BaseSettings):
             p = _PACKAGE_DIR / p
         return p
 
+    def workspace_dir_resolved(self) -> Path:
+        """工具默认工作区：相对路径时相对包目录解析为绝对路径。"""
+        p = Path(self.agent_workspace_dir)
+        if not p.is_absolute():
+            p = _PACKAGE_DIR / p
+        return p.resolve()
+
     @model_validator(mode="after")
     def _check_summary_window(self) -> "Settings":
         """启动期校验：compress + keep == threshold，避免窗口算法错位。"""

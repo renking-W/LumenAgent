@@ -1,100 +1,98 @@
-"""Read 工具：读取工作目录内的文件或列出目录。"""
+"""Read 工具：按路径读取文件内容。"""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 
-_MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
+_MAX_LINES = 2000
+_MAX_BYTES = 50 * 1024  # 50 KB
+_LIMIT_HINT = "单次最多 2000 行且不超过 50KB，请使用 offset/limit 分块读取。"
 
 
-def _get_workspace_dir() -> Path:
-    """延迟读取 Settings，避免循环导入；解析为绝对路径。"""
+def _resolve_path(raw: str) -> Path:
+    p = Path(raw).expanduser()
+    if p.is_absolute():
+        return p.resolve()
     from lumen_agent.config import get_settings
-    settings = get_settings()
-    workspace = Path(settings.agent_workspace_dir)
-    if not workspace.is_absolute():
-        from lumen_agent.config import _PACKAGE_DIR  # type: ignore[attr-defined]
-        workspace = _PACKAGE_DIR / workspace
-    return workspace.resolve()
+    return (get_settings().workspace_dir_resolved() / p).resolve()
 
 
 @ToolRegistry.register
 class Read(BaseTool):
-    """读取工作目录内的文件内容或列出目录条目。"""
+    """读取本地普通文件内容。"""
 
     name = "read"
     description = (
-        "Read the contents of a file or list entries of a directory "
-        "inside the workspace. "
-        "Use `offset` and `limit` to read a slice of a large file."
+        "读取普通文件内容。"
+        "相对路径相对于 workspace；绝对路径与 ~ 可直接使用。"
+        "单次返回最多 2000 行、50KB（UTF-8）；超出请用 offset/limit 分块读取。"
     )
     parameters = {
         "type": "object",
         "properties": {
             "path": {
                 "type": "string",
-                "description": "File or directory path, relative to the workspace root.",
+                "description": (
+                    "文件路径：绝对路径，或相对 workspace 的路径（~ 会展开为主目录）。"
+                ),
             },
             "offset": {
                 "type": "integer",
-                "description": "Starting line number (0-indexed, inclusive). Optional.",
+                "description": "起始行号，从 0 开始且包含该行。可选。",
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum number of lines to return. Optional.",
+                "description": f"最多返回的行数，单次不得超过 {_MAX_LINES}。可选，默认按上限截断。",
             },
         },
         "required": ["path"],
     }
 
     async def execute(self, params: dict) -> ToolResult:
-        raw_path: str = params.get("path", "")
-        workspace = _get_workspace_dir()
-        full_path = self._resolve_safe_path(raw_path, workspace)
+        raw_path: str = str(params.get("path", "")).strip()
+        if not raw_path:
+            return ToolResult.error("Path is empty.")
 
-        if full_path is None:
-            return ToolResult.error(
-                f"Path '{raw_path}' is outside the workspace directory."
-            )
+        try:
+            full_path = _resolve_path(raw_path)
+        except (OSError, RuntimeError) as exc:
+            return ToolResult.error(f"路径无效 '{raw_path}'：{exc}")
 
         if not full_path.exists():
-            return ToolResult.error(f"Path '{raw_path}' does not exist.")
+            return ToolResult.error(f"路径不存在：'{raw_path}'。")
 
         if full_path.is_dir():
-            entries = os.listdir(full_path)
-            return ToolResult.success("\n".join(sorted(entries)))
-
-        size = full_path.stat().st_size
-        if size > _MAX_FILE_SIZE:
-            return ToolResult.error(
-                f"File '{raw_path}' is too large ({size} bytes > 1 MB limit). "
-                "Use offset/limit to read a portion."
-            )
+            return ToolResult.error(f"路径为目录，read 仅支持文件：'{raw_path}'。")
 
         try:
             with open(full_path, "r", encoding="utf-8", errors="replace") as fh:
                 lines = fh.readlines()
         except OSError as exc:
-            return ToolResult.error(f"Cannot read '{raw_path}': {exc}")
+            return ToolResult.error(f"无法读取文件 '{raw_path}'：{exc}")
 
         offset: int = max(0, int(params.get("offset") or 0))
+        if offset >= len(lines):
+            return ToolResult.success("")
+
         limit_val = params.get("limit")
-        limit: int = int(limit_val) if limit_val is not None else len(lines)
+        if limit_val is not None:
+            limit = int(limit_val)
+            if limit < 1:
+                return ToolResult.error("limit 须 >= 1。")
+            if limit > _MAX_LINES:
+                return ToolResult.error(f"limit 不能超过 {_MAX_LINES} 行。{_LIMIT_HINT}")
+        else:
+            limit = _MAX_LINES
 
         sliced = lines[offset : offset + limit]
         content = "".join(sliced)
-        return ToolResult.success(content)
 
-    @staticmethod
-    def _resolve_safe_path(raw_path: str, workspace: Path) -> Path | None:
-        """解析路径并校验必须在工作目录内（防目录穿越）。"""
-        try:
-            target = (workspace / raw_path).resolve()
-            target.relative_to(workspace)
-            return target
-        except (ValueError, OSError):
-            return None
+        if len(content.encode("utf-8")) > _MAX_BYTES:
+            return ToolResult.error(
+                f"读取结果超过 50KB 上限。{_LIMIT_HINT}"
+            )
+
+        return ToolResult.success(content)

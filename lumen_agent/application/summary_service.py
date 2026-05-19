@@ -12,7 +12,7 @@ from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 # prompt 模板路径：与代码同包根，方便随包发布
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "summary.md"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "docs" / "summary.md"
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 

@@ -112,6 +112,7 @@ async def reply_with_agent(
     from lumen_agent.agent.agent import AgentStreamExecutor
     from lumen_agent.agent.tools import init_tools
     from lumen_agent.agent.tools.registry import ToolRegistry
+    from lumen_agent.prompts.builder import build_system_prompt
 
     # 确保工具已注册（幂等，多次调用无副作用）
     init_tools()
@@ -125,19 +126,26 @@ async def reply_with_agent(
     summary, recent = await _load_context(repo, session_id)
     history_recent = recent[:-1] if recent and recent[-1].get("role") == "user" else recent
     messages = build_llm_messages(summary, history_recent, user_message)
+
+    # 3) 构建 system 提示词并注入到消息首位
+    tools = ToolRegistry.create_all_tools()
+    system_content = build_system_prompt(tools)
+    if system_content:
+        messages = [{"role": "system", "content": system_content}] + messages
+
     logging.info(
         f"[Agent] session={session_id} 上下文构建完成 "
         f"summary={bool(summary)} recent={len(history_recent)}"
     )
 
-    # 3) 创建 AgentStreamExecutor
+    # 4) 创建 AgentStreamExecutor
     executor = AgentStreamExecutor(
         adapter=llm,
-        tools=ToolRegistry.create_all_tools(),
+        tools=tools,
         settings=settings,
     )
 
-    # 4) 运行工具循环，收集最终回复文本
+    # 5) 运行工具循环，收集最终回复文本
     final_text = ""
     async for kind, data in executor.run_stream(messages):
         if kind == "done":
@@ -146,7 +154,7 @@ async def reply_with_agent(
             final_text += data  # type: ignore[operator]
         yield (kind, data)
 
-    # 5) 助手最终回复落库 + 轮次 +1 + 摘要触发
+    # 6) 助手最终回复落库 + 轮次 +1 + 摘要触发
     if final_text.strip():
         assistant_blocks = text_message("assistant", final_text)["content"]
         await repo.append_message(session_id, "assistant", assistant_blocks)

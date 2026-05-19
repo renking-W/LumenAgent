@@ -5,8 +5,10 @@ from __future__ import annotations
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 from lumen_agent.agent.tools.read import Read  # noqa: F401 – 触发 @ToolRegistry.register
+from lumen_agent.agent.tools.write import Write  # noqa: F401
+from lumen_agent.agent.tools.bash import Bash  # noqa: F401
 
-__all__ = ["BaseTool", "ToolResult", "ToolRegistry", "Read"]
+__all__ = ["BaseTool", "ToolResult", "ToolRegistry", "Read", "Write", "Bash"]
 
 
 def init_tools() -> None:
