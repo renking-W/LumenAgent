@@ -75,6 +75,25 @@ class Settings(BaseSettings):
     agent_workspace_dir: str = "workspace"
     web_search_api_key: str = ""
 
+    # ── Token 预算 & 上下文窗口 ─────────────────────────────────────────────
+    # 每个模型的上下文窗口（token 数），键为模型名，缺省时用 default_model_context_window
+    model_context_windows: dict[str, int] = Field(
+        default={
+            "deepseek-v4-flash": 131_072,   # 128K
+            "deepseek-chat": 65_536,         # 64K
+            "deepseek-reasoner": 131_072,    # 128K
+        }
+    )
+    default_model_context_window: int = Field(default=131_072, ge=1024)
+
+    # 强制压缩阈值（占窗口比例）；超过此比例触发 force_compress_now
+    context_force_compress_ratio: float = Field(default=0.5, gt=0.0, lt=1.0)
+
+    # 单个 tool_result.content 压缩阈值（token 数）
+    tool_result_compress_token_limit: int = Field(default=2000, ge=100)
+    # 压缩后保留的头尾字符数
+    tool_result_head_tail_chars: int = Field(default=20, ge=5)
+
     @field_validator("deepseek_base_url")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:
@@ -122,6 +141,10 @@ class Settings(BaseSettings):
         if not p.is_absolute():
             p = _PACKAGE_DIR / p
         return p
+
+    def context_window_for(self, model_name: str) -> int:
+        """返回指定模型的上下文窗口大小（token 数）。未配置时返回默认值。"""
+        return self.model_context_windows.get(model_name, self.default_model_context_window)
 
     def workspace_dir_resolved(self) -> Path:
         """工具默认工作区：相对路径时相对包目录解析为绝对路径。"""

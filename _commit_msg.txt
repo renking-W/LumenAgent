@@ -1,0 +1,23 @@
+feat: tool persistence, token budget and force-compress
+
+- Add lumen_agent/agent/tokens/ sub-package: TokenCounter protocol,
+  TiktokenCounter (cl100k_base), CharCounter fallback, get_token_counter factory
+- Add tiktoken>=0.7.0 to requirements.txt
+- Extend config.py: model_context_windows, default_model_context_window,
+  context_force_compress_ratio, tool_result_compress_token_limit,
+  tool_result_head_tail_chars, context_window_for() helper
+- Extend agent/context.py: compress_tool_blocks(), extract_complete_turns(),
+  turns_to_messages() pure functions
+- Update summary_service.py: _find_complete_turns() now handles tool_use/
+  tool_result interleaving; add force_compress_now() for on-demand compression
+- Add application/context_assembly.py: assemble_for_llm() centralises
+  history loading, tool-block compression, token budget check, and
+  force-compress fallback
+- Update agent.py: run_stream() yields ("new_messages", list) before
+  ("done"/"error") so callers can persist the full tool loop history
+- Refactor chat_service.py: all three entry points use assemble_for_llm();
+  reply_with_agent() persists tool_use/tool_result/assistant messages from
+  the new_messages event; count increments only after final assistant text
+- Move lumen_agent/prompts/ to lumen_agent/agent/prompts/; add web_search
+  and web_fetch tools; add /v1/tools and /v1/skills API endpoints;
+  add SKILL loader with mtime-based cache

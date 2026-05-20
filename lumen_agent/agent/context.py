@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import Any
 
 
 # ──────────────────────────────────────────────
@@ -172,3 +173,73 @@ def _hash_args(args: dict) -> str:
     """对参数字典做稳定哈希（取前 8 位）。"""
     raw = json.dumps(args, sort_keys=True, ensure_ascii=False).encode()
     return hashlib.md5(raw).hexdigest()[:8]  # noqa: S324 – 非安全用途
+
+
+# ──────────────────────────────────────────────
+# 纯函数：工具消息压缩 & 轮次切片
+# ──────────────────────────────────────────────
+
+def compress_tool_blocks(
+    messages: list[dict],
+    counter: "Any",
+    *,
+    tool_result_token_limit: int = 2000,
+    head_tail_chars: int = 20,
+) -> list[dict]:
+    """深拷贝消息列表，仅对超长 tool_result.content 做截断压缩。
+
+    压缩规则：
+    - 若 counter.count(content) > tool_result_token_limit
+      → content = content[:head_tail_chars] + "……" + content[-head_tail_chars:]
+    - tool_use 及其他字段（type / id / name / input / is_error / tool_use_id 等）全部原样保留。
+    - text / thinking 块不做任何修改。
+    """
+    import copy
+    result = copy.deepcopy(messages)
+    for msg in result:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_result":
+                continue
+            raw = block.get("content")
+            if not isinstance(raw, str) or not raw:
+                continue
+            if counter.count(raw) > tool_result_token_limit:
+                block["content"] = raw[:head_tail_chars] + "……" + raw[-head_tail_chars:]
+    return result
+
+
+def extract_complete_turns(messages: list[dict]) -> list[list[dict]]:
+    """将消息列表按「非 tool_result 的 user 消息」切分为完整轮次列表。
+
+    复用 ContextManager.identify_complete_turns 的逻辑，返回 list[list[dict]]。
+    每个元素是一轮完整会话（含该轮内的 tool_use / tool_result 消息）。
+    """
+    turns: list[list[dict]] = []
+    current: list[dict] = []
+
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", [])
+        is_tool_result_user = role == "user" and _has_only_tool_results(content)
+
+        if role == "user" and not is_tool_result_user:
+            if current:
+                turns.append(current)
+            current = [msg]
+        else:
+            current.append(msg)
+
+    if current:
+        turns.append(current)
+
+    return turns
+
+
+def turns_to_messages(turns: list[list[dict]]) -> list[dict]:
+    """将轮次列表展平回消息列表。"""
+    return [msg for turn in turns for msg in turn]

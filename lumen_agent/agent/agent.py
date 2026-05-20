@@ -54,7 +54,7 @@ class AgentStreamExecutor:
     async def run_stream(
         self,
         messages: list[dict[str, Any]],
-    ) -> AsyncIterator[tuple[str, str | dict]]:
+    ) -> AsyncIterator[tuple[str, str | dict | list]]:
         """主入口：启动工具循环，yield 事件流。
 
         yield (kind, data):
@@ -64,8 +64,10 @@ class AgentStreamExecutor:
           ("tool_execution_start", dict)      – 单个工具开始执行
           ("tool_execution_end", dict)        – 单个工具执行完毕
           ("done", str)                       – 最终回复（无工具调用时）
+          ("new_messages", list[dict])        – 本次循环新产生的全部消息（在 done 前 yield）
           ("error", str)                      – 错误
         """
+        initial_len = len(messages)
         for turn in range(self.max_turns):
             logger.info(f"[Agent] 第 {turn + 1} 轮开始，当前消息数: {len(messages)}")
 
@@ -117,6 +119,7 @@ class AgentStreamExecutor:
             # ── 3. 无工具调用 → 结束 ────────────────────────────
             if not tool_calls_this_turn:
                 logger.info(f"[Agent] 第 {turn + 1} 轮无工具调用，循环结束")
+                yield ("new_messages", messages[initial_len:])
                 yield ("done", full_content)
                 return
 
@@ -210,6 +213,7 @@ class AgentStreamExecutor:
         # 超出 max_turns
         msg = f"已执行 {self.max_turns} 轮，达到最大步数限制，请重试。"
         logger.warning(f"[Agent] {msg}")
+        yield ("new_messages", messages[initial_len:])
         yield ("error", msg)
 
     async def _execute_tool(self, name: str, params: dict) -> ToolResult:

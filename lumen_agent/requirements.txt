@@ -9,3 +9,21 @@ pydantic-settings>=2.6.0
 
 # SQLite 会话（aiosqlite）
 aiosqlite>=0.20.0
+
+# web_search 工具（DuckDuckGo 搜索，无需 API Key）
+ddgs>=0.5.0
+
+# web_fetch 工具（异步 HTTP 客户端）
+httpx>=0.27.0
+
+# web_fetch 工具：HTML → Markdown 转换
+html2text>=2024.2.26
+
+# web_fetch 工具：HTML 解析（html2text 的回退方案）
+beautifulsoup4>=4.12.0
+
+# SKILL 系统：解析 SKILL.md 的 YAML frontmatter
+pyyaml>=6.0
+
+# Agent token 计数（DeepSeek 当前用 cl100k_base 近似；后续多模型在此扩展）
+tiktoken>=0.7.0

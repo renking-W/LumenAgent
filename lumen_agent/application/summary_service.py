@@ -8,11 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from lumen_agent.agent.context import extract_complete_turns, turns_to_messages
 from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 # prompt 模板路径：与代码同包根，方便随包发布
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "docs" / "summary.md"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "summary.md"
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
@@ -58,24 +59,21 @@ def _render_summary_prompt(old_summary: str, rounds_text: str) -> str:
 
 def _find_complete_turns(
     msgs: list[dict[str, Any]],
-) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """从顺序消息列表中提取完整的 (user, assistant) 轮次对。
+) -> list[list[dict[str, Any]]]:
+    """从顺序消息列表中提取完整轮次列表。
 
-    跳过不成对的消息（如仅 user 无 assistant），确保每轮都是完整的一问一答。
+    以「非 tool_result 的 user 消息」为轮次起点，每个轮次包含该 user 消息
+    以及后续所有 assistant、tool_use、tool_result 消息，直到下一个真实 user 消息。
+
+    只保留最终包含 assistant 回复的完整轮次（丢弃尾部不完整的 user-only 轮次）。
     """
-    turns: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    i = 0
-    while i < len(msgs):
-        if (
-            msgs[i].get("role") == "user"
-            and i + 1 < len(msgs)
-            and msgs[i + 1].get("role") == "assistant"
-        ):
-            turns.append((msgs[i], msgs[i + 1]))
-            i += 2
-        else:
-            i += 1
-    return turns
+    all_turns = extract_complete_turns(msgs)
+    complete: list[list[dict[str, Any]]] = []
+    for turn in all_turns:
+        # 至少含一条 assistant 消息才算完整轮次
+        if any(m.get("role") == "assistant" for m in turn):
+            complete.append(turn)
+    return complete
 
 
 def _message_to_text(message: dict[str, Any]) -> str:
@@ -173,7 +171,7 @@ async def maybe_trigger_summary(
         # 保留最近 keep_turns 轮，其余写入记忆文件
         lost_turns = turns[:-keep_turns] if len(turns) > keep_turns else []
         if lost_turns:
-            lost_msgs = [msg for pair in lost_turns for msg in pair]
+            lost_msgs = turns_to_messages(lost_turns)
             try:
                 _write_memory_file(
                     session_id,
@@ -206,7 +204,7 @@ async def maybe_trigger_summary(
             return
 
         # 前 compress_turns 轮压缩为摘要
-        to_compress = [msg for pair in turns[:compress_turns] for msg in pair]
+        to_compress = turns_to_messages(turns[:compress_turns])
         rounds_text = _format_rounds(to_compress)
 
         # 渲染 prompt（含文件读取），放在 try 块内以确保异常可被捕获并记录
@@ -238,3 +236,82 @@ async def maybe_trigger_summary(
     logging.info(
         f"session={session_id} 摘要更新成功 count_reset={keep_turns} summary_len={len(new_summary)}"
     )
+
+
+async def force_compress_now(
+    repo: ConversationRepositoryPort,
+    llm: LLMClientPort,
+    settings: Settings,
+    *,
+    session_id: str,
+    keep_last_turn: bool = True,
+) -> None:
+    """将「除最后一轮以外」的全部历史强制压缩进 summary，重置 count 为 1。
+
+    步骤：
+    1. 取全部消息，按完整轮次切分。
+    2. 若历史只有 0–1 轮，无需压缩，直接返回。
+    3. 把需压缩的轮次文本喂 LLM 生成新 summary（追加到当前 summary 后）。
+    4. 将原文备份写入 memory/YYYY-MM-DD.md。
+    5. 更新 sessions.summary 并把 count 重置为 1（仅保留最后 1 轮）。
+
+    失败不抛异常：仅记录 ERROR，保持原状，让调用方决定是否重试。
+    """
+    try:
+        session = await repo.get_session(session_id)
+        if session is None:
+            logging.warning(f"[ForceCompress] session={session_id} 不存在，跳过")
+            return
+
+        all_msgs = await repo.list_messages(session_id)
+        turns = _find_complete_turns(all_msgs)
+
+        if len(turns) <= 1:
+            logging.info(f"[ForceCompress] session={session_id} 轮次不足 2，无需强制压缩")
+            return
+
+        if keep_last_turn:
+            to_compress_turns = turns[:-1]
+            # 最后一轮保留，count 重置为 1
+            new_count = 1
+        else:
+            to_compress_turns = turns
+            new_count = 0
+
+        to_compress_msgs = turns_to_messages(to_compress_turns)
+
+        # 备份原文到 memory 文件
+        try:
+            _write_memory_file(
+                session_id,
+                to_compress_msgs,
+                settings.conversation_db_path_resolved(),
+            )
+        except Exception:
+            logging.exception(f"[ForceCompress] session={session_id} 写入 memory 文件失败，继续摘要")
+
+        # 生成新摘要
+        rounds_text = _format_rounds(to_compress_msgs)
+        old_summary = session.get("summary") or ""
+        prompt = _render_summary_prompt(old_summary, rounds_text)
+
+        if "{{" in prompt:
+            logging.error(f"[ForceCompress] session={session_id} prompt 模板未完全渲染，跳过")
+            return
+
+        new_summary = await llm.chat(
+            [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        )
+        new_summary = (new_summary or "").strip()
+        if not new_summary:
+            logging.warning(f"[ForceCompress] session={session_id} 摘要 LLM 返回空，跳过更新")
+            return
+
+        await repo.update_summary(session_id, new_summary=new_summary, new_count=new_count)
+        logging.info(
+            f"[ForceCompress] session={session_id} 强制压缩完成 "
+            f"count_reset={new_count} summary_len={len(new_summary)}"
+        )
+
+    except Exception:
+        logging.exception(f"[ForceCompress] session={session_id} 强制压缩异常，保持原状")
