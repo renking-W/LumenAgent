@@ -71,9 +71,9 @@ class AgentStreamExecutor:
         for turn in range(self.max_turns):
             logger.info(f"[Agent] 第 {turn + 1} 轮开始，当前消息数: {len(messages)}")
 
-            # 上下文裁剪
-            messages = self.context.trim_to_max_turns(messages)
-            messages = self.context.truncate_tool_results(messages)
+            # # 上下文裁剪   前面链路已经完成
+            # messages = self.context.trim_to_max_turns(messages)
+            # messages = self.context.truncate_tool_results(messages)
 
             tool_calls_this_turn: list[dict] = []
             full_content = ""
@@ -95,6 +95,7 @@ class AgentStreamExecutor:
             except Exception as exc:
                 logger.exception("[Agent] 模型调用异常")
                 yield ("error", str(exc))
+                yield ("new_messages", messages[initial_len:])
                 return
 
             # ── 2. 将 assistant 响应追加到消息历史 ─────────────
@@ -165,6 +166,7 @@ class AgentStreamExecutor:
                     )
                     if guard_result.is_critical:
                         yield ("error", guard_result.reason)
+                        yield ("new_messages", messages[initial_len:])
                         return
                     continue
 

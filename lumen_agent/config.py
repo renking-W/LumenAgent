@@ -79,10 +79,10 @@ class Settings(BaseSettings):
     # 每个模型的上下文窗口（token 数），键为模型名，缺省时用 default_model_context_window
     model_context_windows: dict[str, int] = Field(
         default={
-            "deepseek-v4-flash": 131_072,   # 128K
+            "deepseek-v4-flash": 1_000_000,   # 约等于1M
             "deepseek-chat": 65_536,         # 64K
             "deepseek-reasoner": 131_072,    # 128K
-        }
+        }   
     )
     default_model_context_window: int = Field(default=131_072, ge=1024)
 

@@ -53,7 +53,7 @@ class Write(BaseTool):
             "path": {
                 "type": "string",
                 "description": (
-                    "目标文件路径：绝对路径，或相对 workspace 的路径（~ 会展开为主目录）。"
+                    "目标文件路径：绝对路径。必填"
                 ),
             },
             "content": {

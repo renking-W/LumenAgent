@@ -35,13 +35,12 @@ class Bash(BaseTool):
         "properties": {
             "command": {
                 "type": "string",
-                "description": "要执行的 shell 命令字符串。",
+                "description": "要执行的 shell 命令字符串。必填",
             },
             "working_directory": {
                 "type": "string",
                 "description": (
-                    "命令的工作目录（绝对路径或相对 workspace 的路径）。"
-                    "可选，默认为 workspace 目录。"
+                    "命令的工作目录（绝对路径或相对 workspace 的路径）必填。"
                 ),
             },
             "timeout": {

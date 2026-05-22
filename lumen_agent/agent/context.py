@@ -24,61 +24,32 @@ class ContextManager:
 
     # ── 轮次识别 ──────────────────────────────
 
-    def identify_complete_turns(
-        self, messages: list[dict]
-    ) -> list[list[dict]]:
-        """将消息列表按"非 tool_result 的 user 消息"切分为完整轮次。
-
-        同一轮次包含：user 问题 + assistant 回复 + 可能的多轮 tool_use/tool_result。
-        """
-        turns: list[list[dict]] = []
-        current: list[dict] = []
-
-        for msg in messages:
-            role = msg.get("role", "")
-            content = msg.get("content", [])
-
-            is_tool_result_user = role == "user" and _has_only_tool_results(content)
-
-            if role == "user" and not is_tool_result_user:
-                # 新轮次开始：将上一轮存入 turns
-                if current:
-                    turns.append(current)
-                current = [msg]
-            else:
-                current.append(msg)
-
-        if current:
-            turns.append(current)
-
-        return turns
-
-    def trim_to_max_turns(self, messages: list[dict]) -> list[dict]:
-        """保留最近 max_turns 轮，丢弃更早的轮次。"""
-        turns = self.identify_complete_turns(messages)
-        if len(turns) <= self.max_turns:
-            return messages
-        keep = turns[-self.max_turns :]
-        return [msg for turn in keep for msg in turn]
+    # def trim_to_max_turns(self, messages: list[dict]) -> list[dict]:
+    #     """保留最近 max_turns 轮，丢弃更早的轮次。"""
+    #     turns = extract_complete_turns(messages)
+    #     if len(turns) <= self.max_turns:
+    #         return messages
+    #     keep = turns[-self.max_turns :]
+    #     return [msg for turn in keep for msg in turn]
 
     # ── tool_result 截断 ──────────────────────
 
-    def truncate_tool_results(self, messages: list[dict]) -> list[dict]:
-        """截断超过上限的 tool_result 块内容，防止上下文溢出。"""
-        for msg in messages:
-            for block in msg.get("content", []):
-                if (
-                    isinstance(block, dict)
-                    and block.get("type") == "tool_result"
-                    and isinstance(block.get("content"), str)
-                    and len(block["content"]) > self.max_tool_result_chars
-                ):
-                    original_len = len(block["content"])
-                    block["content"] = (
-                        block["content"][: self.max_tool_result_chars]
-                        + f"\n...[truncated, original {original_len} chars]"
-                    )
-        return messages
+    # def truncate_tool_results(self, messages: list[dict]) -> list[dict]:
+    #     """截断超过上限的 tool_result 块内容，防止上下文溢出。"""
+    #     for msg in messages:
+    #         for block in msg.get("content", []):
+    #             if (
+    #                 isinstance(block, dict)
+    #                 and block.get("type") == "tool_result"
+    #                 and isinstance(block.get("content"), str)
+    #                 and len(block["content"]) > self.max_tool_result_chars
+    #             ):
+    #                 original_len = len(block["content"])
+    #                 block["content"] = (
+    #                     block["content"][: self.max_tool_result_chars]
+    #                     + f"\n...[truncated, original {original_len} chars]"
+    #                 )
+    #     return messages
 
 
 def _has_only_tool_results(content: list | str) -> bool:

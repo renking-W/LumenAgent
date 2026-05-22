@@ -1,9 +1,9 @@
 """上下文组装与 token 预算检查。
 
 assemble_for_llm() 是所有入口（单轮 / 流式 / Agent）的统一历史拼接点：
-  1. 从数据库取全部历史消息
-  2. 按完整轮次切分
-  3. 对 tool_result.content 做超长压缩
+  1. 从数据库取最近 N 条消息（FETCH_LIMIT = summary_threshold_turns × 10），避免 OOM
+  2. 按完整轮次切分，校验首条消息为 user（丢弃残缺首轮）
+  3. 只保留最近 10 轮完整对话，对 tool_result.content 做超长压缩
   4. 计算总 token；若超过 context_window * force_compress_ratio 则触发强制压缩后重拼
   5. 返回可直接送入 LLM 的 messages 列表
 """
@@ -21,6 +21,7 @@ from lumen_agent.agent.context import (
 )
 from lumen_agent.agent.tokens import TokenCounter
 from lumen_agent.config import Settings
+from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 logger = logging.getLogger(__name__)
@@ -80,12 +81,19 @@ async def assemble_for_llm(
         session = await repo.get_session(session_id)
         summary = (session.get("summary") or "") if session else ""
 
-        all_msgs = await repo.list_messages(session_id)
+        # 只取最近 N 条消息而非全量，避免 OOM；FETCH_LIMIT = summary_threshold_turns × 20
+        fetch_limit = settings.summary_threshold_turns * 20
+        all_msgs = await repo.list_recent_messages(session_id, fetch_limit)
 
         turns = extract_complete_turns(all_msgs)
-        # 去掉不含 assistant 回复的尾部不完整轮次
-        complete_turns = [t for t in turns if any(m.get("role") == "assistant" for m in t)]
-
+        # list_recent_messages 从末尾截取，首轮可能残缺，丢弃
+        if turns and turns[0][0].get("role") != "user":
+            turns.pop(0)
+        # 将 turns 中所有缺少 assistant 回复的轮次补成完整格式
+        complete_turns = verify_message(turns)
+        # 只保留最近 10 轮完整对话
+        if len(complete_turns) >= 10:
+            complete_turns = complete_turns[-10:]
         # 压缩 tool_result.content 超长内容
         history_msgs = compress_tool_blocks(
             turns_to_messages(complete_turns),
@@ -148,3 +156,26 @@ async def assemble_for_llm(
         )
 
     return ctx
+
+def verify_message(turns: list[list[dict]]) -> list[list[dict]]:
+    """校验并格式化消息。"""
+
+    def _empty_assistant() -> dict:
+        return {
+            "role": "assistant",
+            "content": [{"type": "text", "text": ""}],
+        }
+
+    complete_turns: list[list[dict]] = []
+    for turn in turns:
+        fixed_turn: list[dict] = []
+        for idx, msg in enumerate(turn):
+            fixed_turn.append(msg)
+            is_last = idx == len(turn) - 1
+            next_is_assistant = (
+                not is_last and turn[idx + 1].get("role") == "assistant"
+            )
+            if msg.get("role") == "user" and (is_last or not next_is_assistant):
+                fixed_turn.append(_empty_assistant())
+        complete_turns.append(fixed_turn)
+    return complete_turns

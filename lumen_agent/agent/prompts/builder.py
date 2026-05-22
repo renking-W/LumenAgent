@@ -69,7 +69,7 @@ class SystemPromptBuilder:
         return self
 
     # ------------------------------------------------------------------ #
-    # 2‑8. 预留子系统（签名稳定，暂不填充内容）                            #
+    # 2. 技能系统                           #
     # ------------------------------------------------------------------ #
 
     def add_skill_system(self, skills: list[SkillMeta]) -> "SystemPromptBuilder":
@@ -129,7 +129,7 @@ class SystemPromptBuilder:
         """项目上下文（预留）。"""
         return self
 
-    def add_runtime_info(self) -> "SystemPromptBuilder":
+    def add_runtime_info(self   ) -> "SystemPromptBuilder":
         """运行时信息（预留）。"""
         return self
 

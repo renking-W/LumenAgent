@@ -1,0 +1,179 @@
+2026-05-22 16:51:19,286 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 16:52:57,572 - INFO - 接受到流式对话请求：你现在有哪些可用的skill？，session_id:test-003
+2026-05-22 16:53:01,751 - INFO - [ContextAssembly] session=test-003 total_tokens=1449 kept_turns=1
+2026-05-22 16:53:01,751 - INFO - [Agent] session=test-003 上下文构建完成 summary=False kept_turns=1 total_tokens=1449 force_compressed=False
+2026-05-22 16:53:01,751 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 16:53:02,833 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:53:07,565 - INFO - [Agent] 第 1 轮无工具调用，循环结束
+2026-05-22 16:53:07,587 - INFO - [Agent] session=test-003 工具循环结束 count=1
+2026-05-22 16:54:18,740 - INFO - 接受到流式对话请求：告诉我你的工作空间目录是哪个，session_id:test-003
+2026-05-22 16:54:18,760 - INFO - [ContextAssembly] session=test-003 total_tokens=1730 kept_turns=2
+2026-05-22 16:54:18,761 - INFO - [Agent] session=test-003 上下文构建完成 summary=False kept_turns=2 total_tokens=1730 force_compressed=False
+2026-05-22 16:54:18,761 - INFO - [Agent] 第 1 轮开始，当前消息数: 6
+2026-05-22 16:54:19,325 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:54:20,914 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:54:20,914 - INFO - [Agent] 第 2 轮开始，当前消息数: 8
+2026-05-22 16:54:21,415 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:54:22,649 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:54:22,650 - INFO - [Agent] 第 3 轮开始，当前消息数: 10
+2026-05-22 16:54:23,234 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:54:25,387 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 16:54:25,387 - INFO - [Agent] 第 4 轮开始，当前消息数: 12
+2026-05-22 16:54:25,889 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:54:27,753 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.172s
+2026-05-22 16:54:27,753 - INFO - [Agent] 第 5 轮开始，当前消息数: 14
+2026-05-22 16:54:28,221 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:54:31,720 - INFO - [Agent] 第 5 轮无工具调用，循环结束
+2026-05-22 16:54:31,822 - INFO - [Agent] session=test-003 工具循环结束 count=2
+2026-05-22 16:57:46,584 - INFO - 接受到流式对话请求：你好，session_id:test-004
+2026-05-22 16:57:46,620 - INFO - [ContextAssembly] session=test-004 total_tokens=1429 kept_turns=1
+2026-05-22 16:57:46,620 - INFO - [Agent] session=test-004 上下文构建完成 summary=False kept_turns=1 total_tokens=1429 force_compressed=False
+2026-05-22 16:57:46,621 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 16:57:47,285 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:57:49,830 - INFO - [Agent] 第 1 轮无工具调用，循环结束
+2026-05-22 16:57:49,846 - INFO - [Agent] session=test-004 工具循环结束 count=1
+2026-05-22 16:58:49,627 - INFO - 接受到流式对话请求：你好，session_id:test-005
+2026-05-22 16:58:49,664 - INFO - [ContextAssembly] session=test-005 total_tokens=1429 kept_turns=1
+2026-05-22 16:58:49,664 - INFO - [Agent] session=test-005 上下文构建完成 summary=False kept_turns=1 total_tokens=1429 force_compressed=False
+2026-05-22 16:58:49,664 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 16:58:50,197 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:58:51,412 - INFO - [Agent] 第 1 轮无工具调用，循环结束
+2026-05-22 16:58:51,428 - INFO - [Agent] session=test-005 工具循环结束 count=1
+2026-05-22 16:59:38,389 - INFO - 接受到流式对话请求：按照提示词你不应该先填充自己的信息和我的信息吗？               **在首次对话时与用户一起填写这个文件，定义你的身份和性格。**，session_id:test-005
+2026-05-22 16:59:38,408 - INFO - [ContextAssembly] session=test-005 total_tokens=1559 kept_turns=2
+2026-05-22 16:59:38,408 - INFO - [Agent] session=test-005 上下文构建完成 summary=False kept_turns=2 total_tokens=1559 force_compressed=False
+2026-05-22 16:59:38,408 - INFO - [Agent] 第 1 轮开始，当前消息数: 6
+2026-05-22 16:59:38,904 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:59:41,356 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:59:41,356 - INFO - [Agent] 第 2 轮开始，当前消息数: 8
+2026-05-22 16:59:41,852 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:59:43,201 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:59:43,201 - INFO - [Agent] 第 3 轮开始，当前消息数: 10
+2026-05-22 16:59:43,701 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:59:44,628 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:59:44,628 - INFO - [Agent] 第 4 轮开始，当前消息数: 12
+2026-05-22 16:59:45,078 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:59:46,430 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 16:59:46,430 - INFO - [Agent] 第 5 轮开始，当前消息数: 14
+2026-05-22 16:59:46,948 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 16:59:50,098 - INFO - [Agent] 第 5 轮无工具调用，循环结束
+2026-05-22 16:59:50,200 - INFO - [Agent] session=test-005 工具循环结束 count=2
+2026-05-22 17:02:25,351 - INFO - 接受到流式对话请求：为什么bash运行失败？你是不是用的不是windows系统的命令？，session_id:test-005
+2026-05-22 17:02:25,379 - INFO - [ContextAssembly] session=test-005 total_tokens=2063 kept_turns=3
+2026-05-22 17:02:25,379 - INFO - [Agent] session=test-005 上下文构建完成 summary=False kept_turns=3 total_tokens=2063 force_compressed=False
+2026-05-22 17:02:25,379 - INFO - [Agent] 第 1 轮开始，当前消息数: 16
+2026-05-22 17:02:25,921 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:02:30,162 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 17:02:30,163 - INFO - [Agent] 第 2 轮开始，当前消息数: 18
+2026-05-22 17:02:30,811 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:02:33,633 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 17:02:33,633 - INFO - [Agent] 第 3 轮开始，当前消息数: 20
+2026-05-22 17:02:34,170 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:02:36,837 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 17:02:36,838 - INFO - [Agent] 第 4 轮开始，当前消息数: 22
+2026-05-22 17:02:37,410 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:02:40,256 - INFO - [Agent] 工具 'read' 执行完成 status=success elapsed=0.016s
+2026-05-22 17:02:40,256 - INFO - [Agent] 工具 'read' 执行完成 status=success elapsed=0.000s
+2026-05-22 17:02:40,257 - INFO - [Agent] 工具 'read' 执行完成 status=success elapsed=0.000s
+2026-05-22 17:02:40,257 - INFO - [Agent] 第 5 轮开始，当前消息数: 24
+2026-05-22 17:02:40,800 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:02:47,226 - INFO - [Agent] 第 5 轮无工具调用，循环结束
+2026-05-22 17:02:47,334 - INFO - [Agent] session=test-005 工具循环结束 count=3
+2026-05-22 17:09:28,617 - INFO - 接受到流式对话请求：使用bash命令，我要看那你工作目录下的所有文件，session_id:test-006
+2026-05-22 17:09:28,645 - INFO - [ContextAssembly] session=test-006 total_tokens=1465 kept_turns=1
+2026-05-22 17:09:28,646 - INFO - [Agent] session=test-006 上下文构建完成 summary=False kept_turns=1 total_tokens=1465 force_compressed=False
+2026-05-22 17:09:28,646 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 17:09:29,209 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:31,459 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.016s
+2026-05-22 17:09:31,459 - INFO - [Agent] 第 2 轮开始，当前消息数: 6
+2026-05-22 17:09:31,951 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:33,428 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:09:33,428 - INFO - [Agent] 第 3 轮开始，当前消息数: 8
+2026-05-22 17:09:34,007 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:35,545 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:09:35,545 - INFO - [Agent] 第 4 轮开始，当前消息数: 10
+2026-05-22 17:09:36,018 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:38,244 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.219s
+2026-05-22 17:09:38,245 - INFO - [Agent] 第 5 轮开始，当前消息数: 12
+2026-05-22 17:09:38,794 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:40,843 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.297s
+2026-05-22 17:09:40,843 - INFO - [Agent] 第 6 轮开始，当前消息数: 14
+2026-05-22 17:09:41,481 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:09:50,078 - INFO - [Agent] 第 6 轮无工具调用，循环结束
+2026-05-22 17:09:50,191 - INFO - [Agent] session=test-006 工具循环结束 count=1
+2026-05-22 17:23:00,571 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 17:23:31,518 - INFO - 接受到流式对话请求：使用bash命令，我要看那你工作目录下的所有文件，session_id:test-007
+2026-05-22 17:23:31,775 - INFO - [ContextAssembly] session=test-007 total_tokens=1457 kept_turns=1
+2026-05-22 17:23:31,775 - INFO - [Agent] session=test-007 上下文构建完成 summary=False kept_turns=1 total_tokens=1457 force_compressed=False
+2026-05-22 17:23:31,776 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 17:23:32,723 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:23:35,751 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.313s
+2026-05-22 17:23:35,751 - INFO - [Agent] 第 2 轮开始，当前消息数: 6
+2026-05-22 17:23:36,240 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:23:39,450 - INFO - [Agent] 第 2 轮无工具调用，循环结束
+2026-05-22 17:23:39,483 - INFO - [Agent] session=test-007 工具循环结束 count=1
+2026-05-22 17:26:04,389 - INFO - 接受到流式对话请求：使用bash命令，我要看那你工作目录下的所有文件，session_id:test-008
+2026-05-22 17:26:04,416 - INFO - [ContextAssembly] session=test-008 total_tokens=1457 kept_turns=1
+2026-05-22 17:26:04,416 - INFO - [Agent] session=test-008 上下文构建完成 summary=False kept_turns=1 total_tokens=1457 force_compressed=False
+2026-05-22 17:26:04,417 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 17:26:04,982 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:06,375 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:26:06,375 - INFO - [Agent] 第 2 轮开始，当前消息数: 6
+2026-05-22 17:26:06,838 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:08,623 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:26:08,623 - INFO - [Agent] 第 3 轮开始，当前消息数: 8
+2026-05-22 17:26:09,135 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:11,181 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:26:11,181 - INFO - [Agent] 第 4 轮开始，当前消息数: 10
+2026-05-22 17:26:11,904 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:13,116 - INFO - [Agent] 工具 'bash' 执行完成 status=error elapsed=0.000s
+2026-05-22 17:26:13,116 - INFO - [Agent] 第 5 轮开始，当前消息数: 12
+2026-05-22 17:26:13,619 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:15,424 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.281s
+2026-05-22 17:26:15,424 - INFO - [Agent] 第 6 轮开始，当前消息数: 14
+2026-05-22 17:26:15,949 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:19,023 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.234s
+2026-05-22 17:26:19,023 - INFO - [Agent] 第 7 轮开始，当前消息数: 16
+2026-05-22 17:26:19,608 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:26:23,291 - INFO - [Agent] 第 7 轮无工具调用，循环结束
+2026-05-22 17:26:23,418 - INFO - [Agent] session=test-008 工具循环结束 count=1
+2026-05-22 17:27:57,219 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 17:29:31,361 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 17:34:19,468 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 17:36:39,702 - INFO - 接受到流式对话请求：你有哪些SKILL？，session_id:test-008
+2026-05-22 17:36:39,912 - INFO - [ContextAssembly] session=test-008 total_tokens=2788 kept_turns=2
+2026-05-22 17:36:39,912 - INFO - [Agent] session=test-008 上下文构建完成 summary=False kept_turns=2 total_tokens=2788 force_compressed=False
+2026-05-22 17:36:39,914 - INFO - [Agent] 第 1 轮开始，当前消息数: 18
+2026-05-22 17:36:40,662 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:36:46,925 - INFO - [Agent] 第 1 轮无工具调用，循环结束
+2026-05-22 17:36:46,940 - INFO - [Agent] session=test-008 工具循环结束 count=2
+2026-05-22 17:38:06,266 - INFO - 接受到流式对话请求：告诉我你工作空间目录下有哪些文件，session_id:test-009
+2026-05-22 17:38:06,294 - INFO - [ContextAssembly] session=test-009 total_tokens=1573 kept_turns=1
+2026-05-22 17:38:06,295 - INFO - [Agent] session=test-009 上下文构建完成 summary=False kept_turns=1 total_tokens=1573 force_compressed=False
+2026-05-22 17:38:06,295 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 17:38:06,884 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:38:09,624 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.203s
+2026-05-22 17:38:09,624 - INFO - [Agent] 第 2 轮开始，当前消息数: 6
+2026-05-22 17:38:10,188 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:38:12,082 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.281s
+2026-05-22 17:38:12,083 - INFO - [Agent] 第 3 轮开始，当前消息数: 8
+2026-05-22 17:38:12,769 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:38:20,373 - INFO - [Agent] 第 3 轮无工具调用，循环结束
+2026-05-22 17:38:20,427 - INFO - [Agent] session=test-009 工具循环结束 count=1
+2026-05-22 17:40:10,940 - INFO - 流明Agent已经启动，配置读取完毕
+2026-05-22 17:40:19,475 - INFO - 接受到流式对话请求：告诉我你工作空间目录下有哪些文件，session_id:test-010
+2026-05-22 17:40:20,052 - INFO - [ContextAssembly] session=test-010 total_tokens=1573 kept_turns=1
+2026-05-22 17:40:20,052 - INFO - [Agent] session=test-010 上下文构建完成 summary=False kept_turns=1 total_tokens=1573 force_compressed=False
+2026-05-22 17:40:20,053 - INFO - [Agent] 第 1 轮开始，当前消息数: 4
+2026-05-22 17:40:22,888 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:40:26,077 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 17:40:26,078 - INFO - [Agent] 第 2 轮开始，当前消息数: 6
+2026-05-22 17:40:26,552 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:40:28,300 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.266s
+2026-05-22 17:40:28,301 - INFO - [Agent] 第 3 轮开始，当前消息数: 8
+2026-05-22 17:40:28,834 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:40:30,870 - INFO - [Agent] 工具 'bash' 执行完成 status=success elapsed=0.313s
+2026-05-22 17:40:30,871 - INFO - [Agent] 第 4 轮开始，当前消息数: 10
+2026-05-22 17:40:31,391 - INFO - HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-22 17:40:36,859 - INFO - [Agent] 第 4 轮无工具调用，循环结束
+2026-05-22 17:42:34,909 - INFO - [Agent] session=test-010 工具循环结束 count=1
