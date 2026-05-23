@@ -23,3 +23,5 @@ lumen_agent/workspace/
 lumen_agent/log/
 
 /会话摘要开发指南.md
+
+uv.lock

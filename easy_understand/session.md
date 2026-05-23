@@ -1,60 +1,51 @@
- 1. 会话数据模型 & DTO （DTO = Data Transfer Object（数据传输对象））
+# 会话（Session）模块
 
-  ┌─────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────┐
-  │                  文件                   │                                 作用                                 │
-  ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/domain/ports.py             │ ConversationRepositoryPort 接口——定义会话仓储的全部抽象方法          │
-  ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/api/schemas/session_dtos.py │ ChatRequest、ChatResponse、SessionSummary、StoredMessage 等 HTTP DTO │
-  └─────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+## 1. 数据模型 & DTO
 
-  2. 会话持久化实现
+> DTO = Data Transfer Object（数据传输对象）
 
-  ┌───────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────┐
-  │                       文件                        │                                         作用                                         │
-  ├───────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/infrastructure/sqlite_conversation.py │ SQLite 实现——ensure_session、append_message、get_history、increment_round_counter 等 │
-  └───────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────┘
+| 文件 | 作用 |
+|---|---|
+| `lumen_agent/domain/ports.py` | `ConversationRepositoryPort` 接口 — 定义会话仓储的全部抽象方法 |
+| `lumen_agent/api/schemas/session_dtos.py` | `ChatRequest`、`ChatResponse`、`SessionSummary`、`StoredMessage` 等 HTTP DTO |
 
-  3. 会话业务编排
+## 2. 会话持久化实现
 
-  ┌─────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
-  │                    文件                     │                                             作用                                             │
-  ├─────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/application/chat_service.py     │ reply_single_turn / reply_single_turn_stream / reply_with_agent——在 session 上追加消息、调   │
-  │                                             │ LLM、触发摘要                                                                                │
-  ├─────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/application/context_assembly.py │ assemble_for_llm()——按 session 加载历史消息组装 LLM 上下文                                   │
-  ├─────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/application/summary_service.py  │ maybe_trigger_summary()——按 session 判断是否需要触发摘要压缩                                 │
-  ├─────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ lumen_agent/application/chat_in_cli.py      │ CLI 入口——管理 session_id 的生成与传递                                                       │
-  └─────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+| 文件 | 作用 |
+|---|---|
+| `lumen_agent/infrastructure/sqlite_conversation.py` | SQLite 实现 — `ensure_session`、`append_message`、`get_history`、`increment_round_counter` 等 |
 
-  4. 会话 API
+## 3. 会话业务编排
 
-  ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
-  │                文件                 │                            作用                            │
-  ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-  │ lumen_agent/api/routers/chat.py     │ POST /v1/chat / POST /v1/chat/stream——接收 session_id 参数 │
-  ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-  │ lumen_agent/api/routers/sessions.py │ 会话列表/查询路由                                          │
-  ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-  │ lumen_agent/app.py                  │ 挂载 sessions 路由                                         │
-  └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+| 文件 | 作用 |
+|---|---|
+| `lumen_agent/application/chat_service.py` | `reply_single_turn` / `reply_single_turn_stream` / `reply_with_agent` — 在 session 上追加消息、调 LLM、触发摘要 |
+| `lumen_agent/application/context_assembly.py` | `assemble_for_llm()` — 按 session 加载历史消息组装 LLM 上下文 |
+| `lumen_agent/application/summary_service.py` | `maybe_trigger_summary()` — 按 session 判断是否需要触发摘要压缩 |
+| `lumen_agent/application/chat_in_cli.py` | CLI 入口 — 管理 `session_id` 的生成与传递 |
 
-  数据流
+## 4. 会话 API
 
-  CLI / HTTP 请求
-      ↓  session_id
-  chat_service.py
-      ↓
-  context_assembly.py  ← 读取 session 历史 → 组装上下文
-      ↓
-  LLM 响应
-      ↓
-  chat_service.py  ← append_message(session_id, ...)
-      ↓
-  summary_service.py  ← 检查是否需压缩当前 session
-      ↓
-  sqlite_conversation.py  ← 最终落库
+| 文件 | 作用 |
+|---|---|
+| `lumen_agent/api/routers/chat.py` | `POST /v1/chat` / `POST /v1/chat/stream` — 接收 `session_id` 参数 |
+| `lumen_agent/api/routers/sessions.py` | 会话列表/查询路由 |
+| `lumen_agent/app.py` | 挂载 sessions 路由 |
+
+## 数据流
+
+```
+CLI / HTTP 请求
+    ↓  session_id
+chat_service.py
+    ↓
+context_assembly.py  ← 读取 session 历史 → 组装上下文
+    ↓
+LLM 响应
+    ↓
+chat_service.py  ← append_message(session_id, ...)
+    ↓
+summary_service.py  ← 检查是否需压缩当前 session
+    ↓
+sqlite_conversation.py  ← 最终落库
+```
