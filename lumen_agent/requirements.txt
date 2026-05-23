@@ -27,3 +27,6 @@ pyyaml>=6.0
 
 # Agent token 计数（DeepSeek 当前用 cl100k_base 近似；后续多模型在此扩展）
 tiktoken>=0.7.0
+
+# 知识库 / RAG 向量存储
+chromadb>=0.5.0

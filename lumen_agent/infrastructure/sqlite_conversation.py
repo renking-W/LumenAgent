@@ -61,23 +61,34 @@ class SqliteConversationRepository:
         # 连接 db
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
-            # 不存在插入，存在忽略
-            await db.execute(
-                "INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
-                (session_id, now, now),
-            )
-            await db.commit()
+            await db.execute("BEGIN")
+            try:
+                # 不存在插入，存在忽略
+                await db.execute(
+                    "INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+                    (session_id, now, now),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
 
     async def list_messages(self, session_id: str) -> list[dict[str, Any]]:
         """查询某会话全部消息，按 ``seq`` 升序。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
-            cursor = await db.execute(
-                "SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC",
-                (session_id,),
-            )
-            rows = await cursor.fetchall()
+            await db.execute("BEGIN")
+            try:
+                cursor = await db.execute(
+                    "SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC",
+                    (session_id,),
+                )
+                rows = await cursor.fetchall()
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
         return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in rows]
 
     async def append_message(self, session_id: str, role: str, content: Any) -> None:
@@ -87,24 +98,29 @@ class SqliteConversationRepository:
         content_json = blocks_to_json(ensure_blocks(content))
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
-            cursor = await db.execute(
-                "SELECT COALESCE(MAX(seq), -1) + 1 AS next_seq FROM messages WHERE session_id = ?",
-                (session_id,),
-            )
-            row = await cursor.fetchone()
-            next_seq = int(row["next_seq"] if row is not None else 0)
-            await db.execute(
-                """
-                INSERT INTO messages (session_id, seq, role, content)
-                VALUES (?, ?, ?, ?)
-                """,
-                (session_id, next_seq, role, content_json),
-            )
-            await db.execute(
-                "UPDATE sessions SET updated_at = ? WHERE id = ?",
-                (now, session_id),
-            )
-            await db.commit()
+            await db.execute("BEGIN")
+            try:
+                cursor = await db.execute(
+                    "SELECT COALESCE(MAX(seq), -1) + 1 AS next_seq FROM messages WHERE session_id = ?",
+                    (session_id,),
+                )
+                row = await cursor.fetchone()
+                next_seq = int(row["next_seq"] if row is not None else 0)
+                await db.execute(
+                    """
+                    INSERT INTO messages (session_id, seq, role, content)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (session_id, next_seq, role, content_json),
+                )
+                await db.execute(
+                    "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                    (now, session_id),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
 
     async def get_session(self, session_id: str) -> SessionFullRow | None:
         """读取单个会话的完整状态（含摘要、轮次）；不存在返回 ``None``。"""

@@ -13,10 +13,28 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from lumen_agent.agent.skills.meta import SkillMeta
 from lumen_agent.agent.tools.base import BaseTool
 
 _SECTION_SEP = "\n\n---\n\n"
+
+
+def _read_knowledge_index() -> list[dict]:
+    """读取知识库索引文件，返回 file_name/source 的映射列表。"""
+    index_path = Path(__file__).resolve().parent.parent.parent / "data" / "chroma" / "knowledge_index.json"
+    if not index_path.exists():
+        return []
+    raw = index_path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return data if isinstance(data, list) else []
 
 
 def _render_tool(tool: BaseTool) -> str:
@@ -69,7 +87,7 @@ class SystemPromptBuilder:
         return self
 
     # ------------------------------------------------------------------ #
-    # 2. 技能系统                           #
+    # 2. 技能系统
     # ------------------------------------------------------------------ #
 
     def add_skill_system(self, skills: list[SkillMeta]) -> "SystemPromptBuilder":
@@ -109,12 +127,49 @@ class SystemPromptBuilder:
         self._sections.append("\n".join(lines))
         return self
 
+    # ------------------------------------------------------------------ #
+    # 3. 记忆系统
+    # ------------------------------------------------------------------ #
     def add_memory_system(self) -> "SystemPromptBuilder":
         """记忆系统（预留）。"""
         return self
 
     def add_knowledge_system(self) -> "SystemPromptBuilder":
-        """知识系统（预留）。"""
+        """知识系统：只说明何时调用知识工具、如何使用结果，不拼接检索正文。"""
+        knowledge_items = _read_knowledge_index()
+        lines = [
+            "## 知识系统",
+            "",
+            "当你需要查询项目知识库、配置说明、已入库文档或历史资料时，优先考虑调用 `knowledge_search`。",
+            "",
+            "### 当前知识库文件列表",
+        ]
+        if knowledge_items:
+            for item in knowledge_items:
+                file_name = item.get("file_name") or "未知文件"
+                source = item.get("source") or "未知来源"
+                lines.append(f"- `{file_name}`（来源：`{source}`）")
+        else:
+            lines.append("- 当前没有可用的知识库文件。")
+        lines.extend([
+            "",
+            "### 调用原则",
+            "- 当你遇到自己不知道不明确的问题或者历史事务时，就可以去检索知识完善你的上下文。",
+            "- 调用前先把用户问题整理成简洁、明确的检索 query。",
+            "- 如果一次检索结果不足以支持回答，可以基于已有结果再次检索，但避免重复无效查询。",
+            "",
+            "### 使用方式",
+            "- `knowledge_search` 负责具体检索逻辑，并返回标准化 `tool_result`。",
+            "- 你必须把工具返回的 chunk、来源、相似度等信息当作检索依据，而不是把它当作最终答案。",
+            "- 拿到结果后，先判断是否足够；足够则基于结果作答，不足则继续检索或明确说明信息不足。",
+            "",
+            "### 输出要求",
+            "- 作答时尽量引用检索到的来源信息。",
+            "- 不要编造知识库中不存在的内容。",
+            "- 如果没有命中足够相关的 chunk，明确告知用户未检索到可用结果。",
+        ])
+        self._sections.append("\n".join(lines))
+
         return self
 
     def add_workspace(self) -> "SystemPromptBuilder":

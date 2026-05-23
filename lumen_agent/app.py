@@ -10,6 +10,7 @@ from lumen_agent.api.routers import chat as chat_router
 from lumen_agent.api.routers import sessions as sessions_router
 from lumen_agent.api.routers import tools as tools_router
 from lumen_agent.api.routers import skills as skills_router
+from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.config import get_settings, log_config
 
 
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     application.include_router(sessions_router.router)
     application.include_router(tools_router.router)
     application.include_router(skills_router.router)
+    application.include_router(knowledge_router.router)
     return application
 
 

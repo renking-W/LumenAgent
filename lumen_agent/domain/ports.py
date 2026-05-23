@@ -93,3 +93,18 @@ class ConversationRepositoryPort(Protocol):
     async def increment_round_counter(self, session_id: str) -> int:
         """轮次 +1（助手落库后调用），返回新的 ``count``。"""
         ...
+
+@runtime_checkable
+class KnowledgeRepositoryPort(Protocol):
+    """知识库持久化端口（实现可为 SQLite 等）。"""
+
+    async def ensure_knowledge(self, knowledge_id: str) -> None:
+        """若不存在则创建知识行（幂等）。"""
+        ...
+
+    async def list_knowledges(self) -> list[dict[str, Any]]:
+        """列出所有知识行。"""
+        ...
+
+    async def append_knowledge(self, knowledge_id: str, content: str) -> None:
+        """在知识末尾追加一条内容并更新知识更新时间。"""

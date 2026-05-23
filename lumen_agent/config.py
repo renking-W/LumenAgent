@@ -75,6 +75,28 @@ class Settings(BaseSettings):
     agent_workspace_dir: str = "workspace"
     web_search_api_key: str = ""
 
+    # 知识库 / RAG
+    # embedding_api_key：阿里云 Embedding 接口的鉴权密钥，和 deepseek_api_key 一样从 .env 读取。
+    embedding_api_key: str = ""
+    # embedding_base_url：阿里云兼容 OpenAI 的 Embedding 网关地址，默认指向 DashScope 兼容模式。
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+    # embedding_model：向量化使用的模型名，当前要求固定为 text-embedding-v4。
+    embedding_model: str = "text-embedding-v4"
+    # rag_collection_name：Chroma 里的 collection 名称，用于区分不同知识库集合。
+    rag_collection_name: str = "knowledge_base"
+    # rag_chunk_size：切分文本时单个 chunk 的目标长度，单位为字符。
+    rag_chunk_size: int = Field(default=500, ge=100)
+    # rag_chunk_overlap：相邻 chunk 的重叠字符数，用于减少语义断裂。
+    rag_chunk_overlap: int = Field(default=150, ge=0)
+    # rag_top_k：每次检索最多返回多少个 chunk。
+    rag_top_k: int = Field(default=5, ge=1, le=50)
+    # rag_similarity_threshold：检索结果的相似度过滤阈值，低于该值的 chunk 会被丢弃。
+    rag_similarity_threshold: float = Field(default=0.2, ge=0.0, le=1.0)
+    # rag_distance_metric：Chroma 使用的距离度量，默认 cosine。
+    rag_distance_metric: str = "cosine"
+    # rag_chroma_path：Chroma 持久化目录，默认相对 lumen_agent/ 解析到 data/chroma。
+    rag_chroma_path: str = "data/chroma"
+
     # ── Token 预算 & 上下文窗口 ─────────────────────────────────────────────
     # 每个模型的上下文窗口（token 数），键为模型名，缺省时用 default_model_context_window
     model_context_windows: dict[str, int] = Field(
@@ -149,6 +171,13 @@ class Settings(BaseSettings):
     def workspace_dir_resolved(self) -> Path:
         """工具默认工作区：相对路径时相对包目录解析为绝对路径。"""
         p = Path(self.agent_workspace_dir)
+        if not p.is_absolute():
+            p = _PACKAGE_DIR / p
+        return p.resolve()
+
+    def rag_chroma_path_resolved(self) -> Path:
+        """Chroma 持久化目录：相对路径时相对包目录解析为绝对路径。"""
+        p = Path(self.rag_chroma_path)
         if not p.is_absolute():
             p = _PACKAGE_DIR / p
         return p.resolve()
