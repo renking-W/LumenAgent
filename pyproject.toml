@@ -1,0 +1,15 @@
+[project]
+name = "lumenagent"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.136.1",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.14.1",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.47.0",
+]
+
+[project.scripts]
+lumen-cli = "lumen_agent.application.chat_in_cli:main"
