@@ -12,7 +12,7 @@ build/
 .idea/
 
 # Environment
-.env
+lumen_agent/.env
 
 # Local data
 *.db
