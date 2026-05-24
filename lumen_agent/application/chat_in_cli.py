@@ -13,7 +13,8 @@
 import asyncio
 import logging
 from uuid import uuid4
-
+import questionary
+import readline
 from lumen_agent.application.chat_service import reply_with_agent
 from lumen_agent.agent.tools import init_tools
 from lumen_agent.config import get_settings
@@ -66,6 +67,11 @@ async def async_main() -> None:
             session_id = str(uuid4())
             print(f"新会话 ID: {session_id}")
             continue
+        if msg.strip().lower() == "/knowledge":
+            select_operation=questionary.select(
+                "知识库管理",
+                choices=["new_knowledge", "list_knowledge"],
+            ).ask()
 
         _thinking = False      # 是否正在显示"思考中..."
         _has_prefix = False    # 是否已输出过"Assistant: "

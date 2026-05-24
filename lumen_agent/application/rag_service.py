@@ -183,14 +183,6 @@ class RagService:
         """删除当前 collection 并重新创建，作为全量重建入口。"""
         self._store.delete_collection()
 
-    async def list_documents(self) -> list[dict[str, Any]]:
-        """列出知识库中的全部文档摘要。"""
-        return await self._meta_store.list_documents()
-
-    async def get_document(self, knowledge_id: str) -> dict[str, Any] | None:
-        """获取某个文档及其切片详情。"""
-        return await self._meta_store.get_document(knowledge_id)
-
     async def _ingest_chunks(
         self,
         *,

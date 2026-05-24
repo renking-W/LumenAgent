@@ -4,10 +4,12 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "chromadb>=1.5.9",
     "fastapi>=0.136.1",
     "httpx>=0.28.1",
     "pydantic-settings>=2.14.1",
     "pyyaml>=6.0.3",
+    "questionary>=2.1.1",
     "uvicorn>=0.47.0",
 ]
 
