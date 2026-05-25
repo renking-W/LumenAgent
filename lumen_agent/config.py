@@ -10,31 +10,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _DEFAULT_ENV_FILE = _PACKAGE_DIR / ".env"
 
-def log_config():
-    """初始化根 logger：按天落盘 + 日志级别。"""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    # 配置 logger
+def log_config(*, enable_stream: bool = True):
+    """初始化 logger：按天落盘 + 可选终端输出。"""
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    # 格式
+    # 避免重复初始化时 handler 堆积
+    logger.handlers.clear()
+
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    # 按天切分、持久化到文件
     file_handler = TimedRotatingFileHandler(
-        filename="log/agent.log",  # 基础文件名
-        when="midnight",  # 每天 0 点自动切分
+        filename="log/agent.log",
+        when="midnight",
         encoding="utf-8",
-        backupCount=30  # 保留 30 天日志
+        backupCount=30,
     )
     file_handler.setFormatter(formatter)
-
-    # 控制台输出
-    # stream_handler = logging.StreamHandler()
-    # stream_handler.setFormatter(formatter)
-
-    # 全局生效
     logger.addHandler(file_handler)
-    # logger.addHandler(stream_handler)
+
+    if enable_stream:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
 
 class Settings(BaseSettings):

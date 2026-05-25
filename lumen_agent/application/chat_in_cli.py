@@ -1,8 +1,9 @@
-"""命令行对话：直调 Service 层，无需启动 HTTP 服务。
+"""命令行对话：直调 Service 层，可选同时启动 HTTP 服务。
 
 用法
 ----
-    python -m lumen_agent.application.chat_in_cli
+    python -m lumen_agent.application.chat_in_cli       # 仅 CLI
+    python -m lumen_agent.application.chat_in_cli --web  # CLI + Web
 
 斜杠命令
 --------
@@ -12,17 +13,22 @@
 
 import asyncio
 import logging
+import threading
 from uuid import uuid4
-
+import questionary
+import readline
+from knowledge_in_cli import knowledge_operation
+from lumen_agent.api.routers import knowledge
 from lumen_agent.application.chat_service import reply_with_agent
 from lumen_agent.agent.tools import init_tools
 from lumen_agent.config import get_settings
 from lumen_agent.infrastructure.sqlite_conversation import SqliteConversationRepository
 from lumen_agent.model_adapters import get_model_adapter
 
-settings = get_settings() #加载配置信息
-repo = SqliteConversationRepository(settings.conversation_db_path_resolved()) #获得数据库对象
-llm = get_model_adapter(settings) #获得模型适配器
+
+settings = get_settings()
+repo = SqliteConversationRepository(settings.conversation_db_path_resolved())
+llm = get_model_adapter(settings)
 
 
 def _show_tool_event(kind: str, data: object) -> None:
@@ -45,7 +51,7 @@ def _show_tool_event(kind: str, data: object) -> None:
 async def async_main() -> None:
     """交互式 CLI 主循环。"""
     init_tools()
-    logging.disable(logging.CRITICAL)  # 屏蔽后端 INFO 日志
+    _logger = logging.getLogger(__name__)
 
     session_id = str(uuid4())
     print(f"会话 ID: {session_id}")
@@ -66,6 +72,8 @@ async def async_main() -> None:
             session_id = str(uuid4())
             print(f"新会话 ID: {session_id}")
             continue
+        if msg.strip().lower() == "/knowledge":
+            await knowledge_operation()
 
         _thinking = False      # 是否正在显示"思考中..."
         _has_prefix = False    # 是否已输出过"Assistant: "
@@ -113,6 +121,15 @@ async def async_main() -> None:
 
 def main() -> None:
     """同步入口，供 pyproject.toml [project.scripts] 调用。"""
+    from lumen_agent.config import log_config
+
+    log_config(enable_stream=False)  # CLI 模式：日志只写文件，不输出终端
+
+    from lumen_agent.app import run_uvicorn
+
+    t = threading.Thread(target=run_uvicorn, daemon=True)
+    t.start()
+
     asyncio.run(async_main())
 
 
