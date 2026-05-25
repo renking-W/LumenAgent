@@ -1,26 +1,20 @@
-"""系统提示词构造器：按固定顺序组装各子系统的 system 提示词。
-
-构造顺序：
-  1. 工具系统（已实现）
-  2. 技能系统（已实现）
-  3. 记忆系统（预留）
-  4. 知识系统（预留）
-  5. 工作空间（预留）
-  6. 用户身份（预留）
-  7. 项目上下文（预留）
-  8. 运行时信息（预留）
-"""
+"""系统提示词构造器：按固定顺序组装各子系统的 system 提示词。"""
 
 from __future__ import annotations
 
+import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 
+from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.agent.skills.meta import SkillMeta
 from lumen_agent.agent.tools.base import BaseTool
 from lumen_agent.infrastructure.sqlite_knowledge import SqliteKnowledgeRepository
 
 _SECTION_SEP = "\n\n---\n\n"
+_PROMPT_DOCS_DIR = Path(__file__).resolve().parent / "docs"
+_MEMORY_UTILS = MemoryFileUtils.from_prompt_docs_path(_PROMPT_DOCS_DIR)
 
 
 def _read_knowledge_index() -> list[dict]:
@@ -42,8 +36,6 @@ def _read_knowledge_documents() -> list[dict]:
     """读取 SQLite 知识库中的所有文档元信息，用于 system prompt 展示。"""
     repo = SqliteKnowledgeRepository(Path(__file__).resolve().parent.parent.parent / "data" / "knowledge.db")
     try:
-        import asyncio
-
         return asyncio.run(repo.list_documents())
     except RuntimeError:
         return []
@@ -54,7 +46,6 @@ def _read_knowledge_documents() -> list[dict]:
 def _render_tool(tool: BaseTool) -> str:
     """将单个 BaseTool 实例渲染为 Markdown 工具描述块。"""
     lines: list[str] = [f"### {tool.name}", "", tool.description, ""]
-
     props: dict = tool.parameters.get("properties", {})
     required: list[str] = tool.parameters.get("required", [])
 
@@ -64,19 +55,13 @@ def _render_tool(tool: BaseTool) -> str:
             param_type = param_schema.get("type", "any")
             param_desc = param_schema.get("description", "")
             required_label = "必填" if param_name in required else "可选"
-            lines.append(
-                f"- `{param_name}`（{param_type}，{required_label}）：{param_desc}"
-            )
+            lines.append(f"- `{param_name}`（{param_type}，{required_label}）：{param_desc}")
 
     return "\n".join(lines)
 
 
 class SystemPromptBuilder:
-    """链式系统提示词构造器。
-
-    调用各 add_*() 方法填充子系统内容，最终调用 build() 返回完整 system 字符串。
-    尚未实现的子系统方法以空实现预留，签名保持稳定以便后续补充。
-    """
+    """链式系统提示词构造器。"""
 
     def __init__(self) -> None:
         self._sections: list[str] = []
@@ -89,15 +74,8 @@ class SystemPromptBuilder:
         """将工具列表渲染为工具系统说明并追加到提示词。"""
         if not tools:
             return self
-
         tool_blocks = _SECTION_SEP.join(_render_tool(t) for t in tools)
-        section = (
-            "# 工具系统\n\n"
-            "你可以调用以下工具：\n\n"
-            + _SECTION_SEP
-            + tool_blocks
-        )
-        self._sections.append(section)
+        self._sections.append("# 工具系统\n\n你可以调用以下工具：\n\n" + _SECTION_SEP + tool_blocks)
         return self
 
     # ------------------------------------------------------------------ #
@@ -117,18 +95,14 @@ class SystemPromptBuilder:
             "",
             "以下是可供调用的技能列表（仅展示元信息）。",
             "",
-            "> **重要约束**：调用任何技能前，**必须先使用 `read` 工具读取该技能的 SKILL.md 完整内容**，"
-            "再按其中说明执行操作。本节只提供技能的名称、描述与文件路径，不会自动传入任何参数。"
-            "如果没有技能明确适用：不要读取任何 SKILL.md，直接使用通用工具。",
+            "> **重要约束**：调用任何技能前，**必须先使用 `read` 工具读取该技能的 SKILL.md 完整内容**，再按其中说明执行操作。本节只提供技能的名称、描述与文件路径，不会自动传入任何参数。如果没有技能明确适用：不要读取任何 SKILL.md，直接使用通用工具。",
         ]
-
         if available:
             lines += ["", "## 可使用的技能", ""]
             for s in available:
                 prefix = f"{s.emoji} " if s.emoji else ""
                 lines.append(f"- {prefix}**{s.name}** — {s.description}")
                 lines.append(f"  path: `{s.path}`")
-
         if unavailable:
             lines += ["", "## 不可使用的技能（环境变量未配置）", ""]
             for s in unavailable:
@@ -137,7 +111,6 @@ class SystemPromptBuilder:
                 lines.append(f"- {prefix}**{s.name}** — {s.description}")
                 lines.append(f"  path: `{s.path}`")
                 lines.append(f"  缺失环境变量: `{missing}`")
-
         self._sections.append("\n".join(lines))
         return self
 
@@ -145,9 +118,32 @@ class SystemPromptBuilder:
     # 3. 记忆系统
     # ------------------------------------------------------------------ #
     def add_memory_system(self) -> "SystemPromptBuilder":
-        """记忆系统（预留）。"""
+        """记忆系统：显式指导 LLM 主动维护长期记忆。"""
+        lines = [
+            "# 记忆系统",
+            "",
+            "当你遇到十分重要且可长期复用的信息时，必须主动编辑 `MEMORY.md`。",
+            "",
+            "## 应主动写入的内容",
+            "- 用户习惯、偏好、禁忌",
+            "- 用户明确认可的长期决策",
+            "- 多次失败但值得保留的操作经验",
+                "- 长期稳定的人物、项目、流程上下文",
+            "",
+            "## 写入原则",
+            "- 只写长期有效的信息，不要记录短暂的闲聊。",
+            "- 遇到重要信息时，优先考虑追加、归纳或去重，而不是重复堆叠。",
+            "- 如果现有内容已经包含相同事实，应优先合并更新。",
+            "- `MEMORY.md` 是长期记忆索引，保持精简、准确、可持续维护。",
+            "- 使用`write`工具来对`MEMORY.md`文件进行编辑",
+        ]
+        self._sections.append("\n".join(lines))
         return self
-
+        
+    # ------------------------------------------------------------------ #
+    # 4. 知识系统
+    # ------------------------------------------------------------------ #
+    
     def add_knowledge_system(self) -> "SystemPromptBuilder":
         """知识系统：只说明何时调用知识工具、如何使用结果，不拼接检索正文。"""
         knowledge_items = _read_knowledge_index()
@@ -160,9 +156,7 @@ class SystemPromptBuilder:
         ]
         if knowledge_items:
             for item in knowledge_items:
-                file_name = item.get("file_name") or "未知文件"
-                source = item.get("source") or "未知来源"
-                lines.append(f"- `{file_name}`（来源：`{source}`）")
+                lines.append(f"- `{item.get('file_name') or '未知文件'}`（来源：`{item.get('source') or '未知来源'}`）")
         else:
             lines.append("- 当前没有可用的知识库文件。")
         lines.extend([
@@ -183,17 +177,11 @@ class SystemPromptBuilder:
         documents = _read_knowledge_documents()
         if documents:
             for doc in documents:
-                file_name = doc.get("file_name") or "未知文件"
-                source_name = doc.get("source_name") or "未知来源"
-                status = doc.get("status") or "unknown"
-                chunk_count = doc.get("chunk_count")
-                updated_at = doc.get("updated_at") or "未知时间"
                 lines.append(
-                    f"- `{file_name}`（来源：`{source_name}`，状态：`{status}`，chunks：{chunk_count}，更新于：`{updated_at}`）"
+                    f"- `{doc.get('file_name') or '未知文件'}`（来源：`{doc.get('source_name') or '未知来源'}`，状态：`{doc.get('status') or 'unknown'}`，chunks：{doc.get('chunk_count')}，更新于：`{doc.get('updated_at') or '未知时间'}`）"
                 )
         else:
             lines.append("- 当前没有可用的 SQLite 知识库文档。")
-
         lines.extend([
             "",
             "## 输出要求",
@@ -201,69 +189,56 @@ class SystemPromptBuilder:
             "- 不要编造知识库中不存在的内容。",
             "- 如果没有命中足够相关的 chunk，明确告知用户未检索到可用结果。",
         ])
-
         self._sections.append("\n".join(lines))
-
         return self
 
+    # --------------------------------
+    # 5. 工作空间
+    # --------------------------------
     def add_workspace(self) -> "SystemPromptBuilder":
         """工作空间：直接读取 RULE.md 并拼接到上下文中。"""
-        rule_path = Path(__file__).resolve().parent / "docs" / "RULE.md"
-        if not rule_path.exists():
-            return self
-
-        rule_text = rule_path.read_text(encoding="utf-8").strip()
-        if not rule_text:
-            return self
-
-        self._sections.append("\n\n" + rule_text + "\n\n")
+        rule_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "RULE.md")
+        if rule_text:
+            self._sections.append(rule_text)
         return self
 
+    # ------------------------------------------------------------------ #
+    # 6. 用户信息
+    # ------------------------------------------------------------------ #
     def add_user_identity(self) -> "SystemPromptBuilder":
-        """用户身份：直接读取 USER.md 并拼接到上下文中。"""
-        user_path = Path(__file__).resolve().parent / "docs" / "USER.md"
-        if not user_path.exists():
-            return self
-
-        user_text = user_path.read_text(encoding="utf-8").strip()
-        if not user_text:
-            return self
-
-        self._sections.append("\n\n" + user_text + "\n\n")
+        user_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "USER.md")
+        if user_text:
+            self._sections.append(user_text)
         return self
-
+    
+    # ------------------------------------------------------------------ #
+    # 7. 系统上下文
+    # ------------------------------------------------------------------ #
     def add_project_context(self) -> "SystemPromptBuilder":
-        """项目上下文：依次读取 ME.md 与 MEMORY.md 并拼接到上下文中。"""
-        me_path = Path(__file__).resolve().parent / "docs" / "ME.md"
-        memory_path = Path(__file__).resolve().parent / "docs" / "MEMORY.md"
+        me_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "ME.md")
+        memory_path = _MEMORY_UTILS.memory_file_path()
+        # 长期记忆文件
+        memory_text = _MEMORY_UTILS.read_text_if_exists(memory_path)
 
         sections: list[str] = []
-        for title, path in (("自我信息", me_path), ("记忆信息", memory_path)):
-            if not path.exists():
-                continue
-            text = path.read_text(encoding="utf-8").strip()
-            if not text:
-                continue
-            sections.append(f"\n\n{text}")
+        if me_text:
+            sections.append(me_text)
+        if memory_text:
+            sections.append(memory_text)
 
         if sections:
-            self._sections.append("\n\n---\n\n".join(sections))
+            self._sections.append(_SECTION_SEP.join(sections))
         return self
 
-    def add_runtime_info(self   ) -> "SystemPromptBuilder":
-        """运行时信息：读取当前系统时间并拼接到上下文中。"""
-        from datetime import datetime
-
+    # ------------------------------------------------------------------ #
+    # 8. 运行时信息
+    # ------------------------------------------------------------------ #
+    def add_runtime_info(self) -> "SystemPromptBuilder":
         now_text = datetime.now().astimezone().isoformat(timespec="seconds")
-        self._sections.append(f"## 系统时钟\n\n当前系统时间：`{now_text}`")
+        self._sections.append(f"# 系统时钟\n\n当前系统时间：`{now_text}`")
         return self
-
-    # ------------------------------------------------------------------ #
-    # 最终构建                                                              #
-    # ------------------------------------------------------------------ #
 
     def build(self) -> str:
-        """将所有已填充的节拼接为最终 system 字符串。"""
         return _SECTION_SEP.join(self._sections)
 
 

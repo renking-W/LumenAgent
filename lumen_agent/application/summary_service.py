@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from datetime import datetime
 from functools import lru_cache
@@ -9,11 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from lumen_agent.agent.context import extract_complete_turns, turns_to_messages
+from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 # prompt 模板路径：与代码同包根，方便随包发布
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "summary.md"
+_LONG_MEMORY_PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "memory_refine.md"
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
@@ -22,6 +26,12 @@ _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "too
 def _load_prompt_template() -> str:
     """读取摘要 prompt 模板（进程内只读一次）。"""
     return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=1)
+def _load_long_memory_prompt_template() -> str:
+    """读取长期记忆整理 prompt 模板（进程内只读一次）。"""
+    return _LONG_MEMORY_PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _format_rounds(messages: list[dict[str, Any]]) -> str:
@@ -52,7 +62,7 @@ def _render_summary_prompt(old_summary: str, rounds_text: str) -> str:
     """用 ``str.replace`` 填充 prompt 三个占位符（``new_summary`` 置空待 LLM 生成）。"""
     tpl = _load_prompt_template()
     tpl = tpl.replace("{{old_summary}}", old_summary or "")
-    tpl = tpl.replace("{{seven_rounds_conversations}}", rounds_text or "")
+    tpl = tpl.replace("{{rounds_text}}", rounds_text or "")
     tpl = tpl.replace("{{new_summary}}", "")
     return tpl
 
@@ -93,34 +103,60 @@ def _message_to_text(message: dict[str, Any]) -> str:
     return str(content)
 
 
+def _parse_summary_payload(raw: str) -> tuple[str, str]:
+    """兼容旧文本与新 JSON 摘要返回值。"""
+    text = (raw or "").strip()
+    if not text:
+        return "", ""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return text, text
+
+    if isinstance(data, dict):
+        new_summary = str(data.get("new_summary", "") or "").strip()
+        count_summary = str(data.get("count_summary", "") or "").strip()
+        return new_summary, count_summary
+    return text, text
+
+
+def _load_and_refine_memory(prompt_template: str, memory_text: str) -> str:
+    prompt = prompt_template.replace("{{memory_text}}", memory_text or "")
+    if "{{" in prompt:
+        raise ValueError("memory refine prompt contains unreplaced placeholder")
+    return prompt
+
+
+_MEMORY_UTILS = MemoryFileUtils.from_prompt_docs_path(_LONG_MEMORY_PROMPT_PATH)
+
+
+def _load_text_if_exists(path: Path) -> str:
+    return _MEMORY_UTILS.read_text_if_exists(path)
+
+
+def _write_daily_memory_append(
+    session_id: str,
+    count_summary: str,
+) -> None:
+    """将 count_summary 追加写入当天的记忆文档。"""
+    file_path = _MEMORY_UTILS.append_daily_summary(session_id, count_summary)
+    if file_path is not None:
+        logging.info("session=%s 当日记忆已追加到 %s", session_id, file_path)
+
+
 def _write_memory_file(
     session_id: str,
     messages: list[dict[str, Any]],
     db_path: Path,
 ) -> None:
-    """将被强制截断的消息追加写入按日期命名的记忆文件（``YYYY-MM-DD.md``）。
-
-    文件不存在则创建，已存在则追加；每次写入前带时间戳头部。
-    """
-    memory_dir = db_path.parent / "memory"
-    memory_dir.mkdir(parents=True, exist_ok=True)
-
-    now = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    file_path = memory_dir / f"{date_str}.md"
-
-    parts: list[str] = [
-        f"## {time_str}  session={session_id}（强制截断记录）\n\n",
-    ]
-    for msg in messages:
-        label = _ROLE_LABEL.get(msg.get("role", ""), msg.get("role", ""))
-        parts.append(f"**{label}**: {_message_to_text(msg)}\n\n")
-    parts.append("---\n\n")
-
-    with open(file_path, "a", encoding="utf-8") as f:
-        f.write("".join(parts))
-
+    """将被强制截断的消息追加写入按日期命名的记忆文件（``YYYY-MM-DD.md``）。"""
+    file_path = _MEMORY_UTILS.append_message_backup(
+        session_id=session_id,
+        messages=messages,
+        role_label_map=_ROLE_LABEL,
+        message_to_text_fn=_message_to_text,
+        db_path=db_path,
+    )
     logging.info(f"session={session_id} 截断记录已写入 {file_path}")
 
 
@@ -217,25 +253,64 @@ async def maybe_trigger_summary(
             )
             return
 
-        new_summary = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
+        raw_summary = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
     except Exception:
         # 失败：不阻塞主响应，count 保持不变，等下一轮再尝试
         logging.exception(f"session={session_id} 摘要生成过程异常，跳过本次更新")
         return
 
-    new_summary = (new_summary or "").strip()
-    if not new_summary:
+    new_summary, count_summary = _parse_summary_payload(raw_summary)
+    if not new_summary and not count_summary:
         logging.warning(f"session={session_id} 摘要 LLM 返回空，跳过更新")
         return
+
+    try:
+        _write_daily_memory_append(session_id, count_summary)
+    except Exception:
+        logging.exception(f"session={session_id} 追加当日记忆失败")
 
     await repo.update_summary(
         session_id,
         new_summary=new_summary,
         new_count=keep_turns,
     )
+    try:
+        asyncio.create_task(_maybe_refine_long_memory(llm))
+    except Exception:
+        logging.exception("长期记忆整理任务创建失败")
     logging.info(
         f"session={session_id} 摘要更新成功 count_reset={keep_turns} summary_len={len(new_summary)}"
     )
+
+
+async def _maybe_refine_long_memory(llm: LLMClientPort) -> None:
+    """当 MEMORY.md 过大时，触发长期记忆整理并覆盖写回。"""
+    memory_path = _MEMORY_UTILS.memory_file_path()
+    if not _MEMORY_UTILS.exists(memory_path):
+        return
+    if _MEMORY_UTILS.file_size(memory_path) <= 150 * 1024:
+        return
+
+    memory_text = _load_text_if_exists(memory_path)
+    if not memory_text.strip():
+        return
+
+    prompt_template = _load_long_memory_prompt_template()
+    prompt = _load_and_refine_memory(prompt_template, memory_text)
+    logging.warning("长期记忆超过阈值，触发整理：%s", memory_path)
+    try:
+        refined = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
+    except Exception:
+        logging.exception("长期记忆整理失败，保留原内容")
+        return
+
+    refined_text = (refined or "").strip()
+    if not refined_text:
+        logging.warning("长期记忆整理返回空，保留原内容")
+        return
+
+    memory_path.write_text(refined_text + "\n", encoding="utf-8")
+    logging.info("长期记忆整理完成并已覆盖写回 %s", memory_path)
 
 
 async def force_compress_now(
@@ -299,15 +374,25 @@ async def force_compress_now(
             logging.error(f"[ForceCompress] session={session_id} prompt 模板未完全渲染，跳过")
             return
 
-        new_summary = await llm.chat(
+        raw_summary = await llm.chat(
             [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
         )
-        new_summary = (new_summary or "").strip()
-        if not new_summary:
+        new_summary, count_summary = _parse_summary_payload(raw_summary)
+        if not new_summary and not count_summary:
             logging.warning(f"[ForceCompress] session={session_id} 摘要 LLM 返回空，跳过更新")
             return
 
+        try:
+            _write_daily_memory_append(session_id, count_summary)
+        except Exception:
+            logging.exception(f"[ForceCompress] session={session_id} 追加当日记忆失败")
+
         await repo.update_summary(session_id, new_summary=new_summary, new_count=new_count)
+        # 异步任务，不阻塞主进程
+        try:
+            asyncio.create_task(_maybe_refine_long_memory(llm))
+        except Exception:
+            logging.exception("长期记忆整理任务创建失败")
         logging.info(
             f"[ForceCompress] session={session_id} 强制压缩完成 "
             f"count_reset={new_count} summary_len={len(new_summary)}"
