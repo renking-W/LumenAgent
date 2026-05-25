@@ -18,6 +18,7 @@ from pathlib import Path
 
 from lumen_agent.agent.skills.meta import SkillMeta
 from lumen_agent.agent.tools.base import BaseTool
+from lumen_agent.infrastructure.sqlite_knowledge import SqliteKnowledgeRepository
 
 _SECTION_SEP = "\n\n---\n\n"
 
@@ -35,6 +36,19 @@ def _read_knowledge_index() -> list[dict]:
     except json.JSONDecodeError:
         return []
     return data if isinstance(data, list) else []
+
+
+def _read_knowledge_documents() -> list[dict]:
+    """读取 SQLite 知识库中的所有文档元信息，用于 system prompt 展示。"""
+    repo = SqliteKnowledgeRepository(Path(__file__).resolve().parent.parent.parent / "data" / "knowledge.db")
+    try:
+        import asyncio
+
+        return asyncio.run(repo.list_documents())
+    except RuntimeError:
+        return []
+    except Exception:
+        return []
 
 
 def _render_tool(tool: BaseTool) -> str:
@@ -78,7 +92,7 @@ class SystemPromptBuilder:
 
         tool_blocks = _SECTION_SEP.join(_render_tool(t) for t in tools)
         section = (
-            "## 工具系统\n\n"
+            "# 工具系统\n\n"
             "你可以调用以下工具：\n\n"
             + _SECTION_SEP
             + tool_blocks
@@ -99,7 +113,7 @@ class SystemPromptBuilder:
         unavailable = [s for s in skills if not s.available]
 
         lines: list[str] = [
-            "## 技能系统",
+            "# 技能系统",
             "",
             "以下是可供调用的技能列表（仅展示元信息）。",
             "",
@@ -109,14 +123,14 @@ class SystemPromptBuilder:
         ]
 
         if available:
-            lines += ["", "### 可使用的技能", ""]
+            lines += ["", "## 可使用的技能", ""]
             for s in available:
                 prefix = f"{s.emoji} " if s.emoji else ""
                 lines.append(f"- {prefix}**{s.name}** — {s.description}")
                 lines.append(f"  path: `{s.path}`")
 
         if unavailable:
-            lines += ["", "### 不可使用的技能（环境变量未配置）", ""]
+            lines += ["", "## 不可使用的技能（环境变量未配置）", ""]
             for s in unavailable:
                 prefix = f"{s.emoji} " if s.emoji else ""
                 missing = ", ".join(s.missing_envs)
@@ -138,11 +152,11 @@ class SystemPromptBuilder:
         """知识系统：只说明何时调用知识工具、如何使用结果，不拼接检索正文。"""
         knowledge_items = _read_knowledge_index()
         lines = [
-            "## 知识系统",
+            "# 知识系统",
             "",
             "当你需要查询项目知识库、配置说明、已入库文档或历史资料时，优先考虑调用 `knowledge_search`。",
             "",
-            "### 当前知识库文件列表",
+            "## 当前知识库文件列表",
         ]
         if knowledge_items:
             for item in knowledge_items:
@@ -153,39 +167,95 @@ class SystemPromptBuilder:
             lines.append("- 当前没有可用的知识库文件。")
         lines.extend([
             "",
-            "### 调用原则",
-            "- 当你遇到自己不知道不明确的问题或者历史事务时，就可以去检索知识完善你的上下文。",
+            "## 调用原则",
+            "- 当你遇到自己不知道不明确的问题或者定义、内容时，就可以去检索知识完善你的上下文。",
             "- 调用前先把用户问题整理成简洁、明确的检索 query。",
             "- 如果一次检索结果不足以支持回答，可以基于已有结果再次检索，但避免重复无效查询。",
             "",
-            "### 使用方式",
+            "## 使用方式",
             "- `knowledge_search` 负责具体检索逻辑，并返回标准化 `tool_result`。",
             "- 你必须把工具返回的 chunk、来源、相似度等信息当作检索依据，而不是把它当作最终答案。",
             "- 拿到结果后，先判断是否足够；足够则基于结果作答，不足则继续检索或明确说明信息不足。",
             "",
-            "### 输出要求",
+            "## 当前 SQLite 知识库文档",
+        ])
+
+        documents = _read_knowledge_documents()
+        if documents:
+            for doc in documents:
+                file_name = doc.get("file_name") or "未知文件"
+                source_name = doc.get("source_name") or "未知来源"
+                status = doc.get("status") or "unknown"
+                chunk_count = doc.get("chunk_count")
+                updated_at = doc.get("updated_at") or "未知时间"
+                lines.append(
+                    f"- `{file_name}`（来源：`{source_name}`，状态：`{status}`，chunks：{chunk_count}，更新于：`{updated_at}`）"
+                )
+        else:
+            lines.append("- 当前没有可用的 SQLite 知识库文档。")
+
+        lines.extend([
+            "",
+            "## 输出要求",
             "- 作答时尽量引用检索到的来源信息。",
             "- 不要编造知识库中不存在的内容。",
             "- 如果没有命中足够相关的 chunk，明确告知用户未检索到可用结果。",
         ])
+
         self._sections.append("\n".join(lines))
 
         return self
 
     def add_workspace(self) -> "SystemPromptBuilder":
-        """工作空间（预留）。"""
+        """工作空间：直接读取 RULE.md 并拼接到上下文中。"""
+        rule_path = Path(__file__).resolve().parent / "docs" / "RULE.md"
+        if not rule_path.exists():
+            return self
+
+        rule_text = rule_path.read_text(encoding="utf-8").strip()
+        if not rule_text:
+            return self
+
+        self._sections.append("\n\n" + rule_text + "\n\n")
         return self
 
     def add_user_identity(self) -> "SystemPromptBuilder":
-        """用户身份（预留）。"""
+        """用户身份：直接读取 USER.md 并拼接到上下文中。"""
+        user_path = Path(__file__).resolve().parent / "docs" / "USER.md"
+        if not user_path.exists():
+            return self
+
+        user_text = user_path.read_text(encoding="utf-8").strip()
+        if not user_text:
+            return self
+
+        self._sections.append("\n\n" + user_text + "\n\n")
         return self
 
     def add_project_context(self) -> "SystemPromptBuilder":
-        """项目上下文（预留）。"""
+        """项目上下文：依次读取 ME.md 与 MEMORY.md 并拼接到上下文中。"""
+        me_path = Path(__file__).resolve().parent / "docs" / "ME.md"
+        memory_path = Path(__file__).resolve().parent / "docs" / "MEMORY.md"
+
+        sections: list[str] = []
+        for title, path in (("自我信息", me_path), ("记忆信息", memory_path)):
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8").strip()
+            if not text:
+                continue
+            sections.append(f"\n\n{text}")
+
+        if sections:
+            self._sections.append("\n\n---\n\n".join(sections))
         return self
 
     def add_runtime_info(self   ) -> "SystemPromptBuilder":
-        """运行时信息（预留）。"""
+        """运行时信息：读取当前系统时间并拼接到上下文中。"""
+        from datetime import datetime
+
+        now_text = datetime.now().astimezone().isoformat(timespec="seconds")
+        self._sections.append(f"## 系统时钟\n\n当前系统时间：`{now_text}`")
         return self
 
     # ------------------------------------------------------------------ #
