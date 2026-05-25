@@ -52,11 +52,10 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def main() -> None:
-    """命令行入口：配置日志后以 uvicorn 启动 ASGI 应用。"""
+def run_uvicorn() -> None:
+    """仅启动 uvicorn（不重新配置日志）。"""
     import uvicorn
-    # 日志配置
-    log_config()
+
     settings = get_settings()
     logging.info("流明Agent已经启动，配置读取完毕")
     uvicorn.run(
@@ -65,6 +64,12 @@ def main() -> None:
         port=settings.port,
         reload=settings.reload,
     )
+
+
+def main() -> None:
+    """Web 入口（仅 HTTP，无 CLI）：配置日志后启动 uvicorn。"""
+    log_config()
+    run_uvicorn()
 
 
 if __name__ == "__main__":
