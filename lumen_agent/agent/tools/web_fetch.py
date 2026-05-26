@@ -5,8 +5,12 @@ from __future__ import annotations
 import mimetypes
 from urllib.parse import urlparse
 
+import httpx
+
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
+from lumen_agent.infrastructure.http_pool import get_http_pool
+
 
 _DEFAULT_TIMEOUT = 30
 _MAX_TIMEOUT = 120
@@ -92,12 +96,7 @@ class WebFetch(BaseTool):
                 f"[binary] URL 指向二进制文件（扩展名 {ext}），不予下载内容。\nURL: {url}"
             )
 
-        # --- 发起请求 ---
-        try:
-            import httpx
-        except ImportError:
-            return ToolResult.error("缺少依赖 'httpx'，请执行：pip install httpx")
-
+        # --- 发起请求（复用模块级连接池，避免 OOM） ---
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -108,12 +107,8 @@ class WebFetch(BaseTool):
         }
 
         try:
-            async with httpx.AsyncClient(
-                follow_redirects=True,
-                timeout=timeout,
-                headers=headers,
-            ) as client:
-                response = await client.get(url)
+            pool = get_http_pool()
+            response = await pool.send("GET", url, headers=headers, timeout=timeout)
         except httpx.TimeoutException:
             return ToolResult.error(f"请求超时（{timeout} 秒）：{url}")
         except httpx.RequestError as exc:

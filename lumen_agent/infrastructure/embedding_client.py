@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from lumen_agent.config import Settings
-
+from lumen_agent.infrastructure.http_pool import get_http_pool
 
 class AlibabaEmbeddingClient:
     """阿里云 text-embedding-v4 客户端封装。"""
@@ -46,12 +44,10 @@ class AlibabaEmbeddingClient:
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """发送 HTTP 请求到 embedding 服务。"""
         url = self._settings.embedding_base_url.rstrip("/")
-        timeout = httpx.Timeout(120.0, connect=10.0)
-        # 使用异步客户端发请求，避免阻塞事件循环。
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, headers=self._headers(), json=payload)
-            response.raise_for_status()
-            return response.json()
+        pool = get_http_pool()
+        response = await pool.send("POST", url, headers=self._headers(), json=payload)
+        response.raise_for_status()
+        return response.json()
 
     @staticmethod
     def _extract_embeddings(data: dict[str, Any]) -> list[list[float]]:

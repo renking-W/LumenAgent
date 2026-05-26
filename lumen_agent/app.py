@@ -16,8 +16,12 @@ from lumen_agent.config import get_settings, log_config
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """应用生命周期钩子（启动/关闭前后可扩展连接池等）。"""
+    """应用生命周期钩子：启动/关闭时管理连接池等。"""
     yield
+    # ── 关闭全局 HTTP 连接池（共享 client + 所有活跃流式连接） ──
+    from lumen_agent.infrastructure.http_pool import get_http_pool
+
+    await get_http_pool().close_all()
 
 
 def create_app() -> FastAPI:

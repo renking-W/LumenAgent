@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator
-
-import httpx
+from collections.abc import AsyncIterator
+from typing import Any
 
 from lumen_agent.config import Settings
 from lumen_agent.domain.messages import ensure_blocks
+from lumen_agent.infrastructure.http_pool import get_http_pool
+
 
 
 def _to_openai_tools(internal_tools: list[dict]) -> list[dict]:
@@ -178,11 +179,10 @@ class DeepSeekHttpClient:
         api_messages = _to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
 
-        timeout = httpx.Timeout(120.0, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        pool = get_http_pool()
+        response = await pool.send("POST", url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         choices = data.get("choices") or []
         if not choices:
@@ -205,10 +205,8 @@ class DeepSeekHttpClient:
     ) -> AsyncIterator[tuple[str, str | dict]]:
         """流式调用上游，解析 SSE ``data:`` 行，逐段 yield ``(kind, data)``。
 
-        kind 取值：
-          "content"           – 文本增量（str）
-          "reasoning_content" – 思维链增量（str）
-          "tool_use"          – 工具调用块（dict，仅当传入 tools 时）
+        kind 取值同 ``StreamHandle.receive()``。
+        使用 ``StreamHandle`` 独立管理连接生命周期，不跨 task 操作。
         """
         url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
         headers = self._chat_headers()
@@ -217,93 +215,8 @@ class DeepSeekHttpClient:
             api_messages, temperature=temperature, stream=True, tools=tools
         )
 
-        # 按 index 累积工具调用的 arguments 片段
-        # {index: {id, name, arguments}}
-        pending_tool_calls: dict[int, dict[str, str]] = {}
-        finish_reason: str | None = None
-
-        timeout = httpx.Timeout(120.0, connect=10.0)
-        # 异步发http请求
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as response:
-                if response.status_code >= 400:
-                    body = await response.aread()
-                    try:
-                        detail = body.decode("utf-8", errors="replace")[:4000]
-                    except Exception:
-                        detail = repr(body)
-                    raise RuntimeError(
-                        f"upstream HTTP {response.status_code} on chat/completions: {detail}"
-                    )
-                response.raise_for_status()
-                # 获取大模型返回数据（异步获取）
-                async for line in response.aiter_lines():
-                    # 去除首尾空白
-                    line = line.strip()
-                    if not line or line.startswith(":"):
-                        continue
-                    # 去除非数据行
-                    if not line.startswith("data:"):
-                        continue
-                    # 获取返回具体数据
-                    data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        obj: dict[str, Any] = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    # 有error数据直接中断
-                    err = obj.get("error")
-                    if err is not None:
-                        msg = (
-                            err.get("message") or json.dumps(err, ensure_ascii=False)
-                            if isinstance(err, dict)
-                            else str(err)
-                        )
-                        raise RuntimeError(msg)
-
-                    choices = obj.get("choices") or []
-                    if not choices:
-                        continue
-
-                    choice = choices[0] or {}
-                    finish_reason = choice.get("finish_reason") or finish_reason
-                    delta: dict[str, Any] = choice.get("delta") or {}
-
-                    # 普通文本 / 思维链
-                    for field in ("reasoning_content", "content"):
-                        piece = delta.get(field)
-                        if isinstance(piece, str) and piece:
-                            yield (field, piece)
-
-                    # 工具调用 delta 累积
-                    tc_deltas: list[dict] = delta.get("tool_calls") or []
-                    for tc_delta in tc_deltas:
-                        idx: int = tc_delta.get("index", 0)
-                        if idx not in pending_tool_calls:
-                            pending_tool_calls[idx] = {
-                                "id": tc_delta.get("id", ""),
-                                "name": (tc_delta.get("function") or {}).get("name", ""),
-                                "arguments": "",
-                            }
-                        args_piece = (tc_delta.get("function") or {}).get("arguments", "")
-                        if args_piece:
-                            pending_tool_calls[idx]["arguments"] += args_piece
-
-        # 流结束后，若有累积的工具调用则一次性 yield
-        if pending_tool_calls:
-            for tc in pending_tool_calls.values():
-                try:
-                    parsed_input = json.loads(tc["arguments"]) if tc["arguments"] else {}
-                except json.JSONDecodeError:
-                    parsed_input = {"_raw": tc["arguments"]}
-                yield (
-                    "tool_use",
-                    {
-                        "type": "tool_use",
-                        "id": tc["id"],
-                        "name": tc["name"],
-                        "input": parsed_input,
-                    },
-                )
+        pool = get_http_pool()
+        handle = pool.send_stream("POST", url, headers=headers, json=payload)
+        await handle.connect()
+        async for kind, data in handle.receive():
+            yield (kind, data)
