@@ -13,8 +13,8 @@ from lumen_agent.agent.tools.base import BaseTool
 from lumen_agent.infrastructure.sqlite_knowledge import SqliteKnowledgeRepository
 
 _SECTION_SEP = "\n\n---\n\n"
-_PROMPT_DOCS_DIR = Path(__file__).resolve().parent / "docs"
-_MEMORY_UTILS = MemoryFileUtils.from_prompt_docs_path(_PROMPT_DOCS_DIR)
+_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "work_space"
+_MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_WORKSPACE_DIR)
 
 
 def _read_knowledge_index() -> list[dict]:
@@ -197,7 +197,7 @@ class SystemPromptBuilder:
     # --------------------------------
     def add_workspace(self) -> "SystemPromptBuilder":
         """工作空间：直接读取 RULE.md 并拼接到上下文中。"""
-        rule_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "RULE.md")
+        rule_text = _MEMORY_UTILS.read_text_if_exists(_WORKSPACE_DIR / "RULE.md")
         if rule_text:
             self._sections.append(rule_text)
         return self
@@ -206,7 +206,7 @@ class SystemPromptBuilder:
     # 6. 用户信息
     # ------------------------------------------------------------------ #
     def add_user_identity(self) -> "SystemPromptBuilder":
-        user_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "USER.md")
+        user_text = _MEMORY_UTILS.read_text_if_exists(_WORKSPACE_DIR / "USER.md")
         if user_text:
             self._sections.append(user_text)
         return self
@@ -215,7 +215,7 @@ class SystemPromptBuilder:
     # 7. 系统上下文
     # ------------------------------------------------------------------ #
     def add_project_context(self) -> "SystemPromptBuilder":
-        me_text = _MEMORY_UTILS.read_text_if_exists(_PROMPT_DOCS_DIR / "ME.md")
+        me_text = _MEMORY_UTILS.read_text_if_exists(_WORKSPACE_DIR / "ME.md")
         memory_path = _MEMORY_UTILS.memory_file_path()
         # 长期记忆文件
         memory_text = _MEMORY_UTILS.read_text_if_exists(memory_path)

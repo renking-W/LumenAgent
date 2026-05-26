@@ -15,9 +15,9 @@ class MemoryFileUtils:
     memory_dir: Path
 
     @classmethod
-    def from_prompt_docs_path(cls, prompt_docs_path: Path) -> "MemoryFileUtils":
-        """根据 prompts/docs 路径定位到项目 memory 目录。"""
-        return cls(memory_dir=prompt_docs_path.parent.parent.parent / "memory")
+    def from_workspace_path(cls, workspace_path: Path) -> "MemoryFileUtils":
+        """根据 work_space 路径定位到项目 memory 目录。"""
+        return cls(memory_dir=workspace_path / "memory")
 
     def ensure_dir(self) -> Path:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -66,7 +66,7 @@ class MemoryFileUtils:
         message_to_text_fn: Callable[[dict[str, Any]], str],
         db_path: Path,
     ) -> Path:
-        memory_dir = db_path.parent / "memory"
+        memory_dir = db_path.parent.parent / "work_space" / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now()
         file_path = memory_dir / f"{now.strftime('%Y-%m-%d')}.md"
