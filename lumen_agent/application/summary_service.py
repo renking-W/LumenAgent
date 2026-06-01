@@ -127,7 +127,7 @@ def _load_and_refine_memory(prompt_template: str, memory_text: str) -> str:
     return prompt
 
 
-_MEMORY_UTILS = MemoryFileUtils.from_prompt_docs_path(_LONG_MEMORY_PROMPT_PATH)
+_MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_LONG_MEMORY_PROMPT_PATH)
 
 
 def _load_text_if_exists(path: Path) -> str:

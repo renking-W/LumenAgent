@@ -56,12 +56,30 @@ class ConversationRepositoryPort(Protocol):
         """若不存在则创建会话行（幂等）。"""
         ...
 
-    async def list_messages(self, session_id: str) -> list[dict[str, Any]]:
-        """按时间顺序返回 ``role`` / ``content`` 消息列表。"""
+    async def list_messages(
+        self,
+        session_id: str,
+        *,
+        is_all: bool = True,
+    ) -> list[dict[str, Any]]:
+        """按时间顺序返回 ``role`` / ``content`` 消息列表。
+
+        参数:
+            is_all: True(默认)=筛选仅有效消息; False=返回全部(含中断消息)。
+        """
         ...
 
-    async def append_message(self, session_id: str, role: str, content: str) -> None:
-        """在会话末尾追加一条消息并更新会话更新时间。"""
+    async def append_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        status: int = 1,
+    ) -> None:
+        """在会话末尾追加一条消息并更新会话更新时间。
+
+        status: 1=有效, 0=无效(中断).
+        """
         ...
 
     async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
@@ -76,8 +94,14 @@ class ConversationRepositoryPort(Protocol):
         self,
         session_id: str,
         n_messages: int,
+        *,
+        is_all: bool = True,
     ) -> list[dict[str, Any]]:
-        """按 ``seq`` 取最近 ``n_messages`` 条消息（返回时按时间正序）。"""
+        """按 ``seq`` 取最近 ``n_messages`` 条消息（返回时按时间正序）。
+
+        参数:
+            is_all: True(默认)=筛选仅有效消息; False=返回全部(含中断消息)。
+        """
         ...
 
     async def update_summary(

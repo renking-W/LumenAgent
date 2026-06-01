@@ -45,6 +45,7 @@ class SqliteConversationRepository:
                 seq INTEGER NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                status INTEGER NOT NULL DEFAULT 1,
                 description TEXT NOT NULL DEFAULT '对话消息'
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session_seq
@@ -73,17 +74,31 @@ class SqliteConversationRepository:
                 await db.rollback()
                 raise
 
-    async def list_messages(self, session_id: str) -> list[dict[str, Any]]:
-        """查询某会话全部消息，按 ``seq`` 升序。"""
+    async def list_messages(
+        self,
+        session_id: str,
+        *,
+        is_all: bool = True,
+    ) -> list[dict[str, Any]]:
+        """查询某会话全部消息，按 ``seq`` 升序。
+
+        is_all: True=仅有效消息(status=1); False=全部含中断消息。
+        """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             await db.execute("BEGIN")
             try:
-                cursor = await db.execute(
-                    "SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC",
-                    (session_id,),
-                )
+                if is_all:
+                    cursor = await db.execute(
+                        "SELECT role, content FROM messages WHERE session_id = ? AND status = 1 ORDER BY seq ASC",
+                        (session_id,),
+                    )
+                else:
+                    cursor = await db.execute(
+                        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC",
+                        (session_id,),
+                    )
                 rows = await cursor.fetchall()
                 await db.commit()
             except Exception:
@@ -91,8 +106,17 @@ class SqliteConversationRepository:
                 raise
         return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in rows]
 
-    async def append_message(self, session_id: str, role: str, content: Any) -> None:
-        """分配下一个 ``seq`` 插入 ``messages``，并刷新 ``sessions.updated_at``。"""
+    async def append_message(
+        self,
+        session_id: str,
+        role: str,
+        content: Any,
+        status: int = 1,
+    ) -> None:
+        """分配下一个 ``seq`` 插入 ``messages``，并刷新 ``sessions.updated_at``。
+
+        status: 1=有效, 0=无效(中断).
+        """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
         content_json = blocks_to_json(ensure_blocks(content))
@@ -108,10 +132,10 @@ class SqliteConversationRepository:
                 next_seq = int(row["next_seq"] if row is not None else 0)
                 await db.execute(
                     """
-                    INSERT INTO messages (session_id, seq, role, content)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO messages (session_id, seq, role, content, status)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (session_id, next_seq, role, content_json),
+                    (session_id, next_seq, role, content_json, status),
                 )
                 await db.execute(
                     "UPDATE sessions SET updated_at = ? WHERE id = ?",
@@ -150,22 +174,38 @@ class SqliteConversationRepository:
         self,
         session_id: str,
         n_messages: int,
+        *,
+        is_all: bool = True,
     ) -> list[dict[str, Any]]:
-        """按 ``seq`` 倒序取最近 ``n_messages`` 条消息，返回时已反转为时间正序。"""
+        """按 ``seq`` 倒序取最近 ``n_messages`` 条消息，返回时已反转为时间正序。
+
+        is_all: True=仅有效消息(status=1); False=全部含中断消息。
+        """
         if n_messages <= 0:
             return []
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
-            cursor = await db.execute(
-                """
-                SELECT role, content FROM messages
-                WHERE session_id = ?
-                ORDER BY seq DESC
-                LIMIT ?
-                """,
-                (session_id, n_messages),
-            )
+            if is_all:
+                cursor = await db.execute(
+                    """
+                    SELECT role, content FROM messages
+                    WHERE session_id = ? AND status = 1
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (session_id, n_messages),
+                )
+            else:
+                cursor = await db.execute(
+                    """
+                    SELECT role, content FROM messages
+                    WHERE session_id = ?
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (session_id, n_messages),
+                )
             rows = await cursor.fetchall()
         return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in reversed(rows)]
 

@@ -1,4 +1,4 @@
-"""SKILL 加载器：扫描 skills/ 目录，解析 frontmatter，校验 env，提供 mtime 缓存。"""
+"""SKILL 加载器：扫描 work_space/skills/ 目录，解析 frontmatter，校验 env，提供 mtime 缓存。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from lumen_agent.agent.skills.meta import SkillMeta, SkillRequires
 
 logger = logging.getLogger(__name__)
 
-SKILLS_DIR = Path(__file__).resolve().parent
+SKILLS_DIR = Path(__file__).resolve().parents[3] / "work_space" / "skills"
 
 # 缓存：(max_mtime, file_count, list[SkillMeta])
 # 任一 SKILL.md 的修改时间或文件数量变化都会触发重新加载
@@ -21,7 +21,7 @@ _CACHE: tuple[float, int, list[SkillMeta]] | None = None
 
 
 def load_skills() -> list[SkillMeta]:
-    """扫描 skills/ 下所有一级子目录的 SKILL.md，返回解析后的元数据列表。
+    """扫描 work_space/skills/ 下所有一级子目录的 SKILL.md，返回解析后的元数据列表。
 
     结果按 mtime 签名缓存；任一文件改动自动失效。
     """

@@ -32,7 +32,7 @@ async def get_session_messages(
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> list[StoredMessage]:
     """返回指定会话下的全部消息（按存储顺序）。"""
-    messages = await repo.list_messages(session_id)
+    messages = await repo.list_messages(session_id, is_all=False)
     return [StoredMessage.model_validate(m) for m in messages]
 
 
