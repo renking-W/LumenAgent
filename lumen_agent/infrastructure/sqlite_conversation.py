@@ -46,12 +46,22 @@ class SqliteConversationRepository:
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 status INTEGER NOT NULL DEFAULT 1,
-                description TEXT NOT NULL DEFAULT '对话消息'
+                description TEXT NOT NULL DEFAULT '对话消息',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session_seq
             ON messages(session_id, seq);
             """
         )
+        # Migration: 为旧数据库补加 created_at / updated_at 字段
+        for col in ("created_at", "updated_at"):
+            try:
+                await db.execute(
+                    f"ALTER TABLE messages ADD COLUMN {col} TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))"
+                )
+            except aiosqlite.OperationalError:
+                pass  # 字段已存在
         await db.commit()
 
     async def ensure_session(self, session_id: str) -> None:
@@ -91,12 +101,12 @@ class SqliteConversationRepository:
             try:
                 if is_all:
                     cursor = await db.execute(
-                        "SELECT role, content FROM messages WHERE session_id = ? AND status = 1 ORDER BY seq ASC",
+                        "SELECT role, content, created_at, updated_at, status FROM messages WHERE session_id = ? AND status = 1 ORDER BY seq ASC",
                         (session_id,),
                     )
                 else:
                     cursor = await db.execute(
-                        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC",
+                        "SELECT role, content, created_at, updated_at, status FROM messages WHERE session_id = ? ORDER BY seq ASC",
                         (session_id,),
                     )
                 rows = await cursor.fetchall()
@@ -104,7 +114,16 @@ class SqliteConversationRepository:
             except Exception:
                 await db.rollback()
                 raise
-        return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in rows]
+        return [
+            {
+                "role": r["role"],
+                "content": ensure_blocks(r["content"]),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+                "status": int(r["status"]),
+            }
+            for r in rows
+        ]
 
     async def append_message(
         self,
@@ -189,7 +208,7 @@ class SqliteConversationRepository:
             if is_all:
                 cursor = await db.execute(
                     """
-                    SELECT role, content FROM messages
+                    SELECT role, content, created_at, updated_at FROM messages
                     WHERE session_id = ? AND status = 1
                     ORDER BY seq DESC
                     LIMIT ?
@@ -199,7 +218,7 @@ class SqliteConversationRepository:
             else:
                 cursor = await db.execute(
                     """
-                    SELECT role, content FROM messages
+                    SELECT role, content, created_at, updated_at FROM messages
                     WHERE session_id = ?
                     ORDER BY seq DESC
                     LIMIT ?
@@ -207,7 +226,15 @@ class SqliteConversationRepository:
                     (session_id, n_messages),
                 )
             rows = await cursor.fetchall()
-        return [{"role": r["role"], "content": ensure_blocks(r["content"])} for r in reversed(rows)]
+        return [
+            {
+                "role": r["role"],
+                "content": ensure_blocks(r["content"]),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in reversed(rows)
+        ]
 
     async def update_summary(
         self,
@@ -252,6 +279,20 @@ class SqliteConversationRepository:
             row = await cursor.fetchone()
             await db.commit()
         return int(row["count"]) if row is not None else 0
+
+    async def delete_session(self, session_id: str) -> bool:
+        """删除会话及关联消息（ON DELETE CASCADE），不存在返回 False。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+            )
+            if not await cursor.fetchone():
+                return False
+            await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            await db.commit()
+        return True
 
     async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
         """分页返回会话列表（``updated_at`` 倒序）。"""

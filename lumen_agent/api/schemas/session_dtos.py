@@ -51,10 +51,27 @@ class ContentBlock(BaseModel):
 
 
 class StoredMessage(BaseModel):
-    """单条历史消息。"""
+    """单条历史消息（含时间戳和状态）。"""
 
     role: str
     content: list[ContentBlock]
+    created_at: str
+    updated_at: str
+    status: int
+
+
+class InterruptRequest(BaseModel):
+    """``POST /v1/chat/stream/interrupt`` 请求体。"""
+
+    session_id: str
+
+
+class AppendMessageRequest(BaseModel):
+    """``POST /v1/sessions/{session_id}/messages`` 请求体。"""
+
+    role: str
+    content: str | list[dict[str, Any]]
+    status: int = 1
 
 
 class SessionSummaryDetail(BaseModel):

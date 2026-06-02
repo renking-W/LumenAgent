@@ -55,3 +55,23 @@ def ensure_blocks(content: Any) -> list[ContentBlock]:
 def blocks_to_json(blocks: list[ContentBlock]) -> str:
     """将内容块列表序列化为 JSON 字符串。"""
     return json.dumps(blocks, ensure_ascii=False)
+
+
+def normalize_content_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将前端的 ContentBlock 列表转换为内部存储兼容的格式。
+
+    主要处理：
+    - ``tool_result``：Anthropic API 中 content 为 ``list[ContentBlock]``，
+      内部存储需要转为 JSON 字符串。
+    """
+    result: list[dict[str, Any]] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block = dict(block)  # 防御性拷贝
+        if block.get("type") == "tool_result":
+            content = block.get("content")
+            if isinstance(content, list):
+                block["content"] = json.dumps(content, ensure_ascii=False)
+        result.append(block)
+    return result

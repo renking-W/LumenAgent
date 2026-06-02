@@ -62,7 +62,7 @@ class ConversationRepositoryPort(Protocol):
         *,
         is_all: bool = True,
     ) -> list[dict[str, Any]]:
-        """按时间顺序返回 ``role`` / ``content`` 消息列表。
+        """按时间顺序返回 ``role`` / ``content`` / ``created_at`` / ``updated_at`` 消息列表。
 
         参数:
             is_all: True(默认)=筛选仅有效消息; False=返回全部(含中断消息)。
@@ -97,7 +97,8 @@ class ConversationRepositoryPort(Protocol):
         *,
         is_all: bool = True,
     ) -> list[dict[str, Any]]:
-        """按 ``seq`` 取最近 ``n_messages`` 条消息（返回时按时间正序）。
+        """按 ``seq`` 取最近 ``n_messages`` 条消息（返回时按时间正序），
+        每条含 ``role`` / ``content`` / ``created_at`` / ``updated_at``。
 
         参数:
             is_all: True(默认)=筛选仅有效消息; False=返回全部(含中断消息)。
@@ -116,6 +117,10 @@ class ConversationRepositoryPort(Protocol):
 
     async def increment_round_counter(self, session_id: str) -> int:
         """轮次 +1（助手落库后调用），返回新的 ``count``。"""
+        ...
+
+    async def delete_session(self, session_id: str) -> bool:
+        """删除会话及其全部消息。返回是否实际删除（不存在返回 False）。"""
         ...
 
 @runtime_checkable

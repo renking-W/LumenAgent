@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from lumen_agent.infrastructure.deepseek_client import DeepSeekHttpClient
-from lumen_agent.model_adapters.base import ModelAdapter
+from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 
 class DeepSeekAdapter(ModelAdapter):
@@ -30,5 +30,11 @@ class DeepSeekAdapter(ModelAdapter):
         *,
         tools: list[dict] | None = None,
         temperature: float | None = None,
+        on_connect: StreamHandleCallback | None = None,
     ) -> AsyncIterator[tuple[str, str | dict]]:
-        return self._client.chat_stream(messages, temperature=temperature, tools=tools)
+        return self._client.chat_stream(
+            messages,
+            temperature=temperature,
+            tools=tools,
+            on_connect=on_connect,
+        )

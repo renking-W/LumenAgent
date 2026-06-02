@@ -11,7 +11,7 @@ from lumen_agent.agent.context import ContextManager, ToolExecutionGuard
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 from lumen_agent.config import Settings
-from lumen_agent.model_adapters.base import ModelAdapter
+from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,8 @@ class AgentStreamExecutor:
     async def run_stream(
         self,
         messages: list[dict[str, Any]],
+        *,
+        on_connect: StreamHandleCallback | None = None,
     ) -> AsyncIterator[tuple[str, str | dict | list]]:
         """主入口：启动工具循环，yield 事件流。
 
@@ -82,7 +84,7 @@ class AgentStreamExecutor:
             # ── 1. 流式调用模型  这里循环调用llm，直到llm返回一个done为止
             try:
                 async for kind, data in self.adapter.chat_stream(
-                    messages, tools=self.tool_schemas
+                    messages, tools=self.tool_schemas, on_connect=on_connect
                 ):
                     if kind == "content":
                         full_content += data  # type: ignore[operator]

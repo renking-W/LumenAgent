@@ -13,7 +13,7 @@ from lumen_agent.application.summary_service import maybe_trigger_summary
 from lumen_agent.config import Settings
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
-from lumen_agent.model_adapters.base import ModelAdapter
+from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 
 async def reply_single_turn(
@@ -67,8 +67,13 @@ async def reply_single_turn_stream(
     session_id: str,
     user_message: str,
     settings: Settings,
+    on_connect: StreamHandleCallback | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
-    """处理单轮会话请求——流式输出，yield ``(kind, delta)``。"""
+    """处理单轮会话请求——流式输出，yield ``(kind, delta)``。
+
+    参数:
+        on_connect: 连接建立后的回调，传递 ``StreamHandle`` 供注册到中断注册表。
+    """
     # 1) 会话准备 + 用户消息落库
     await repo.ensure_session(session_id)
     user_blocks = text_message("user", user_message)["content"]
@@ -94,7 +99,7 @@ async def reply_single_turn_stream(
 
     # 3) 流式生成；只累加 content 部分落库，reasoning_content 透传但不入库
     accumulated = ""
-    async for kind, chunk in llm.chat_stream(messages):
+    async for kind, chunk in llm.chat_stream(messages, on_connect=on_connect):
         if kind == "content":
             accumulated += chunk
         yield (kind, chunk)
@@ -114,6 +119,7 @@ async def reply_with_agent(
     session_id: str,
     user_message: str,
     settings: Settings,
+    on_connect: StreamHandleCallback | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
 
@@ -167,7 +173,7 @@ async def reply_with_agent(
 
     # 5) 运行工具循环，处理事件流
     final_text = ""
-    async for kind, data in executor.run_stream(messages):
+    async for kind, data in executor.run_stream(messages, on_connect=on_connect):
         if kind == "new_messages":
             # 将 Agent 执行期间新产生的所有消息（tool_use / tool_result / assistant）落库
             # 跳过已落库的 user 消息（assemble_for_llm 已过滤历史 user，本轮 user 在步骤 1 落库）
@@ -198,8 +204,7 @@ async def reply_with_agent(
             yield (kind, data)
 
     # 6) 轮次 +1（仅最终 assistant 回复落库后触发，tool 调用不计入）
-    #    注意：assistant 最终文本消息已由 new_messages 事件落库（agent 最后一条 assistant 消息）
-    #    但如果 Agent 以 error 终止没有 assistant 文本，则 final_text 为空，不额外落库。
+    #    assistant 最终文本消息已由 new_messages 事件落库（agent 最后一条 assistant 消息）
     if final_text.strip():
         new_count = await repo.increment_round_counter(session_id)
         logging.info(f"[Agent] session={session_id} 工具循环结束 count={new_count}")

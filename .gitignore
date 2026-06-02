@@ -22,6 +22,11 @@ lumen_agent/workspace/
 # Logs
 lumen_agent/log/
 
+# Frontend
+node_modules/
+webChannel/node_modules/
+webChannel/.vite/
+
 /会话摘要开发指南.md
 
 uv.lock

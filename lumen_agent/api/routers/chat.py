@@ -1,4 +1,4 @@
-"""对话路由：`POST /v1/chat` 整段 JSON；`POST /v1/chat/stream` SSE。"""
+"""对话路由：`POST /v1/chat` 整段 JSON；`POST /v1/chat/stream` SSE；`POST /v1/chat/stream/interrupt` 中断流式对话。"""
 import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from lumen_agent.api.dependency import get_conversation_repo, get_llm_client
-from lumen_agent.api.schemas.session_dtos import ChatRequest, ChatResponse
+from lumen_agent.api.schemas.session_dtos import ChatRequest, ChatResponse, InterruptRequest
 from lumen_agent.api.schemas.stream_events import (
     StreamErrorData,
     StreamErrorEvent,
@@ -22,6 +22,8 @@ from lumen_agent.application.llm_error_policy import (
 from lumen_agent.config import Settings, get_settings
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
+from lumen_agent.infrastructure.http_pool import StreamHandle
+from lumen_agent.infrastructure.sse_registry import get_sse_registry
 from lumen_agent.model_adapters.base import ModelAdapter
 
 router = APIRouter(prefix="/v1", tags=["chat"])
@@ -98,27 +100,29 @@ async def post_chat_stream(
 
     response_headers = {**_SSE_HEADERS, "X-Session-Id": session_id}
 
+    # ── 中断注册表 ───────────────────────────────────────────────
+    registry = get_sse_registry()
+
+    async def on_connect(handle: StreamHandle) -> None:
+        """LLM 连接建立后注册到中断注册表。"""
+        await registry.register(session_id, handle)
+
     if body.mode == "agent":
         stream_it = reply_with_agent(
-            repo,
-            llm,
-            session_id,
-            body.message,
-            settings,
+            repo, llm, session_id, body.message, settings,
+            on_connect=on_connect,
         )
     else:
         stream_it = reply_single_turn_stream(
-            repo,
-            llm,
-            session_id,
-            body.message,
-            settings,
+            repo, llm, session_id, body.message, settings,
+            on_connect=on_connect,
         )
     agen = stream_it.__aiter__()
     try:
         first_kind, first_delta = await agen.__anext__()
     except StopAsyncIteration:
         logging.warning("大模型无增量返回")
+        await registry.unregister(session_id)
 
         async def empty_stream() -> AsyncIterator[str]:
             """无增量时仅结束标记。"""
@@ -130,6 +134,7 @@ async def post_chat_stream(
             headers=response_headers,
         )
     except _LLM_STREAM_FAILURES as e:
+        await registry.unregister(session_id)
         raise HTTPException(
             status_code=llm_chain_failure_http_status(e),
             detail=llm_chain_failure_detail(e),
@@ -137,17 +142,38 @@ async def post_chat_stream(
 
     async def event_stream() -> AsyncIterator[str]:
         """通过 StreamEventDispatcher 派发每个 (kind, delta)，正常结束或错误后输出 ``[DONE]``。"""
-        yield StreamEventDispatcher.dispatch(first_kind, first_delta)
         try:
-            async for kind, delta in agen:
-                yield StreamEventDispatcher.dispatch(kind, delta)
-            yield "data: [DONE]\n\n"
-        except _LLM_STREAM_FAILURES as e:
-            yield _sse_error_line(e)
-            yield "data: [DONE]\n\n"
+            yield StreamEventDispatcher.dispatch(first_kind, first_delta)
+            try:
+                async for kind, delta in agen:
+                    yield StreamEventDispatcher.dispatch(kind, delta)
+                yield "data: [DONE]\n\n"
+            except _LLM_STREAM_FAILURES as e:
+                yield _sse_error_line(e)
+                yield "data: [DONE]\n\n"
+        finally:
+            await registry.unregister(session_id)
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
         headers=response_headers,
     )
+
+
+@router.post("/chat/stream/interrupt")
+async def interrupt_stream(body: InterruptRequest) -> dict:
+    """中断指定会话的活跃流式连接。
+
+    关闭上游 StreamHandle（LLM HTTP 连接），流式生成器随之结束。
+    前端检测到流中断后，可自行通过 ``POST /v1/sessions/{session_id}/messages`` 保存 partial 内容。
+    """
+    registry = get_sse_registry()
+    ok = await registry.interrupt(body.session_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active stream for session {body.session_id}",
+        )
+    logging.info(f"会话 {body.session_id} 流式连接已中断")
+    return {"status": "interrupted", "session_id": body.session_id}

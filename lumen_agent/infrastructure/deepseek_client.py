@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Awaitable
 from typing import Any
 
 from lumen_agent.config import Settings
 from lumen_agent.domain.messages import ensure_blocks
-from lumen_agent.infrastructure.http_pool import get_http_pool
+from lumen_agent.infrastructure.http_pool import StreamHandle, get_http_pool
+
+# 连接建立后的回调类型
+StreamHandleCallback = Callable[[StreamHandle], Awaitable[None]]
 
 
 
@@ -202,11 +205,15 @@ class DeepSeekHttpClient:
         *,
         temperature: float | None = None,
         tools: list[dict] | None = None,
+        on_connect: StreamHandleCallback | None = None,
     ) -> AsyncIterator[tuple[str, str | dict]]:
         """流式调用上游，解析 SSE ``data:`` 行，逐段 yield ``(kind, data)``。
 
         kind 取值同 ``StreamHandle.receive()``。
         使用 ``StreamHandle`` 独立管理连接生命周期，不跨 task 操作。
+
+        参数:
+            on_connect: 连接建立后的回调，接收 ``StreamHandle`` 供注册到中断注册表。
         """
         url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
         headers = self._chat_headers()
@@ -218,5 +225,7 @@ class DeepSeekHttpClient:
         pool = get_http_pool()
         handle = pool.send_stream("POST", url, headers=headers, json=payload)
         await handle.connect()
+        if on_connect is not None:
+            await on_connect(handle)
         async for kind, data in handle.receive():
             yield (kind, data)
