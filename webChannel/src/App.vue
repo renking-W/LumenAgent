@@ -44,20 +44,6 @@
         </button>
       </nav>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>连接状态</h2>
-          <el-tag :type="connected ? 'success' : 'danger'" effect="dark">
-            {{ connected ? '已连接' : '未连接' }}
-          </el-tag>
-        </div>
-        <div class="kv">API Base <code>{{ apiBase || 'same-origin' }}</code></div>
-        <div class="kv">Session <code>{{ activeSessionId || '新会话' }}</code></div>
-        <div class="actions-row">
-          <el-button size="small" @click="refreshCapabilities">刷新能力</el-button>
-          <el-button size="small" type="warning" plain @click="resetConversation">新会话</el-button>
-        </div>
-      </section>
     </el-aside>
 
     <!-- ======== 右侧：顶栏 + 主体 + 底部输入 ======== -->
@@ -85,9 +71,13 @@
           :active-session-id="activeSessionId"
           :streaming-message-id="streamingMessageId"
           :is-near-bottom="isNearBottom"
+          :loading-more="loadingMore"
+          :has-more="hasMore"
           @select-session="loadSessionMessages"
           @scroll-to-bottom="scrollToBottom"
           @delete-session="onDeleteSession"
+          @new-session="resetConversation"
+          @load-more="loadMoreMessages"
           @retry="handleRetry"
         />
         <ToolView   v-else-if="activeView === 'tools'"  :tools="tools" :connected="connected" />
@@ -119,7 +109,6 @@ import SkillView from './components/SkillView.vue'
 import AppComposer from './components/AppComposer.vue'
 
 // ── state ──────────────────────────────────────────
-const apiBase = ''
 const sidebarVisible = ref(false)
 const activeView = ref<'chat' | 'tools' | 'skills'>('chat')
 const connected = ref(false)
@@ -136,6 +125,11 @@ const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 const abortController = ref<AbortController | null>(null)
 
 const messages = reactive<ChatMessage[]>([])
+
+// ── 游标分页 ──────────────────────────────────────
+const beforeSeq = ref<number | undefined>(undefined)
+const loadingMore = ref(false)
+const hasMore = ref(true)
 
 // ── 流式过程中独立维护的分组列表（中断时从此读取，不依赖 messages 的 blocks） ──
 const pendingTexts = ref<ChatBlock[]>([])
@@ -179,11 +173,8 @@ const onMainScroll = () => {
   isNearBottom.value = diff < SCROLL_THRESHOLD
 }
 
-const scrollToBottom = async () => {
-  await nextTick()
-  const el = getMainEl()
-  if (!el) return
-  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+const scrollToBottom = () => {
+  chatViewRef.value?.scrollPaneToBottom()
   isNearBottom.value = true
 }
 
@@ -191,7 +182,10 @@ const scrollToBottom = async () => {
 watch(
   () => messages.map((m) => m.blocks.length).join(','),
   () => {
-    if (isNearBottom.value) scrollToBottom()
+    if (isNearBottom.value) {
+      chatViewRef.value?.scrollPaneToBottom()
+      isNearBottom.value = true
+    }
   }
 )
 
@@ -254,6 +248,8 @@ const refreshCapabilities = async () => {
 const resetConversation = () => {
   messages.splice(0)
   activeSessionId.value = ''
+  beforeSeq.value = undefined
+  hasMore.value = true
   statusText.value = '已重置为新会话'
 }
 
@@ -261,112 +257,95 @@ const onDeleteSession = (sessionId: string) => {
   if (activeSessionId.value === sessionId) {
     messages.splice(0)
     activeSessionId.value = ''
+    beforeSeq.value = undefined
+    hasMore.value = true
     statusText.value = '会话已删除'
   }
 }
 
+// ── 分页辅助 ──────────────────────────────────────
+type CB = { type: string; text?: string; thinking?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; id?: string; tool_use_id?: string }
+interface StoredMsg { seq: number; role: string; content: CB[]; created_at: string; updated_at: string; status: number }
+
+const formatStoredTime = (iso: string) => {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const cbToBlock = (cb: CB): ChatBlock => {
+  if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'reasoning', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
+  if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
+  if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
+  return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
+}
+
+/**
+ * 将后端原始 StoredMessage 列表转换成 ChatMessage 数组。
+ * tool_result 已嵌入 assistant 消息内部，每条 StoredMessage 直接映射为一条 ChatMessage。
+ */
+function parseStoredMessages(stored: StoredMsg[]): ChatMessage[] {
+  const result: ChatMessage[] = []
+  for (const sm of stored) {
+    result.push({
+      id: crypto.randomUUID(),
+      role: sm.role as 'user' | 'assistant',
+      roleLabel: sm.role === 'user' ? 'User' : 'Assistant',
+      time: formatStoredTime(sm.created_at),
+      blocks: sm.content.map(cb => cbToBlock(cb)),
+      status: sm.status,
+      seq: sm.seq,
+    })
+  }
+  return result
+}
+
 const loadSessionMessages = async (sessionId: string) => {
   try {
-    const res = await fetch(`/v1/sessions/${sessionId}/messages`)
+    const res = await fetch(`/v1/sessions/${sessionId}/messages?limit=20`)
     if (!res.ok) return
-    type CB = { type: string; text?: string; thinking?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; id?: string; tool_use_id?: string }
-    type StoredMsg = { role: string; content: CB[]; created_at: string; updated_at: string; status: number }
     const stored: StoredMsg[] = await res.json()
     activeSessionId.value = sessionId
+    beforeSeq.value = undefined
+    hasMore.value = stored.length === 20
+    loadingMore.value = false
 
-    const formatStoredTime = (iso: string) => {
-      const d = new Date(iso)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    const parsed = parseStoredMessages(stored)
+    if (parsed.length > 0) {
+      // min seq 作为下次分页的 before 游标
+      beforeSeq.value = Math.min(...stored.map((s) => s.seq))
     }
 
-    // 把一个 CB 转成 ChatBlock
-    const cbToBlock = (cb: CB, isToolResult = false): ChatBlock => {
-      if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'reasoning', title: '思考', content: cb.thinking ?? '', expanded: false }
-      if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: '工具调用', content: pretty(cb.input ?? ''), expanded: false }
-      if (cb.type === 'tool_result' || isToolResult) return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
-      return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
-    }
-
-    const result: ChatMessage[] = []
-    let pendingAssistant: ChatMessage | null = null
-    const toolUsePositions = new Map<string, number>()
-
-    const pushPendingAssistant = () => {
-      if (pendingAssistant) { result.push(pendingAssistant); pendingAssistant = null }
-    }
-
-    const createUserMessage = (content: CB[], createdAt: string, status?: number) => {
-      result.push({
-        id: crypto.randomUUID(),
-        role: 'user',
-        roleLabel: 'User',
-        time: formatStoredTime(createdAt),
-        blocks: content.map((cb) => cbToBlock(cb)),
-        status,
-      })
-    }
-
-    const startOrMergeAssistant = (content: CB[], createdAt: string, status?: number) => {
-      if (!pendingAssistant) {
-        const blocks: ChatBlock[] = []
-        toolUsePositions.clear()
-        for (const cb of content) {
-          const block = cbToBlock(cb)
-          if (cb.type === 'tool_use' && cb.id) toolUsePositions.set(cb.id, blocks.length)
-          blocks.push(block)
-        }
-        pendingAssistant = {
-          id: crypto.randomUUID(), role: 'assistant', roleLabel: 'Assistant',
-          time: formatStoredTime(createdAt), blocks, status,
-        }
-      } else {
-        for (const cb of content) {
-          const block = cbToBlock(cb)
-          if (cb.type === 'tool_use' && cb.id) toolUsePositions.set(cb.id, pendingAssistant.blocks.length)
-          pendingAssistant.blocks.push(block)
-        }
-      }
-    }
-
-    const mergeToolResults = (content: CB[]) => {
-      if (!pendingAssistant) {
-        createUserMessage(content, '')
-        return
-      }
-      for (const cb of content) {
-        const block = cbToBlock(cb, true)
-        const tid = cb.tool_use_id
-        if (tid && toolUsePositions.has(tid)) {
-          const idx = toolUsePositions.get(tid)!
-          pendingAssistant.blocks.splice(idx + 1, 0, block)
-          for (const [key, val] of toolUsePositions) {
-            if (val > idx) toolUsePositions.set(key, val + 1)
-          }
-        } else {
-          pendingAssistant.blocks.push(block)
-        }
-      }
-    }
-
-    for (const sm of stored) {
-      const isToolResultMsg = sm.role === 'user' && sm.content.length > 0 && sm.content.every((cb) => cb.type === 'tool_result')
-      if (isToolResultMsg) {
-        mergeToolResults(sm.content)
-      } else if (sm.role === 'user') {
-        pushPendingAssistant()
-        toolUsePositions.clear()
-        createUserMessage(sm.content, sm.created_at, sm.status)
-      } else if (sm.role === 'assistant') {
-        startOrMergeAssistant(sm.content, sm.created_at, sm.status)
-      }
-    }
-    pushPendingAssistant()
-
-    messages.splice(0, messages.length, ...result)
-    statusText.value = `已加载会话 (${result.length} 条消息)`
+    messages.splice(0, messages.length, ...parsed)
+    statusText.value = `已加载会话 (${parsed.length} 条消息)`
+    await nextTick()
+    chatViewRef.value?.scrollPaneToBottom()
   } catch {
     statusText.value = '加载会话失败'
+  }
+}
+
+const loadMoreMessages = async () => {
+  if (loadingMore.value || !beforeSeq.value || !activeSessionId.value) return
+  loadingMore.value = true
+  try {
+    const res = await fetch(`/v1/sessions/${activeSessionId.value}/messages?limit=20&before=${beforeSeq.value}`)
+    if (!res.ok) return
+    const stored: StoredMsg[] = await res.json()
+    const parsed = parseStoredMessages(stored)
+    if (parsed.length > 0) {
+      beforeSeq.value = Math.min(...stored.map((s) => s.seq))
+      // prepend 到消息列表前端
+      messages.splice(0, 0, ...parsed)
+      hasMore.value = stored.length === 20
+    } else {
+      hasMore.value = false
+    }
+    statusText.value = `共 ${messages.length} 条消息`
+    await nextTick()
+    chatViewRef.value?.restoreScrollAfterPrepend()
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -376,11 +355,16 @@ const consumeEvent = (event: { type: string; data?: any }) => {
       appendBlock('text', '正文', event.data?.delta ?? '')
       break
     case 'reasoning_update':
-      appendBlock('reasoning', '思考', event.data?.delta ?? '', false)
+      appendBlock('reasoning', '💭 思考', event.data?.delta ?? '', false)
       break
-    case 'tool_calls':
-      appendBlock('tool_use', '工具调用', pretty(event.data?.tool_calls ?? []), false)
+    case 'tool_calls': {
+      const toolCalls = event.data?.tool_calls ?? []
+      const toolName = Array.isArray(toolCalls) && toolCalls.length > 0
+        ? toolCalls.map((tc: any) => tc.name).filter(Boolean).join(', ')
+        : '工具调用'
+      appendBlock('tool_use', toolName, pretty(toolCalls), false)
       break
+    }
     case 'tool_execution_start':
       appendBlock('tool_result', `开始执行 ${event.data?.name ?? 'tool'}`, pretty(event.data ?? {}), false)
       break
@@ -511,9 +495,13 @@ const sendMessage = async () => {
     id: crypto.randomUUID(), kind: 'text', title: '用户输入', content, expanded: true,
   })
   prompt.value = ''
-  await scrollToBottom()
+  await nextTick()
+  chatViewRef.value?.scrollPaneToBottom()
+  isNearBottom.value = true
   addMessage('assistant')
-  await scrollToBottom()
+  await nextTick()
+  chatViewRef.value?.scrollPaneToBottom()
+  isNearBottom.value = true
   try {
     const res = await fetch('/v1/chat/stream', {
       method: 'POST',
@@ -626,17 +614,6 @@ watch(activeView, async () => {
 .nav-item.active { border-color: #93c5fd; background: #eff6ff; }
 .nav-title { font-weight: 700; color: #111827; }
 .nav-desc { font-size: 0.84rem; color: #6b7280; }
-.panel {
-  background: #ffffff; border: 1px solid #e5e7eb; border-radius: 20px;
-  padding: 16px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-}
-.panel-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin-bottom: 12px;
-}
-.panel h2 { margin: 0; font-size: 0.98rem; color: #111827; }
-.kv { color: #6b7280; }
-.actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
 /* ── 右侧区域 ── */
 .right-area { background: #f8fafc; }

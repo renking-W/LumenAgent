@@ -19,6 +19,9 @@ lumen_agent/.env
 lumen_agent/data/
 lumen_agent/workspace/
 
+# Workspace
+work_space/
+
 # Logs
 lumen_agent/log/
 

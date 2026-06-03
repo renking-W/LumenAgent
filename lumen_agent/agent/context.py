@@ -52,15 +52,6 @@ class ContextManager:
     #     return messages
 
 
-def _has_only_tool_results(content: list | str) -> bool:
-    """判断 user 消息是否仅包含 tool_result 块（区别于真实用户输入）。"""
-    if not isinstance(content, list):
-        return False
-    return bool(content) and all(
-        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
-    )
-
-
 # ──────────────────────────────────────────────
 # ToolExecutionGuard
 # ──────────────────────────────────────────────
@@ -157,17 +148,18 @@ def compress_tool_blocks(
     tool_result_token_limit: int = 2000,
     head_tail_chars: int = 20,
 ) -> list[dict]:
-    """深拷贝消息列表，仅对超长 tool_result.content 做截断压缩。
+    """遍历消息列表，仅对超长 ``tool_result.content`` 做截断压缩（原地修改）。
 
     压缩规则：
     - 若 counter.count(content) > tool_result_token_limit
       → content = content[:head_tail_chars] + "……" + content[-head_tail_chars:]
     - tool_use 及其他字段（type / id / name / input / is_error / tool_use_id 等）全部原样保留。
     - text / thinking 块不做任何修改。
+
+    注意：传入的 ``messages`` 会被原地修改。调用方无需预先深拷贝——
+    上层 ``turns_to_messages()`` 每次返回新列表，无外部引用。
     """
-    import copy
-    result = copy.deepcopy(messages)
-    for msg in result:
+    for msg in messages:
         content = msg.get("content")
         if not isinstance(content, list):
             continue
@@ -181,24 +173,20 @@ def compress_tool_blocks(
                 continue
             if counter.count(raw) > tool_result_token_limit:
                 block["content"] = raw[:head_tail_chars] + "……" + raw[-head_tail_chars:]
-    return result
+    return messages
 
 
 def extract_complete_turns(messages: list[dict]) -> list[list[dict]]:
-    """将消息列表按「非 tool_result 的 user 消息」切分为完整轮次列表。
+    """将消息列表按 user 消息切分为完整轮次列表。
 
-    复用 ContextManager.identify_complete_turns 的逻辑，返回 list[list[dict]]。
-    每个元素是一轮完整会话（含该轮内的 tool_use / tool_result 消息）。
+    tool_result 已嵌入 assistant 消息内部，不再作为独立 user 消息出现，
+    因此每个 user 都是真实用户输入，直接作为轮次起点。
     """
     turns: list[list[dict]] = []
     current: list[dict] = []
 
     for msg in messages:
-        role = msg.get("role", "")
-        content = msg.get("content", [])
-        is_tool_result_user = role == "user" and _has_only_tool_results(content)
-
-        if role == "user" and not is_tool_result_user:
+        if msg.get("role") == "user":
             if current:
                 turns.append(current)
             current = [msg]

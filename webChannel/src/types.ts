@@ -26,4 +26,5 @@ export type ChatMessage = {
   time: string
   blocks: ChatBlock[]
   status?: number      // 1=正常, 0=中断/异常（仅历史消息有此字段）
+  seq?: number         // 游标分页 seq，仅历史消息有此字段
 }

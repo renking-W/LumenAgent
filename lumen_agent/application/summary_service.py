@@ -127,7 +127,9 @@ def _load_and_refine_memory(prompt_template: str, memory_text: str) -> str:
     return prompt
 
 
-_MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_LONG_MEMORY_PROMPT_PATH)
+_MEMORY_UTILS = MemoryFileUtils(
+    memory_dir=Path(__file__).resolve().parent.parent.parent / "work_space" / "memory",
+)
 
 
 def _load_text_if_exists(path: Path) -> str:
@@ -147,7 +149,6 @@ def _write_daily_memory_append(
 def _write_memory_file(
     session_id: str,
     messages: list[dict[str, Any]],
-    db_path: Path,
 ) -> None:
     """将被强制截断的消息追加写入按日期命名的记忆文件（``YYYY-MM-DD.md``）。"""
     file_path = _MEMORY_UTILS.append_message_backup(
@@ -155,7 +156,6 @@ def _write_memory_file(
         messages=messages,
         role_label_map=_ROLE_LABEL,
         message_to_text_fn=_message_to_text,
-        db_path=db_path,
     )
     logging.info(f"session={session_id} 截断记录已写入 {file_path}")
 
@@ -212,7 +212,6 @@ async def maybe_trigger_summary(
                 _write_memory_file(
                     session_id,
                     lost_msgs,
-                    settings.conversation_db_path_resolved(),
                 )
             except Exception:
                 logging.exception(f"session={session_id} 写入记忆文件失败，跳过")
@@ -360,7 +359,6 @@ async def force_compress_now(
             _write_memory_file(
                 session_id,
                 to_compress_msgs,
-                settings.conversation_db_path_resolved(),
             )
         except Exception:
             logging.exception(f"[ForceCompress] session={session_id} 写入 memory 文件失败，继续摘要")

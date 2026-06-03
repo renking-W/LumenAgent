@@ -25,6 +25,20 @@ class ModelAdapter(ABC):
         """非流式对话。"""
         ...
 
+    async def chat_blocks(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """非流式对话，返回 content blocks 列表（含 thinking/text）。
+
+        默认实现调用 ``chat()`` 并包装为 text block；子类可重写以返回
+        包含 thinking 等多类型块。
+        """
+        text = await self.chat(messages, temperature=temperature)
+        return [{"type": "text", "text": text}]
+
     @abstractmethod
     def chat_stream(
         self,

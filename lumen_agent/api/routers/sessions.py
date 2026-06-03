@@ -10,6 +10,7 @@ from lumen_agent.api.schemas.session_dtos import (
     SessionSummary,
     SessionSummaryDetail,
     StoredMessage,
+    UpdateTitleRequest,
 )
 from lumen_agent.domain.messages import normalize_content_blocks, text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
@@ -31,10 +32,21 @@ async def list_sessions(
 @router.get("/{session_id}/messages", response_model=list[StoredMessage])
 async def get_session_messages(
     session_id: Annotated[str, Path(min_length=1)],
+    limit: int | None = None,
+    before: int | None = None,
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> list[StoredMessage]:
-    """返回指定会话下的全部消息（按存储顺序）。"""
-    messages = await repo.list_messages(session_id, is_all=False)
+    """返回指定会话下的消息列表（按存储顺序），支持游标滚动分页。
+
+    - 不传 ``limit``：返回全部历史消息（兼容旧版）
+    - 传 ``limit``：取最新 ``limit`` 条；配合 ``before`` 实现上翻：
+      首次 ``GET /{session_id}/messages?limit=20`` 取最新 20 条，
+      后续 ``GET /{session_id}/messages?limit=20&before={min_seq}`` 取更早的 20 条。
+    """
+    if limit is not None:
+        messages = await repo.list_messages_before(session_id, limit, before_seq=before)
+    else:
+        messages = await repo.list_messages(session_id, is_all=False)
     return [StoredMessage.model_validate(m) for m in messages]
 
 
@@ -51,7 +63,22 @@ async def get_session_summary(
         session_id=session["id"],
         summary=session["summary"],
         count=session["count"],
+        title=session["title"],
     )
+
+
+@router.put("/{session_id}/title", response_model=dict)
+async def update_session_title(
+    session_id: Annotated[str, Path(min_length=1)],
+    body: UpdateTitleRequest,
+    repo: ConversationRepositoryPort = Depends(get_conversation_repo),
+) -> dict:
+    """修改会话标题。"""
+    session = await repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    await repo.update_session_title(session_id, body.title)
+    return {"status": "ok", "session_id": session_id, "title": body.title}
 
 
 @router.post("/{session_id}/messages", status_code=status.HTTP_201_CREATED)

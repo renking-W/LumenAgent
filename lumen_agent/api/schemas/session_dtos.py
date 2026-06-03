@@ -34,6 +34,7 @@ class SessionSummary(BaseModel):
     id: str
     created_at: str
     updated_at: str
+    title: str = ""
 
 
 class ContentBlock(BaseModel):
@@ -51,8 +52,9 @@ class ContentBlock(BaseModel):
 
 
 class StoredMessage(BaseModel):
-    """单条历史消息（含时间戳和状态）。"""
+    """单条历史消息（含 seq 游标、时间戳和状态）。"""
 
+    seq: int
     role: str
     content: list[ContentBlock]
     created_at: str
@@ -74,9 +76,16 @@ class AppendMessageRequest(BaseModel):
     status: int = 1
 
 
+class UpdateTitleRequest(BaseModel):
+    """``PUT /v1/sessions/{session_id}/title`` 请求体。"""
+
+    title: str = Field(..., min_length=1, max_length=100)
+
+
 class SessionSummaryDetail(BaseModel):
     """会话摘要明细：当前已压缩摘要 + 未摘要轮次计数。"""
 
     session_id: str
     summary: str
     count: int
+    title: str = ""

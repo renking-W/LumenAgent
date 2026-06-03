@@ -10,6 +10,7 @@ class SessionRow(TypedDict):
     id: str
     created_at: str
     updated_at: str
+    title: str
 
 
 class SessionFullRow(TypedDict):
@@ -20,6 +21,7 @@ class SessionFullRow(TypedDict):
     updated_at: str
     count: int
     summary: str
+    title: str
 
 
 @runtime_checkable
@@ -121,6 +123,19 @@ class ConversationRepositoryPort(Protocol):
 
     async def delete_session(self, session_id: str) -> bool:
         """删除会话及其全部消息。返回是否实际删除（不存在返回 False）。"""
+        ...
+
+    async def update_session_title(self, session_id: str, title: str) -> None:
+        """更新会话标题。"""
+        ...
+
+    async def list_messages_before(
+        self,
+        session_id: str,
+        limit: int,
+        before_seq: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """游标分页：取 ``seq < before_seq`` 的最新 ``limit`` 条消息。"""
         ...
 
 @runtime_checkable

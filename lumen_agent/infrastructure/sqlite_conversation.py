@@ -37,7 +37,8 @@ class SqliteConversationRepository:
                 updated_at TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '会话记录',
                 count INTEGER NOT NULL DEFAULT 0,
-                summary TEXT NOT NULL DEFAULT ''
+                summary TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,12 +102,12 @@ class SqliteConversationRepository:
             try:
                 if is_all:
                     cursor = await db.execute(
-                        "SELECT role, content, created_at, updated_at, status FROM messages WHERE session_id = ? AND status = 1 ORDER BY seq ASC",
+                        "SELECT seq, role, content, created_at, updated_at, status FROM messages WHERE session_id = ? AND status = 1 ORDER BY seq ASC",
                         (session_id,),
                     )
                 else:
                     cursor = await db.execute(
-                        "SELECT role, content, created_at, updated_at, status FROM messages WHERE session_id = ? ORDER BY seq ASC",
+                        "SELECT seq, role, content, created_at, updated_at, status FROM messages WHERE session_id = ? ORDER BY seq ASC",
                         (session_id,),
                     )
                 rows = await cursor.fetchall()
@@ -116,6 +117,7 @@ class SqliteConversationRepository:
                 raise
         return [
             {
+                "seq": int(r["seq"]),
                 "role": r["role"],
                 "content": ensure_blocks(r["content"]),
                 "created_at": r["created_at"],
@@ -123,6 +125,54 @@ class SqliteConversationRepository:
                 "status": int(r["status"]),
             }
             for r in rows
+        ]
+
+    async def list_messages_before(
+        self,
+        session_id: str,
+        limit: int,
+        before_seq: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """游标分页：取 ``seq < before_seq`` 的最新 ``limit`` 条消息（返回时按 seq 正序）。
+
+        若 ``before_seq`` 为 ``None``，则直接从末尾取最新的 ``limit`` 条。
+        """
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            if before_seq is not None:
+                cursor = await db.execute(
+                    """
+                    SELECT seq, role, content, created_at, updated_at, status
+                    FROM messages
+                    WHERE session_id = ? AND seq < ?
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (session_id, before_seq, limit),
+                )
+            else:
+                cursor = await db.execute(
+                    """
+                    SELECT seq, role, content, created_at, updated_at, status
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (session_id, limit),
+                )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "seq": int(r["seq"]),
+                "role": r["role"],
+                "content": ensure_blocks(r["content"]),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+                "status": int(r["status"]),
+            }
+            for r in reversed(rows)
         ]
 
     async def append_message(
@@ -173,7 +223,7 @@ class SqliteConversationRepository:
             await self._prepare(db)
             cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at, count, summary
+                SELECT id, created_at, updated_at, count, summary, title
                 FROM sessions WHERE id = ?
                 """,
                 (session_id,),
@@ -187,6 +237,7 @@ class SqliteConversationRepository:
             "updated_at": row["updated_at"],
             "count": int(row["count"]),
             "summary": row["summary"] or "",
+            "title": row["title"] or "",
         }
 
     async def list_recent_messages(
@@ -280,6 +331,18 @@ class SqliteConversationRepository:
             await db.commit()
         return int(row["count"]) if row is not None else 0
 
+    async def update_session_title(self, session_id: str, title: str) -> None:
+        """更新会话标题。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        now = _utc_now()
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            await db.execute(
+                "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+                (title, now, session_id),
+            )
+            await db.commit()
+
     async def delete_session(self, session_id: str) -> bool:
         """删除会话及关联消息（ON DELETE CASCADE），不存在返回 False。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -301,7 +364,7 @@ class SqliteConversationRepository:
             await self._prepare(db)
             cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at FROM sessions
+                SELECT id, created_at, updated_at, title FROM sessions
                 ORDER BY updated_at DESC
                 LIMIT ? OFFSET ?
                 """,
@@ -313,6 +376,7 @@ class SqliteConversationRepository:
                 "id": r["id"],
                 "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
+                "title": r["title"] or "",
             }
             for r in rows
         ]

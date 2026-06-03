@@ -81,8 +81,8 @@ async def assemble_for_llm(
         session = await repo.get_session(session_id)
         summary = (session.get("summary") or "") if session else ""
 
-        # 只取最近 N 条消息而非全量，避免 OOM；FETCH_LIMIT = summary_threshold_turns × 20
-        fetch_limit = settings.summary_threshold_turns * 20
+        # 只取最近 N 条消息而非全量
+        fetch_limit = settings.summary_threshold_turns
         all_msgs = await repo.list_recent_messages(session_id, fetch_limit)
 
         turns = extract_complete_turns(all_msgs)
@@ -91,9 +91,6 @@ async def assemble_for_llm(
             turns.pop(0)
         # 将 turns 中所有缺少 assistant 回复的轮次补成完整格式
         complete_turns = verify_message(turns)
-        # 只保留最近 10 轮完整对话
-        if len(complete_turns) >= 10:
-            complete_turns = complete_turns[-10:]
         # 压缩 tool_result.content 超长内容
         history_msgs = compress_tool_blocks(
             turns_to_messages(complete_turns),

@@ -64,12 +64,10 @@ class MemoryFileUtils:
         messages: list[dict[str, Any]],
         role_label_map: dict[str, str],
         message_to_text_fn: Callable[[dict[str, Any]], str],
-        db_path: Path,
     ) -> Path:
-        memory_dir = db_path.parent.parent / "work_space" / "memory"
-        memory_dir.mkdir(parents=True, exist_ok=True)
+        self.ensure_dir()
         now = datetime.now()
-        file_path = memory_dir / f"{now.strftime('%Y-%m-%d')}.md"
+        file_path = self.memory_dir / f"{now.strftime('%Y-%m-%d')}.md"
         parts: list[str] = [f"## {now.strftime('%Y-%m-%d %H:%M:%S')}  session={session_id}（强制截断记录）\n\n"]
         for msg in messages:
             label = role_label_map.get(msg.get("role", ""), msg.get("role", ""))

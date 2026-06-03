@@ -5,8 +5,15 @@
       :active-session-id="activeSessionId"
       @select-session="handleSelectSession"
       @delete-session="(id) => emit('delete-session', id)"
+      @new-session="emit('new-session')"
     />
-    <div class="chat-pane" ref="chatPaneRef">
+    <div class="chat-pane" ref="chatPaneRef" @scroll="onChatPaneScroll">
+      <!-- 顶部加载更多指示器 -->
+      <div v-if="messages.length > 0" class="scroll-top-indicator">
+        <span v-if="loadingMore" class="loading-more">加载中...</span>
+        <span v-else-if="!hasMore" class="no-more">已加载全部消息</span>
+      </div>
+
       <!-- 空状态 -->
       <div v-if="messages.length === 0" class="empty-state">
         <div class="empty-icon">💬</div>
@@ -49,14 +56,21 @@ const props = defineProps<{
   activeSessionId: string
   streamingMessageId: string
   isNearBottom: boolean
+  loadingMore: boolean
+  hasMore: boolean
 }>()
 
 const emit = defineEmits<{
   'select-session': [sessionId: string]
   'scroll-to-bottom': []
   'delete-session': [sessionId: string]
+  'new-session': []
+  'load-more': []
   retry: []
 }>()
+
+const SCROLL_TOP_THRESHOLD = 80
+let savedScrollHeight = 0
 
 const sessionListRef = ref<InstanceType<typeof SessionList> | null>(null)
 const chatPaneRef = ref<HTMLElement | null>(null)
@@ -66,14 +80,40 @@ const handleSelectSession = (id: string) => {
 }
 
 const scrollToBottom = () => {
+  if (chatPaneRef.value) {
+    chatPaneRef.value.scrollTop = chatPaneRef.value.scrollHeight
+  }
   emit('scroll-to-bottom')
+}
+
+const scrollPaneToBottom = () => {
+  if (chatPaneRef.value) {
+    chatPaneRef.value.scrollTop = chatPaneRef.value.scrollHeight
+  }
+}
+
+const onChatPaneScroll = () => {
+  const el = chatPaneRef.value
+  if (!el || props.loadingMore || !props.hasMore) return
+  if (el.scrollTop < SCROLL_TOP_THRESHOLD) {
+    savedScrollHeight = el.scrollHeight
+    emit('load-more')
+  }
+}
+
+/** 预加载消息后保持滚动位置（在父组件 prepend 消息 + nextTick 后调用） */
+const restoreScrollAfterPrepend = () => {
+  const el = chatPaneRef.value
+  if (!el || !savedScrollHeight) return
+  el.scrollTop = el.scrollHeight - savedScrollHeight
+  savedScrollHeight = 0
 }
 
 const refreshSessions = () => {
   sessionListRef.value?.fetchSessions()
 }
 
-defineExpose({ refreshSessions })
+defineExpose({ refreshSessions, scrollPaneToBottom, restoreScrollAfterPrepend })
 </script>
 
 <style scoped>
@@ -83,6 +123,25 @@ defineExpose({ refreshSessions })
   height: 100%;
   min-height: 100%;
   position: relative;
+}
+
+.scroll-top-indicator {
+  text-align: center;
+  padding: 8px 0;
+  font-size: 0.82rem;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.loading-more {
+  display: inline-block;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.no-more {
+  color: #d1d5db;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 .chat-pane {

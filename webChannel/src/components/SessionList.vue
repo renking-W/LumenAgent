@@ -11,7 +11,10 @@
     <div v-show="!collapsed" class="session-body">
       <div class="session-head">
         <span class="session-title">历史会话</span>
-        <el-button size="small" circle @click="fetchSessions" :loading="loading">⟳</el-button>
+        <div class="session-actions">
+          <el-button size="small" type="primary" plain @click="emit('new-session')">＋ 新会话</el-button>
+          <el-button size="small" circle @click="fetchSessions" :loading="loading">⟳</el-button>
+        </div>
       </div>
 
       <div v-if="loading" class="session-status">加载中...</div>
@@ -24,8 +27,12 @@
           :class="{ active: s.id === activeSessionId }"
         >
           <div class="session-item-main" @click="selectSession(s.id)">
-            <div class="session-time">{{ formatTime(s.created_at) }}</div>
-            <div class="session-meta">{{ formatRelative(s.updated_at) }}</div>
+            <div class="session-name">{{ s.title || '新会话' }}</div>
+            <div class="session-footer">
+              <span class="session-footer-time">{{ formatTime(s.created_at) }}</span>
+              <span class="session-footer-dot">·</span>
+              <span class="session-footer-relative">{{ formatRelative(s.updated_at) }}</span>
+            </div>
           </div>
           <el-popconfirm
             title="确定删除此会话？"
@@ -61,9 +68,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-session': [sessionId: string]
   'delete-session': [sessionId: string]
+  'new-session': []
 }>()
 
-type SessionSummary = { id: string; created_at: string; updated_at: string }
+type SessionSummary = { id: string; created_at: string; updated_at: string; title: string }
 
 const collapsed = ref(false)
 const loading = ref(false)
@@ -154,10 +162,17 @@ onMounted(fetchSessions)
   padding: 12px 14px;
   border-bottom: 1px solid #e5e7eb;
 }
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 .session-title {
   font-weight: 600;
   color: #111827;
   font-size: 0.95rem;
+  white-space: nowrap;
 }
 .session-status {
   padding: 24px 14px;
@@ -191,16 +206,28 @@ onMounted(fetchSessions)
   flex: 1;
   min-width: 0;
   padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.session-time {
+.session-name {
   font-size: 0.88rem;
   color: #111827;
-  font-weight: 500;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.session-meta {
-  font-size: 0.78rem;
+.session-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 0.75rem;
   color: #9ca3af;
-  margin-top: 4px;
+}
+.session-footer-dot {
+  color: #d1d5db;
 }
 .delete-btn {
   opacity: 0;

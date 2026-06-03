@@ -24,6 +24,14 @@ class DeepSeekAdapter(ModelAdapter):
     ) -> str:
         return await self._client.chat(messages, temperature=temperature)
 
+    async def chat_blocks(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._client.chat_blocks(messages, temperature=temperature)
+
     def chat_stream(
         self,
         messages: list[dict[str, Any]],

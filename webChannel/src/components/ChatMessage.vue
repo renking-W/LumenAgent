@@ -15,17 +15,17 @@
       >已中断</el-tag>
     </div>
     <div class="message-content">
-      <template v-for="block in message.blocks" :key="block.id">
-        <!-- 可折叠块：思考、工具调用、工具结果、错误 -->
-        <details v-if="isCollapsible(block.kind)" class="block block--collapsible" :open="block.expanded">
+      <template v-for="item in groupedBlocks" :key="item.id">
+        <!-- 可折叠块：思考、错误 -->
+        <details v-if="item.kind === 'single' && isCollapsible(item.block.kind)" class="block block--collapsible" :open="item.block.expanded">
           <summary class="block-summary">
-            <span class="block-summary-title">{{ block.title }}</span>
-            <span class="block-summary-kind">{{ block.kind }}</span>
+            <span class="block-summary-title">{{ item.block.title }}</span>
+            <span class="block-summary-kind">{{ item.block.kind }}</span>
           </summary>
           <div class="block-body">
-            <div class="md" v-html="renderMarkdown(block.content)"></div>
+            <div class="md" v-html="renderMarkdown(item.block.content)"></div>
             <button
-              v-if="block.kind === 'error'"
+              v-if="item.block.kind === 'error'"
               class="retry-btn"
               @click.stop="$emit('retry')"
             >
@@ -35,9 +35,33 @@
         </details>
 
         <!-- 文本块 → 完整 markdown 渲染 -->
-        <div v-else class="block block--text">
-          <div class="md" v-html="renderMarkdown(block.content)"></div>
+        <div v-else-if="item.kind === 'single'" class="block block--text">
+          <div class="md" v-html="renderMarkdown(item.block.content)"></div>
         </div>
+
+        <!-- Tool 分组：tool_use + tool_result 合并展示 -->
+        <details v-else-if="item.kind === 'tool'" class="block block--collapsible">
+          <summary class="block-summary">
+            <span class="block-summary-title">🛠 {{ item.toolName }}</span>
+            <span class="block-summary-kind">{{ item.toolName }}</span>
+          </summary>
+          <div class="block-body">
+            <div class="tool-detail">
+              <div class="tool-detail-label">工具名称</div>
+              <pre class="tool-detail-pre"><code>{{ item.toolName }}</code></pre>
+            </div>
+            <div class="tool-detail">
+              <div class="tool-detail-label">调用参数</div>
+              <pre class="tool-detail-pre">{{ item.useContent }}</pre>
+            </div>
+            <template v-for="(rc, ri) in item.resultContents" :key="ri">
+              <div class="tool-detail">
+                <div class="tool-detail-label">调用结果{{ item.resultContents.length > 1 ? ' #' + (ri + 1) : '' }}</div>
+                <pre class="tool-detail-pre"><code>{{ rc }}</code></pre>
+              </div>
+            </template>
+          </div>
+        </details>
       </template>
 
       <!-- 流式光标 -->
@@ -47,8 +71,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
-import type { ChatMessage } from '../types'
+import { computed, ref, watch, nextTick } from 'vue'
+import type { ChatMessage, ChatBlock } from '../types'
 import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{
@@ -63,7 +87,52 @@ const emit = defineEmits<{
 const msgRef = ref<HTMLElement | null>(null)
 
 const isCollapsible = (kind: string) =>
-  ['reasoning', 'tool_use', 'tool_result', 'error'].includes(kind)
+  ['reasoning', 'error'].includes(kind)
+
+// ── 合并 tool_use + tool_result 分组 ─────────────────
+interface ToolRenderItem {
+  kind: 'tool'
+  id: string
+  toolName: string
+  useContent: string
+  resultContents: string[]
+}
+interface SingleRenderItem {
+  kind: 'single'
+  id: string
+  block: ChatBlock
+}
+type RenderItem = ToolRenderItem | SingleRenderItem
+
+const groupedBlocks = computed<RenderItem[]>(() => {
+  const items: RenderItem[] = []
+  const blocks = props.message.blocks
+  let i = 0
+  while (i < blocks.length) {
+    const block = blocks[i]
+    if (block.kind === 'tool_use') {
+      // 收集后面连续的所有 tool_result
+      const resultBlocks: ChatBlock[] = []
+      let j = i + 1
+      while (j < blocks.length && blocks[j].kind === 'tool_result') {
+        resultBlocks.push(blocks[j])
+        j++
+      }
+      items.push({
+        kind: 'tool',
+        id: block.id,
+        toolName: block.title,  // 标题已存工具名（bash/read/write 等）
+        useContent: block.content,
+        resultContents: resultBlocks.map(b => b.content),
+      })
+      i = j
+      continue
+    }
+    items.push({ kind: 'single', id: block.id, block })
+    i++
+  }
+  return items
+})
 
 // ── 复制按钮注入 ─────────────────────────────────────
 const injectCopyButtons = () => {
@@ -226,6 +295,35 @@ watch(
   animation: cursor-blink 0.9s step-end infinite;
   margin-left: 2px;
   line-height: 1;
+}
+
+/* ── Tool 详情 ── */
+.tool-detail {
+  margin-bottom: 12px;
+}
+.tool-detail:last-child {
+  margin-bottom: 0;
+}
+.tool-detail-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tool-detail-value {
+  font-size: 0.9rem;
+  color: #111827;
+}
+.tool-detail-pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 0.82rem;
+  max-height: 240px;
+  overflow: auto;
 }
 
 /* ── 动画 ── */

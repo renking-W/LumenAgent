@@ -94,11 +94,29 @@ def _to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     for tb in tool_use_blocks
                 ]
                 result.append(api_msg)
+                # 嵌入在 assistant 内部的 tool_result → 转译为 role:tool API 消息
+                for tr in tool_result_blocks:
+                    result.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tr["tool_use_id"],
+                            "content": tr.get("content", ""),
+                        }
+                    )
             else:
                 asst: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
                 if combined_thinking:
                     asst["reasoning_content"] = combined_thinking
                 result.append(asst)
+                # 即使没有 tool_use，也可能有嵌入的 tool_result（纯结果场景）
+                for tr in tool_result_blocks:
+                    result.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tr["tool_use_id"],
+                            "content": tr.get("content", ""),
+                        }
+                    )
 
         elif role == "user":
             if tool_result_blocks:
@@ -198,6 +216,42 @@ class DeepSeekHttpClient:
             raise RuntimeError("upstream returned empty or non-text assistant content")
 
         return content
+
+    async def chat_blocks(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """非流式调用上游，返回 content blocks 列表（含 text + thinking）。"""
+        url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
+        headers = self._chat_headers()
+        api_messages = _to_openai_messages(messages)
+        payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
+
+        pool = get_http_pool()
+        response = await pool.send("POST", url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("upstream returned no choices")
+
+        message = (choices[0] or {}).get("message") or {}
+        content_text = (message.get("content") or "").strip()
+        reasoning_text = (message.get("reasoning_content") or "").strip()
+
+        blocks: list[dict[str, Any]] = []
+        if reasoning_text:
+            blocks.append({"type": "thinking", "thinking": reasoning_text})
+        if content_text:
+            blocks.append({"type": "text", "text": content_text})
+
+        if not blocks:
+            raise RuntimeError("upstream returned empty assistant response")
+
+        return blocks
 
     async def chat_stream(
         self,

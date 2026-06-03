@@ -10,6 +10,7 @@ from typing import Any
 from lumen_agent.agent.tokens import get_token_counter
 from lumen_agent.application.context_assembly import assemble_for_llm
 from lumen_agent.application.summary_service import maybe_trigger_summary
+from lumen_agent.application.title_service import maybe_generate_title
 from lumen_agent.config import Settings
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
@@ -28,6 +29,9 @@ async def reply_single_turn(
     await repo.ensure_session(session_id)
     user_blocks = text_message("user", user_message)["content"]
     await repo.append_message(session_id, "user", user_blocks)
+
+    # 异步生成会话标题（仅首次消息触发）
+    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
 
     # 2) 组装上下文（含 token 预算检查 / 强制压缩）
     counter = get_token_counter(settings.deepseek_model)
@@ -48,17 +52,18 @@ async def reply_single_turn(
         f"force_compressed={ctx.force_compressed}"
     )
 
-    # 3) 调 LLM
-    content = await llm.chat(messages)
+    # 3) 调 LLM（返回含 thinking 的 content blocks）
+    assistant_blocks = await llm.chat_blocks(messages)
 
     # 4) 助手消息落库 + 轮次 +1 + 摘要触发
-    assistant_blocks = text_message("assistant", content)["content"]
+    # assistant_blocks 已包含 text + thinking 块
     await repo.append_message(session_id, "assistant", assistant_blocks)
     new_count = await repo.increment_round_counter(session_id)
     logging.info(f"session={session_id} 助手已落库 count={new_count}")
     asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))
 
-    return content
+    # 返回纯文本给 API 层（不含 thinking 块）
+    return next((b["text"] for b in assistant_blocks if b.get("type") == "text"), "")
 
 
 async def reply_single_turn_stream(
@@ -79,6 +84,9 @@ async def reply_single_turn_stream(
     user_blocks = text_message("user", user_message)["content"]
     await repo.append_message(session_id, "user", user_blocks)
 
+    # 异步生成会话标题（仅首次消息触发）
+    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
+
     # 2) 组装上下文
     counter = get_token_counter(settings.deepseek_model)
     context_window = settings.context_window_for(settings.deepseek_model)
@@ -97,16 +105,23 @@ async def reply_single_turn_stream(
         f"force_compressed={ctx.force_compressed}"
     )
 
-    # 3) 流式生成；只累加 content 部分落库，reasoning_content 透传但不入库
+    # 3) 流式生成；累加 content + reasoning_content 用于落库
     accumulated = ""
+    accumulated_thinking = ""
     async for kind, chunk in llm.chat_stream(messages, on_connect=on_connect):
         if kind == "content":
             accumulated += chunk
+        elif kind == "reasoning_content":
+            accumulated_thinking += chunk
         yield (kind, chunk)
 
-    # 4) 正常结束：助手落库 + 轮次 +1 + 摘要触发
-    if accumulated.strip():
-        assistant_blocks = text_message("assistant", accumulated)["content"]
+    # 4) 正常结束：助手落库（含 thinking 块）+ 轮次 +1 + 摘要触发
+    if accumulated.strip() or accumulated_thinking.strip():
+        assistant_blocks: list[dict[str, Any]] = []
+        if accumulated_thinking.strip():
+            assistant_blocks.append({"type": "thinking", "thinking": accumulated_thinking})
+        if accumulated.strip():
+            assistant_blocks.append({"type": "text", "text": accumulated})
         await repo.append_message(session_id, "assistant", assistant_blocks)
         new_count = await repo.increment_round_counter(session_id)
         logging.info(f"session={session_id} 流式助手已落库 count={new_count}")
@@ -140,6 +155,9 @@ async def reply_with_agent(
     await repo.ensure_session(session_id)
     user_blocks = text_message("user", user_message)["content"]
     await repo.append_message(session_id, "user", user_blocks)
+
+    # 异步生成会话标题（仅首次消息触发）
+    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
 
     # 2) 构建 system 提示词
     tools = ToolRegistry.create_all_tools()
@@ -175,24 +193,63 @@ async def reply_with_agent(
     final_text = ""
     async for kind, data in executor.run_stream(messages, on_connect=on_connect):
         if kind == "new_messages":
-            # 将 Agent 执行期间新产生的所有消息（tool_use / tool_result / assistant）落库
-            # 跳过已落库的 user 消息（assemble_for_llm 已过滤历史 user，本轮 user 在步骤 1 落库）
+            # 将 Agent 执行期间新产生的所有消息落库。
+            # tool_result 原本以独立 role=user 消息存在，这里合并到前一条
+            # assistant 消息内部嵌入存储，保证一个逻辑轮次 = 一条消息。
             new_msgs: list[dict[str, Any]] = data  # type: ignore[assignment]
+
+            # ──Step 1: 合并 tool_result → 前一条 assistant ──────────
+            merged: list[dict[str, Any]] = []
             for msg in new_msgs:
                 role = msg.get("role", "")
                 content = msg.get("content", [])
-                if not role or not content:
-                    continue
-                # 过滤掉 thinking 块（不持久化 thinking）
                 if isinstance(content, list):
-                    filtered = [
-                        b for b in content
-                        if isinstance(b, dict) and b.get("type") != "thinking"
-                    ]
-                    if not filtered:
-                        continue
-                    content = filtered
-                await repo.append_message(session_id, role, content)
+                    content = [b for b in content if isinstance(b, dict)]
+
+                if (
+                    role == "user"
+                    and content
+                    and all(b.get("type") == "tool_result" for b in content)
+                ):
+                    # tool_result 合并到前一条 assistant
+                    if merged and merged[-1]["role"] == "assistant":
+                        merged[-1]["content"].extend(content)
+                    else:
+                        merged.append({"role": "user", "content": content})
+                elif role == "assistant":
+                    # 连续 assistant 也合并（同一 agent 轮次内的多段回复）
+                    if merged and merged[-1]["role"] == "assistant":
+                        merged[-1]["content"].extend(content)
+                    else:
+                        merged.append({"role": "assistant", "content": list(content)})
+                else:
+                    merged.append({"role": role, "content": content})
+
+            # ──Step 2: 兜底 — 孤立 tool_use 补 (interrupted) ──────
+            for msg in merged:
+                if msg["role"] != "assistant":
+                    continue
+                use_ids = {
+                    b["id"] for b in msg["content"]
+                    if b.get("type") == "tool_use" and b.get("id")
+                }
+                result_ids = {
+                    b["tool_use_id"] for b in msg["content"]
+                    if b.get("type") == "tool_result" and b.get("tool_use_id")
+                }
+                for tid in use_ids - result_ids:
+                    msg["content"].append({
+                        "type": "tool_result",
+                        "tool_use_id": tid,
+                        "content": "(interrupted)",
+                        "is_error": True,
+                    })
+
+            # ──Step 3: 持久化 ──────────────────────────────────────
+            for msg in merged:
+                if not msg.get("content"):
+                    continue
+                await repo.append_message(session_id, msg["role"], msg["content"])
             # new_messages 事件不透传给前端
         elif kind == "done":
             final_text = data  # type: ignore[assignment]
