@@ -136,14 +136,37 @@ def _load_text_if_exists(path: Path) -> str:
     return _MEMORY_UTILS.read_text_if_exists(path)
 
 
-def _write_daily_memory_append(
+async def _write_daily_memory_append(
     session_id: str,
     count_summary: str,
 ) -> None:
-    """将 count_summary 追加写入当天的记忆文档。"""
+    """将 count_summary 追加写入当天的记忆文档，同时写入向量索引库。"""
     file_path = _MEMORY_UTILS.append_daily_summary(session_id, count_summary)
     if file_path is not None:
         logging.info("session=%s 当日记忆已追加到 %s", session_id, file_path)
+        # 同步写入 ChromaDB 向量索引（异步任务，失败不阻塞主流程）
+        try:
+            body = (count_summary or "").strip()
+            now = datetime.now().astimezone()
+            ts = now.strftime("%Y-%m-%d %H:%M:%S")
+            header = f"## {ts}  session={session_id}\n\n"
+            entry_text = header + body
+            ts_safe = now.strftime("%Y-%m-%d_%H-%M-%S")
+            entry_id = f"daily:{now.strftime('%Y-%m-%d')}:{ts_safe}:{session_id}"
+            metadata = {
+                "source": "daily",
+                "date": now.strftime("%Y-%m-%d"),
+                "session_id": session_id,
+                "timestamp": ts,
+            }
+            from lumen_agent.application.service.memory_rag_service import MemoryRagService
+            from lumen_agent.config import get_settings
+
+            service = MemoryRagService(get_settings())
+            await service.index_entry(entry_text, entry_id, metadata)
+            logging.info("session=%s 记忆向量索引完成", session_id)
+        except Exception:
+            logging.exception("session=%s 记忆向量索引失败，不影响文件写入", session_id)
 
 
 def _write_memory_file(
@@ -264,7 +287,7 @@ async def maybe_trigger_summary(
         return
 
     try:
-        _write_daily_memory_append(session_id, count_summary)
+        await _write_daily_memory_append(session_id, count_summary)
     except Exception:
         logging.exception(f"session={session_id} 追加当日记忆失败")
 
@@ -381,7 +404,7 @@ async def force_compress_now(
             return
 
         try:
-            _write_daily_memory_append(session_id, count_summary)
+            await _write_daily_memory_append(session_id, count_summary)
         except Exception:
             logging.exception(f"[ForceCompress] session={session_id} 追加当日记忆失败")
 

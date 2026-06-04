@@ -9,7 +9,7 @@ from typing import Any
 
 from lumen_agent.agent.tokens import get_token_counter
 from lumen_agent.application.context_assembly import assemble_for_llm
-from lumen_agent.application.summary_service import maybe_trigger_summary
+from lumen_agent.application.service.summary_service import maybe_trigger_summary
 from lumen_agent.application.title_service import maybe_generate_title
 from lumen_agent.config import Settings
 from lumen_agent.domain.messages import text_message

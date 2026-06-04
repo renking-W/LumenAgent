@@ -1,0 +1,51 @@
+"""记忆文件路由：读取所有记忆文件内容供前端展示。"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter
+
+from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
+from lumen_agent.api.schemas.memory_dtos import MemoryFileItem
+
+router = APIRouter(prefix="/v1/memories", tags=["memories"])
+_logger = logging.getLogger(__name__)
+
+# 定位 work_space/memory 目录（与 builder.py 保持一致）
+_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "work_space"
+_MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_WORKSPACE_DIR)
+
+
+@router.get("", response_model=list[MemoryFileItem])
+async def list_memories() -> list[MemoryFileItem]:
+    """读取所有记忆文件内容，包括 MEMORY.md 和所有每日记忆文件。"""
+    memory_dir = _MEMORY_UTILS.memory_dir
+    if not memory_dir.exists():
+        _logger.warning("记忆目录不存在：%s", memory_dir)
+        return []
+
+    items: list[MemoryFileItem] = []
+
+    # 1) MEMORY.md - 长期记忆
+    memory_path = _MEMORY_UTILS.memory_file_path()
+    if memory_path.exists():
+        content = memory_path.read_text(encoding="utf-8")
+        items.append(MemoryFileItem(file_name="MEMORY.md", content=content, type="long_term"))
+        _logger.debug("读取记忆文件：MEMORY.md (%d 字符)", len(content))
+
+    # 2) 每日记忆文件 (YYYY-MM-DD.md)
+    for md_file in sorted(memory_dir.glob("*.md")):
+        if md_file.name == "MEMORY.md":
+            continue
+        content = md_file.read_text(encoding="utf-8")
+        items.append(MemoryFileItem(file_name=md_file.name, content=content, type="daily"))
+        _logger.debug("读取记忆文件：%s (%d 字符)", md_file.name, len(content))
+
+    _logger.info(
+        "读取记忆文件完成：MEMORY.md + %s 个每日文件，共 %s 个文件",
+        len(items) - (1 if items and items[0].type == "long_term" else 0),
+        len(items),
+    )
+    return items

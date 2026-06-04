@@ -10,7 +10,7 @@ from pathlib import Path
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.agent.skills.meta import SkillMeta
 from lumen_agent.agent.tools.base import BaseTool
-from lumen_agent.infrastructure.sqlite_knowledge import SqliteKnowledgeRepository
+from lumen_agent.infrastructure.data_base.sqlite_knowledge import SqliteKnowledgeRepository
 
 _SECTION_SEP = "\n\n---\n\n"
 _WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "work_space"
@@ -118,24 +118,22 @@ class SystemPromptBuilder:
     # 3. 记忆系统
     # ------------------------------------------------------------------ #
     def add_memory_system(self) -> "SystemPromptBuilder":
-        """记忆系统：显式指导 LLM 主动维护长期记忆。"""
+        """记忆系统：系统自动管理记忆，LLM 通过 memory_search 检索历史。"""
         lines = [
             "# 记忆系统",
             "",
-            "当你遇到十分重要且可长期复用的信息时，必须主动编辑 `MEMORY.md`。",
+            "系统会自动记录重要的对话摘要作为每日记忆，你无需手动编辑记忆文件。",
+            "如果遇到需要记录的**重要信息**那么就参考`MEMORY.md`文件的处理方式来记录",
             "",
-            "## 应主动写入的内容",
-            "- 用户习惯、偏好、禁忌",
-            "- 用户明确认可的长期决策",
-            "- 多次失败但值得保留的操作经验",
-                "- 长期稳定的人物、项目、流程上下文",
+            "## 检索历史记忆",
+            "- 若需要回顾与当前对话相关的历史记忆，使用 `memory_search` 工具检索。",
+            "- 把当前问题和上下文整理成简洁的 query 进行检索。",
+            "- 如果一次检索结果不够充分，可以调整 query 再次检索。",
+            "- 检索到的记忆内容将作为参考，帮助你更好地理解用户需求和上下文。",
             "",
-            "## 写入原则",
-            "- 只写长期有效的信息，不要记录短暂的闲聊。",
-            "- 遇到重要信息时，优先考虑追加、归纳或去重，而不是重复堆叠。",
-            "- 如果现有内容已经包含相同事实，应优先合并更新。",
-            "- `MEMORY.md` 是长期记忆索引，保持精简、准确、可持续维护。",
-            "- 使用`write`工具来对`MEMORY.md`文件进行编辑",
+            "## 长期上下文",
+            "- 你的身份信息和长期记忆相关的上下文已在系统提示词中提供。",
+            "- 这些内容由系统自动维护，你无需手动修改。",
         ]
         self._sections.append("\n".join(lines))
         return self

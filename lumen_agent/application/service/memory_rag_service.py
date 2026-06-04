@@ -1,0 +1,169 @@
+"""记忆向量检索服务：只做 embedding + ChromaDB 检索，不写 SQLite。
+
+与知识库 RAG（RagService）的区别：
+- 不维护 SQLite 元数据，不用 JSON 索引
+- 纯向量化 + ChromaDB 按条目存储 + 检索
+- 按 `## ... session=xxx` 块作为独立记忆条目
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any
+
+import chromadb
+
+from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
+from lumen_agent.config import Settings
+from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
+
+_COLLECTION_NAME = "memory_store"
+
+
+class MemoryRagService:
+    """记忆向量检索服务。"""
+
+    _logger = logging.getLogger(__name__)
+
+    def __init__(self, settings: Settings) -> None:
+        # 复用与知识库相同的 Embedding 客户端
+        self._embedding_client = AlibabaEmbeddingClient(settings)
+        # 共享 ChromaDB 持久化目录，使用独立的 collection
+        self._base_dir = settings.rag_chroma_path_resolved()
+        self._base_dir.mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=str(self._base_dir))
+        self._collection = self._client.get_or_create_collection(
+            name=_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+
+    async def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        """向量检索历史记忆条目。"""
+        query_vector = await self._embedding_client.embed_query(query)
+        result = self._collection.query(
+            query_embeddings=[query_vector],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+        )
+        documents = (result.get("documents") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+
+        rows: list[dict[str, Any]] = []
+        for doc, meta, dist in zip(documents, metadatas, distances):
+            score = max(0.0, 1.0 - float(dist))
+            rows.append({
+                "text": doc,
+                "score": round(score, 4),
+                "distance": round(dist, 4),
+                "metadata": meta or {},
+            })
+        self._logger.info(
+            "记忆检索完成：query=%r  top_k=%s  hits=%s",
+            query, top_k, len(rows),
+        )
+        return rows
+
+    async def index_entry(
+        self,
+        entry_text: str,
+        entry_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """索引单条记忆条目到 ChromaDB。"""
+        embedding = await self._embedding_client.embed_query(entry_text)
+        self._collection.upsert(
+            ids=[entry_id],
+            documents=[entry_text],
+            metadatas=[metadata],
+            embeddings=[embedding],
+        )
+        self._logger.debug("记忆条目已索引：%s", entry_id)
+
+    async def index_all_memory_files(self, memory_utils: MemoryFileUtils) -> None:
+        """全量扫描所有每日记忆文件，去重后索引到 ChromaDB。
+
+        利用 ChromaDB upsert 的幂等性：已存在的条目按相同 ID 覆盖（无副作用），
+        新条目自动补入。首次启动较慢，后续启动仅补录新增条目。
+        """
+        memory_dir = memory_utils.memory_dir
+        if not memory_dir.exists():
+            self._logger.warning("记忆目录不存在：%s", memory_dir)
+            return
+
+        md_files = sorted(memory_dir.glob("*.md"))
+        if not md_files:
+            self._logger.info("没有找到每日记忆文件，跳过全量索引")
+            return
+
+        indexed_count = 0
+        skipped_count = 0
+        for md_file in md_files:
+            if md_file.name == "MEMORY.md":
+                continue
+            content = md_file.read_text(encoding="utf-8")
+            date_str = md_file.stem  # "2026-05-26"
+            entries = self._parse_daily_file(content, date_str)
+            for entry_id, entry_text, metadata in entries:
+                # 检查是否已索引（Chroma get 按 ID 查询很轻量）
+                existing = self._collection.get(ids=[entry_id])
+                if existing and existing.get("ids") and existing["ids"]:
+                    skipped_count += 1
+                    continue
+                await self.index_entry(entry_text, entry_id, metadata)
+                indexed_count += 1
+
+        self._logger.info(
+            "全量记忆索引完成：新增 %s 条，跳过 %s 条（已存在）",
+            indexed_count, skipped_count,
+        )
+
+    @staticmethod
+    def _parse_daily_file(
+        content: str,
+        date_str: str,
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        """解析每日记忆文件，按 ``---`` 分隔 + ``## ... session=xxx`` 切分为独立条目。
+
+        返回列表，每个元素为 ``(entry_id, entry_text, metadata)``。
+        """
+        entries: list[tuple[str, str, dict[str, Any]]] = []
+        blocks = re.split(r"\n---+\n", content)
+        for block in blocks:
+            block = block.strip()
+            if not block:
+                continue
+
+            lines = block.split("\n")
+            header = lines[0].strip()
+            body = "\n".join(lines[1:]).strip()
+
+            # 解析 header: "## YYYY-MM-DD HH:MM:SS  session=xxx"
+            m = re.match(
+                r"^##\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+session=(\S+)",
+                header,
+            )
+            if not m:
+                continue
+
+            timestamp = m.group(1)
+            session_id = m.group(2)
+
+            # 构建唯一 ID：daily:{date}:{timestamp_safe}:{session_id}
+            ts_safe = timestamp.replace(":", "-").replace(" ", "_")
+            entry_id = f"daily:{date_str}:{ts_safe}:{session_id}"
+            metadata: dict[str, Any] = {
+                "source": "daily",
+                "date": date_str,
+                "session_id": session_id,
+                "timestamp": timestamp,
+            }
+            entries.append((entry_id, block, metadata))
+
+        return entries
