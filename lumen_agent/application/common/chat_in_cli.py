@@ -16,13 +16,11 @@ import logging
 import threading
 from uuid import uuid4
 import questionary
-import readline
 from knowledge_in_cli import knowledge_operation
-from lumen_agent.api.routers import knowledge
-from lumen_agent.application.chat_service import reply_with_agent
+from lumen_agent.application.service.chat_service import reply_with_agent
 from lumen_agent.agent.tools import init_tools
 from lumen_agent.config import get_settings
-from lumen_agent.infrastructure.sqlite_conversation import SqliteConversationRepository
+from lumen_agent.infrastructure.data_base.sqlite_conversation import SqliteConversationRepository
 from lumen_agent.model_adapters import get_model_adapter
 
 

@@ -5,15 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import json
 import logging
 
-from lumen_agent.application.text_splitter import Chunk, split_text_into_chunks
+from lumen_agent.application.uitls.text_splitter import Chunk, split_text_into_chunks
 from lumen_agent.config import Settings
-from lumen_agent.infrastructure.chroma_client import ChromaKnowledgeStore
-from lumen_agent.infrastructure.embedding_client import AlibabaEmbeddingClient
-from lumen_agent.infrastructure.sqlite_knowledge import SqliteKnowledgeRepository
-from lumen_agent.infrastructure.knowledge_index_store import KnowledgeIndexStore
+from lumen_agent.infrastructure.client.chroma_client import ChromaKnowledgeStore
+from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
+from lumen_agent.infrastructure.data_base.sqlite_knowledge import SqliteKnowledgeRepository
+from lumen_agent.infrastructure.data_base.knowledge_index_store import KnowledgeIndexStore
 
 
 @dataclass(slots=True)

@@ -4,7 +4,6 @@
       <div>
         <div class="hero-kicker">Agent Skills</div>
         <h2>技能能力总览</h2>
-        <p>把 SKILL 设计成"可浏览的能力库"，重点显示可用性、环境依赖与定位信息。</p>
       </div>
       <div class="hero-stats">
         <div class="stat-box">

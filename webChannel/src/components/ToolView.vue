@@ -4,7 +4,6 @@
       <div>
         <div class="hero-kicker">Agent Tools</div>
         <h2>工具能力总览</h2>
-        <p>将后端 `/v1/tools` 结果以更适合浏览与检索的方式独立展示。</p>
       </div>
       <div class="hero-stats">
         <div class="stat-box">

@@ -3,7 +3,7 @@
 from fastapi import Depends
 
 from lumen_agent.config import Settings, get_settings
-from lumen_agent.infrastructure.sqlite_conversation import SqliteConversationRepository
+from lumen_agent.infrastructure.data_base.sqlite_conversation import SqliteConversationRepository
 from lumen_agent.model_adapters import get_model_adapter
 from lumen_agent.model_adapters.base import ModelAdapter
 

@@ -14,8 +14,8 @@ from lumen_agent.api.schemas.stream_events import (
     StreamErrorEvent,
     StreamEventDispatcher,
 )
-from lumen_agent.application.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
-from lumen_agent.application.llm_error_policy import (
+from lumen_agent.application.service.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
+from lumen_agent.application.uitls.llm_error_policy import (
     llm_chain_failure_detail,
     llm_chain_failure_http_status,
 )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from lumen_agent.infrastructure.deepseek_client import DeepSeekHttpClient
+from lumen_agent.infrastructure.client.deepseek_client import DeepSeekHttpClient
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 

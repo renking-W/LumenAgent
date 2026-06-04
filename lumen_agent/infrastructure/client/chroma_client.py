@@ -7,7 +7,7 @@ import logging
 
 import chromadb
 
-from lumen_agent.application.text_splitter import Chunk
+from lumen_agent.application.uitls.text_splitter import Chunk
 from lumen_agent.config import Settings
 
 

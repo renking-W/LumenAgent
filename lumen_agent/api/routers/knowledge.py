@@ -18,7 +18,7 @@ from lumen_agent.api.schemas.knowledge_dtos import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
 )
-from lumen_agent.application.rag_service import RagService
+from lumen_agent.application.service.rag_service import RagService
 from lumen_agent.config import Settings
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
