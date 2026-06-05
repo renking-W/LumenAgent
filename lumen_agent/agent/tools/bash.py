@@ -72,8 +72,6 @@ class Bash(BaseTool):
             timeout = int(timeout_val) if timeout_val is not None else _DEFAULT_TIMEOUT
         except (TypeError, ValueError):
             return ToolResult.error("timeout 须为整数（秒）。")
-        if timeout < 1 or timeout > _MAX_TIMEOUT:
-            return ToolResult.error(f"timeout 须在 1～{_MAX_TIMEOUT} 秒之间。")
 
         # 构造子进程参数
         if _IS_WINDOWS:

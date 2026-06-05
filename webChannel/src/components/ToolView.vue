@@ -130,12 +130,15 @@ const showToolDetail = (tool: ToolInfo) => {
 }
 .card-top > div { min-width: 0; overflow: hidden; }
 .card-top-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-.schema-box { border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; flex-shrink: 0; }
+.schema-box { border: 1px solid #e5e7eb; border-radius: 16px; flex-shrink: 0; }
 .schema-box summary {
   cursor: pointer; padding: 12px 14px; font-weight: 600;
   color: #111827; background: #f8fafc;
 }
-.schema-box pre { padding: 12px 14px; background: #ffffff; }
+.schema-box pre {
+  padding: 12px 14px; background: #ffffff; margin: 0;
+  max-height: 220px; overflow: auto;
+}
 .dialog-section { margin-bottom: 20px; }
 .dialog-label { font-size: 0.9rem; color: #111827; margin: 0 0 8px; font-weight: 600; }
 .dialog-text { color: #6b7280; line-height: 1.7; white-space: pre-wrap; }

@@ -42,6 +42,14 @@
           <span class="nav-title">技能</span>
           <span class="nav-desc">单独展示所有 Skill</span>
         </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'memories' }"
+          @click="activeView = 'memories'"
+        >
+          <span class="nav-title">记忆</span>
+          <span class="nav-desc">浏览所有记忆文件</span>
+        </button>
       </nav>
 
     </el-aside>
@@ -80,8 +88,9 @@
           @load-more="loadMoreMessages"
           @retry="handleRetry"
         />
-        <ToolView   v-else-if="activeView === 'tools'"  :tools="tools" :connected="connected" />
-        <SkillView  v-else                             :skills="skills" />
+        <ToolView    v-else-if="activeView === 'tools'"     :tools="tools" :connected="connected" />
+        <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
+        <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
       </el-main>
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
@@ -101,16 +110,17 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
-import type { ToolInfo, SkillInfo, ChatBlock, ChatMessage } from './types'
+import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage } from './types'
 import AppTopbar from './components/AppTopbar.vue'
 import ChatView from './components/ChatView.vue'
 import ToolView from './components/ToolView.vue'
 import SkillView from './components/SkillView.vue'
+import MemoryView from './components/MemoryView.vue'
 import AppComposer from './components/AppComposer.vue'
 
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories'>('chat')
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)
@@ -120,6 +130,7 @@ const activeSessionId = ref('')
 const statusText = ref('等待输入')
 const tools = ref<ToolInfo[]>([])
 const skills = ref<SkillInfo[]>([])
+const memories = ref<MemoryFileItem[]>([])
 const mainContent = ref<HTMLElement | null>(null)
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 const abortController = ref<AbortController | null>(null)
@@ -231,21 +242,50 @@ const appendBlock = (kind: string, title: string, content: string, expanded = tr
 }
 
 // ── actions ────────────────────────────────────────
-const refreshCapabilities = async () => {
+/** 如果当前正在流式输出，中断连接并通知后端 */
+const interruptStreamIfActive = async () => {
+  if (!sending.value || !activeSessionId.value) return
+  abortController.value?.abort()
   try {
-    const [toolRes, skillRes] = await Promise.all([
-      fetch('/v1/tools'),
-      fetch('/v1/skills'),
-    ])
-    tools.value = await toolRes.json()
-    skills.value = await skillRes.json()
-    connected.value = true
-  } catch {
-    connected.value = false
-  }
+    await fetch('/v1/chat/stream/interrupt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: activeSessionId.value }),
+    })
+  } catch { /* ignore */ }
+  sending.value = false
+  abortController.value = null
+  clearPendingBlocks()
 }
 
-const resetConversation = () => {
+const refreshCapabilities = async () => {
+  let ok = true
+
+  try {
+    const toolRes = await fetch('/v1/tools')
+    if (toolRes.ok) tools.value = await toolRes.json()
+    else ok = false
+  } catch { ok = false }
+
+  try {
+    const skillRes = await fetch('/v1/skills')
+    if (skillRes.ok) skills.value = await skillRes.json()
+    else ok = false
+  } catch { ok = false }
+
+  try {
+    const memRes = await fetch('/v1/memories')
+    if (memRes.ok) {
+      const data = await memRes.json()
+      if (Array.isArray(data)) memories.value = data
+    } else ok = false
+  } catch { ok = false }
+
+  connected.value = ok
+}
+
+const resetConversation = async () => {
+  await interruptStreamIfActive()
   messages.splice(0)
   activeSessionId.value = ''
   beforeSeq.value = undefined
@@ -253,8 +293,9 @@ const resetConversation = () => {
   statusText.value = '已重置为新会话'
 }
 
-const onDeleteSession = (sessionId: string) => {
+const onDeleteSession = async (sessionId: string) => {
   if (activeSessionId.value === sessionId) {
+    await interruptStreamIfActive()
     messages.splice(0)
     activeSessionId.value = ''
     beforeSeq.value = undefined
@@ -301,6 +342,9 @@ function parseStoredMessages(stored: StoredMsg[]): ChatMessage[] {
 }
 
 const loadSessionMessages = async (sessionId: string) => {
+  // 如果正在流式输出当前会话，先中断
+  await interruptStreamIfActive()
+
   try {
     const res = await fetch(`/v1/sessions/${sessionId}/messages?limit=20`)
     if (!res.ok) return
@@ -559,15 +603,21 @@ watch(activeView, async () => {
   if (activeView.value === 'tools') {
     try {
       const res = await fetch('/v1/tools')
-      tools.value = await res.json()
-      connected.value = true
-    } catch { connected.value = false }
+      if (res.ok) tools.value = await res.json()
+    } catch { /* ignore */ }
   } else if (activeView.value === 'skills') {
     try {
       const res = await fetch('/v1/skills')
-      skills.value = await res.json()
-      connected.value = true
-    } catch { connected.value = false }
+      if (res.ok) skills.value = await res.json()
+    } catch { /* ignore */ }
+  } else if (activeView.value === 'memories') {
+    try {
+      const res = await fetch('/v1/memories')
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) memories.value = data
+      }
+    } catch { /* ignore */ }
   }
 })
 </script>

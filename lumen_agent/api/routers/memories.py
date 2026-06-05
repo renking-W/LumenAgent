@@ -28,12 +28,14 @@ async def list_memories() -> list[MemoryFileItem]:
 
     items: list[MemoryFileItem] = []
 
-    # 1) MEMORY.md - 长期记忆
+    # 1) MEMORY.md - 长期记忆（优先 memory 子目录，兼容旧路径 workspace 根目录）
     memory_path = _MEMORY_UTILS.memory_file_path()
+    if not memory_path.exists():
+        memory_path = _WORKSPACE_DIR / "MEMORY.md"
     if memory_path.exists():
         content = memory_path.read_text(encoding="utf-8")
         items.append(MemoryFileItem(file_name="MEMORY.md", content=content, type="long_term"))
-        _logger.debug("读取记忆文件：MEMORY.md (%d 字符)", len(content))
+        _logger.debug("读取记忆文件：%s (%d 字符)", memory_path, len(content))
 
     # 2) 每日记忆文件 (YYYY-MM-DD.md)
     for md_file in sorted(memory_dir.glob("*.md")):

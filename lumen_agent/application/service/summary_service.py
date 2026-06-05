@@ -16,8 +16,8 @@ from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 # prompt 模板路径：与代码同包根，方便随包发布
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "summary.md"
-_LONG_MEMORY_PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "memory_refine.md"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "summary.md"
+_LONG_MEMORY_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "memory_refine.md"
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
@@ -128,7 +128,7 @@ def _load_and_refine_memory(prompt_template: str, memory_text: str) -> str:
 
 
 _MEMORY_UTILS = MemoryFileUtils(
-    memory_dir=Path(__file__).resolve().parent.parent.parent / "work_space" / "memory",
+    memory_dir=Path(__file__).resolve().parent.parent.parent.parent / "work_space" / "memory",
 )
 
 

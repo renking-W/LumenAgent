@@ -28,3 +28,9 @@ export type ChatMessage = {
   status?: number      // 1=正常, 0=中断/异常（仅历史消息有此字段）
   seq?: number         // 游标分页 seq，仅历史消息有此字段
 }
+
+export type MemoryFileItem = {
+  file_name: string
+  content: string
+  type: 'long_term' | 'daily'
+}

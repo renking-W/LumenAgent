@@ -10,7 +10,7 @@ from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter
 
 # prompt 模板路径
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "agent" / "prompts" / "docs" / "title.md"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "title.md"
 
 
 @lru_cache(maxsize=1)
