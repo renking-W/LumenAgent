@@ -1,6 +1,7 @@
 """FastAPI 入口：`create_app` 装配中间件与路由；`app` 供 uvicorn；`main` 供 `python -m`。"""
 
 import asyncio
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,10 +17,44 @@ from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.api.routers import memories as memories_router
 from lumen_agent.config import get_settings, log_config
 
+# ── 项目根目录（基于 app.py 位置推断） ─────────────────────────
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# ── 模板文档目录 ─────────────────────────────────────────────
+_DOCS_DIR = Path(__file__).resolve().parent / "agent" / "prompts" / "docs"
+# ── 需要拷贝到工作区的文件 ────────────────────────────────────
+_WORKSPACE_SEED_FILES = ["ME.md", "MEMORY.md", "RULE.md", "USER.md"]
+
+
+def _init_workspace() -> None:
+    """初始化工作区：work_space 不存在时自动创建目录结构并拷贝模板文件。"""
+    workspace = _PROJECT_ROOT / "work_space"
+    if workspace.exists():
+        return
+
+    logging.info("工作区不存在，触发初始化：%s", workspace)
+
+    # 创建目录结构
+    (workspace / "memory").mkdir(parents=True, exist_ok=True)
+    (workspace / "skills").mkdir(parents=True, exist_ok=True)
+
+    # 拷贝模板文件
+    for filename in _WORKSPACE_SEED_FILES:
+        src = _DOCS_DIR / filename
+        if src.exists():
+            shutil.copy2(src, workspace / filename)
+            logging.info("  已拷贝：%s → work_space/%s", filename, filename)
+        else:
+            logging.warning("  模板文件不存在，跳过：%s", src)
+
+    logging.info("工作区初始化完成：")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """应用生命周期钩子：启动/关闭时管理连接池等。"""
+    # ── 初始化工作区（幂等） ─────────────────────────────────
+    _init_workspace()
+
     # ── 启动时后台索引历史记忆文件 ────────────────────────────
     try:
         asyncio.create_task(_index_memory_on_startup())
@@ -102,6 +137,7 @@ def run_uvicorn() -> None:
 def main() -> None:
     """Web 入口（仅 HTTP，无 CLI）：配置日志后启动 uvicorn。"""
     log_config()
+    _init_workspace()
     run_uvicorn()
 
 
