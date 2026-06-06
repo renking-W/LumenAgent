@@ -34,12 +34,14 @@ class StreamHandle:
         headers: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
         timeout: httpx.Timeout | None = None,
+        on_close: Callable[[], None] | None = None,
     ) -> None:
         self._method = method
         self._url = url
         self._headers = dict(headers or {})
         self._json = json
         self._timeout = timeout or _DEFAULT_TIMEOUT
+        self._on_close = on_close
 
         self._client: httpx.AsyncClient | None = None
         self._response: httpx.Response | None = None
@@ -172,6 +174,8 @@ class StreamHandle:
             return
         self._state = "CLOSED"
         await self._close_resources()
+        if self._on_close:
+            self._on_close()
 
     # ── 内部 ─────────────────────────────────────────────────────
 
@@ -259,16 +263,24 @@ class HttpPool:
         headers: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
     ) -> StreamHandle:
-        """流式请求。返回独立的 ``StreamHandle``（需调用方负责 ``connect`` / ``close``）。"""
+        """流式请求。返回独立的 ``StreamHandle``，关闭时自动从活跃列表移除。"""
         self._ensure_initialized()
         handle = StreamHandle(
             method, url,
             headers=headers,
             json=json,
             timeout=_DEFAULT_TIMEOUT,
+            on_close=lambda: self._remove_handle(handle),
         )
         self._active_handles.append(handle)
         return handle
+
+    def _remove_handle(self, handle: StreamHandle) -> None:
+        """从活跃列表中移除已关闭的 handle。"""
+        try:
+            self._active_handles.remove(handle)
+        except ValueError:
+            pass
 
     # ── 生命周期 ────────────────────────────────────────────────
 

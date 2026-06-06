@@ -185,7 +185,9 @@ class DeepSeekHttpClient:
             payload["enable_thinking"] = self._settings.deepseek_enable_thinking
         if tools:
             payload["tools"] = _to_openai_tools(tools)
-            payload["tool_choice"] = "auto"
+            tool_choice = self._settings.agent_tool_choice
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
         return payload
 
     async def chat(

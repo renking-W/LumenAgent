@@ -19,6 +19,38 @@ class SqliteKnowledgeRepository:
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def open(self) -> None:
+        """打开持久化数据库连接（长连接模式），调用方应在服务启动时调用。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = await aiosqlite.connect(self._db_path)
+        await self._prepare(self._conn)
+
+    async def close(self) -> None:
+        """关闭持久化数据库连接（若已打开）。幂等。"""
+        conn = self._conn
+        self._conn = None
+        if conn is not None:
+            await conn.close()
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        """获取数据库连接。
+
+        长连接模式（已调用 open()）：返回持久连接，调用方不应关闭。
+        短连接模式（未调用 open()）：创建新连接并 prepare，调用方负责关闭。
+        """
+        if self._conn is not None:
+            return self._conn
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = await aiosqlite.connect(self._db_path)
+        await self._prepare(conn)
+        return conn
+
+    async def _close_if_shortlived(self, db: aiosqlite.Connection) -> None:
+        """短连接模式下关闭连接（长连接模式不操作）。"""
+        if self._conn is None:
+            await db.close()
 
     async def _prepare(self, db: aiosqlite.Connection) -> None:
         """初始化表结构。"""
@@ -68,34 +100,34 @@ class SqliteKnowledgeRepository:
         source_path: str | None,
     ) -> None:
         """创建或重置文档主记录为 pending。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
-            await db.execute("BEGIN")
-            try:
-                await db.execute(
-                    """
-                    INSERT INTO knowledge_documents
-                    (knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
-                    ON CONFLICT(knowledge_id, file_name) DO UPDATE SET
-                        source_name=excluded.source_name,
-                        source_path=excluded.source_path,
-                        status='pending',
-                        chunk_count=0,
-                        updated_at=excluded.updated_at
-                    """,
-                    (knowledge_id, file_name, source_name, source_path or '', now, now),
-                )
-                await db.execute(
-                    "DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND file_name = ?",
-                    (knowledge_id, file_name),
-                )
-                await db.commit()
-            except Exception:
-                await db.rollback()
-                raise
+        db = await self._get_conn()
+        await db.execute("BEGIN")
+        try:
+            await db.execute(
+                """
+                INSERT INTO knowledge_documents
+                (knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+                ON CONFLICT(knowledge_id, file_name) DO UPDATE SET
+                    source_name=excluded.source_name,
+                    source_path=excluded.source_path,
+                    status='pending',
+                    chunk_count=0,
+                    updated_at=excluded.updated_at
+                """,
+                (knowledge_id, file_name, source_name, source_path or '', now, now),
+            )
+            await db.execute(
+                "DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND file_name = ?",
+                (knowledge_id, file_name),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+        finally:
+            await self._close_if_shortlived(db)
 
     async def append_chunks(
         self,
@@ -105,97 +137,96 @@ class SqliteKnowledgeRepository:
         chunks: list[dict[str, Any]],
     ) -> None:
         """写入 chunk 映射并更新 chunk_count。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
-            await db.execute("BEGIN")
-            try:
-                for chunk in chunks:
-                    await db.execute(
-                        """
-                        INSERT INTO knowledge_chunks
-                        (knowledge_id, file_name, chunk_index, start_char, end_char, content, content_preview, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            knowledge_id,
-                            file_name,
-                            chunk["chunk_index"],
-                            chunk["start_char"],
-                            chunk["end_char"],
-                            chunk["content"],
-                            chunk["content_preview"],
-                            now,
-                        ),
-                    )
+        db = await self._get_conn()
+        await db.execute("BEGIN")
+        try:
+            for chunk in chunks:
                 await db.execute(
                     """
-                    UPDATE knowledge_documents
-                    SET status = 'ready', chunk_count = ?, updated_at = ?
-                    WHERE knowledge_id = ? AND file_name = ?
+                    INSERT INTO knowledge_chunks
+                    (knowledge_id, file_name, chunk_index, start_char, end_char, content, content_preview, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (len(chunks), now, knowledge_id, file_name),
+                    (
+                        knowledge_id,
+                        file_name,
+                        chunk["chunk_index"],
+                        chunk["start_char"],
+                        chunk["end_char"],
+                        chunk["content"],
+                        chunk["content_preview"],
+                        now,
+                    ),
                 )
-                await db.commit()
-            except Exception:
-                await db.rollback()
-                raise
+            await db.execute(
+                """
+                UPDATE knowledge_documents
+                SET status = 'ready', chunk_count = ?, updated_at = ?
+                WHERE knowledge_id = ? AND file_name = ?
+                """,
+                (len(chunks), now, knowledge_id, file_name),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+        finally:
+            await self._close_if_shortlived(db)
 
     async def mark_failed(self, knowledge_id: str, file_name: str) -> None:
         """将文档标记为失败。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
-            await db.execute("BEGIN")
-            try:
-                await db.execute(
-                    """
-                    UPDATE knowledge_documents
-                    SET status = 'failed', updated_at = ?
-                    WHERE knowledge_id = ? AND file_name = ?
-                    """,
-                    (now, knowledge_id, file_name),
-                )
-                await db.commit()
-            except Exception:
-                await db.rollback()
-                raise
+        db = await self._get_conn()
+        await db.execute("BEGIN")
+        try:
+            await db.execute(
+                """
+                UPDATE knowledge_documents
+                SET status = 'failed', updated_at = ?
+                WHERE knowledge_id = ? AND file_name = ?
+                """,
+                (now, knowledge_id, file_name),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+        finally:
+            await self._close_if_shortlived(db)
 
     async def delete_document(self, knowledge_id: str, file_name: str) -> dict[str, Any] | None:
         """删除某个文档及其切片，返回被删除的文档信息。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
-            await db.execute("BEGIN")
-            try:
-                cursor = await db.execute(
-                    """
-                    SELECT knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at
-                    FROM knowledge_documents WHERE knowledge_id = ? AND file_name = ?
-                    """,
-                    (knowledge_id, file_name),
-                )
-                doc = await cursor.fetchone()
-                if doc is None:
-                    await db.rollback()
-                    return None
-                await db.execute(
-                    "DELETE FROM knowledge_documents WHERE knowledge_id = ? AND file_name = ?",
-                    (knowledge_id, file_name),
-                )
-                await db.commit()
-                return dict(doc)
-            except Exception:
+        db = await self._get_conn()
+        await db.execute("BEGIN")
+        try:
+            cursor = await db.execute(
+                """
+                SELECT knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at
+                FROM knowledge_documents WHERE knowledge_id = ? AND file_name = ?
+                """,
+                (knowledge_id, file_name),
+            )
+            doc = await cursor.fetchone()
+            if doc is None:
                 await db.rollback()
-                raise
+                return None
+            await db.execute(
+                "DELETE FROM knowledge_documents WHERE knowledge_id = ? AND file_name = ?",
+                (knowledge_id, file_name),
+            )
+            await db.commit()
+            return dict(doc)
+        except Exception:
+            await db.rollback()
+            raise
+        finally:
+            await self._close_if_shortlived(db)
 
     async def list_documents(self) -> list[dict[str, Any]]:
         """列出所有文档。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
+        db = await self._get_conn()
+        try:
             cursor = await db.execute(
                 """
                 SELECT knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at
@@ -204,13 +235,14 @@ class SqliteKnowledgeRepository:
                 """
             )
             rows = await cursor.fetchall()
+        finally:
+            await self._close_if_shortlived(db)
         return [dict(row) for row in rows]
 
     async def get_document(self, knowledge_id: str, file_name: str) -> dict[str, Any] | None:
         """获取某个文档及其 chunk 详情。"""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiosqlite.connect(self._db_path) as db:
-            await self._prepare(db)
+        db = await self._get_conn()
+        try:
             cursor = await db.execute(
                 """
                 SELECT knowledge_id, file_name, source_name, source_path, status, chunk_count, created_at, updated_at
@@ -231,6 +263,8 @@ class SqliteKnowledgeRepository:
                 (knowledge_id, file_name),
             )
             chunks = await cursor.fetchall()
+        finally:
+            await self._close_if_shortlived(db)
         result = dict(doc)
         result["chunks"] = [dict(row) for row in chunks]
         return result

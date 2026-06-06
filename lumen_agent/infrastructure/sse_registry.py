@@ -34,9 +34,11 @@ class SessionSSERegistry:
             self._active[session_id] = handle
 
     async def unregister(self, session_id: str) -> None:
-        """取消注册（正常结束/错误后调用）。"""
+        """取消注册，并关闭对应的 StreamHandle（正常结束/错误后调用）。"""
         async with self._lock:
-            self._active.pop(session_id, None)
+            handle = self._active.pop(session_id, None)
+        if handle is not None:
+            await handle.close()
 
     async def interrupt(self, session_id: str) -> bool:
         """中断指定会话的流式连接。

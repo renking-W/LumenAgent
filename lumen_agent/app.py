@@ -33,6 +33,11 @@ async def lifespan(_app: FastAPI):
 
     await get_http_pool().close_all()
 
+    # ── 关闭知识库 SQLite 长连接 ─────────────────────────────
+    from lumen_agent.api.routers.knowledge import _close_rag_service
+
+    await _close_rag_service()
+
 
 async def _index_memory_on_startup() -> None:
     """后台任务：全量扫描每日记忆文件，向量化后写入 ChromaDB。"""

@@ -19,8 +19,11 @@ def log_config(*, enable_stream: bool = True):
 
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
+    _LOG_DIR = Path("log")
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+
     file_handler = TimedRotatingFileHandler(
-        filename="log/agent.log",
+        filename=str(_LOG_DIR / "agent.log"),
         when="midnight",
         encoding="utf-8",
         backupCount=30,
@@ -55,7 +58,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     reload: bool = False
 
-    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
+    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173,http://localhost:8080"
 
     # 会话 SQLite：相对路径基于包目录（`lumen_agent/`）
     conversation_db_path: str = "data/conversations.db"
@@ -71,6 +74,9 @@ class Settings(BaseSettings):
     agent_max_tool_result_chars: int = Field(default=20000, ge=1000)
     agent_workspace_dir: str = "workspace"
     web_search_api_key: str = ""
+
+    # Agent 工具调用策略：auto / none / required / force_<tool_name>
+    agent_tool_choice: str = Field(default="auto", pattern=r"^(auto|none|required|force_.+)$")
 
     # 知识库 / RAG
     # embedding_api_key：阿里云 Embedding 接口的鉴权密钥，和 deepseek_api_key 一样从 .env 读取。

@@ -53,6 +53,14 @@ class RagService:
         # JSON 索引文件负责 file_name 与 source 的快速映射展示。
         self._index_store = KnowledgeIndexStore(settings.rag_chroma_path_resolved() / "knowledge_index.json")
 
+    async def start(self) -> None:
+        """启动时初始化长连接（由工厂方法或 lifespan 调用）。"""
+        await self._meta_store.open()
+
+    async def close(self) -> None:
+        """关闭长连接。"""
+        await self._meta_store.close()
+
     async def ingest_text(
         self,
         *,
@@ -260,7 +268,7 @@ class RagService:
                 embeddings=vectors,
             )
         except Exception:
-            await self._meta_store.mark_failed(knowledge_id_value)
+            await self._meta_store.mark_failed(knowledge_id_value, file_name)
             raise
         return IngestResult(
             knowledge_id=knowledge_id_value,

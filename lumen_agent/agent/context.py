@@ -7,51 +7,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-
-# ──────────────────────────────────────────────
-# ContextManager
-# ──────────────────────────────────────────────
-
-class ContextManager:
-    """基于内部消息格式的上下文管理。
-
-    max_turns 取 Settings.summary_threshold_turns，与摘要窗口保持一致。
-    """
-
-    def __init__(self, max_turns: int = 6, max_tool_result_chars: int = 20000) -> None:
-        self.max_turns = max_turns
-        self.max_tool_result_chars = max_tool_result_chars
-
-    # ── 轮次识别 ──────────────────────────────
-
-    # def trim_to_max_turns(self, messages: list[dict]) -> list[dict]:
-    #     """保留最近 max_turns 轮，丢弃更早的轮次。"""
-    #     turns = extract_complete_turns(messages)
-    #     if len(turns) <= self.max_turns:
-    #         return messages
-    #     keep = turns[-self.max_turns :]
-    #     return [msg for turn in keep for msg in turn]
-
-    # ── tool_result 截断 ──────────────────────
-
-    # def truncate_tool_results(self, messages: list[dict]) -> list[dict]:
-    #     """截断超过上限的 tool_result 块内容，防止上下文溢出。"""
-    #     for msg in messages:
-    #         for block in msg.get("content", []):
-    #             if (
-    #                 isinstance(block, dict)
-    #                 and block.get("type") == "tool_result"
-    #                 and isinstance(block.get("content"), str)
-    #                 and len(block["content"]) > self.max_tool_result_chars
-    #             ):
-    #                 original_len = len(block["content"])
-    #                 block["content"] = (
-    #                     block["content"][: self.max_tool_result_chars]
-    #                     + f"\n...[truncated, original {original_len} chars]"
-    #                 )
-    #     return messages
-
-
 # ──────────────────────────────────────────────
 # ToolExecutionGuard
 # ──────────────────────────────────────────────

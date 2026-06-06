@@ -34,9 +34,10 @@
           </div>
         </details>
 
-        <!-- 文本块 → 完整 markdown 渲染 -->
+        <!-- 文本块 → 用户消息纯文本，AI 消息 markdown 渲染 -->
         <div v-else-if="item.kind === 'single'" class="block block--text">
-          <div class="md" v-html="renderMarkdown(item.block.content)"></div>
+          <div v-if="message.role === 'user'" class="plain-text">{{ item.block.content }}</div>
+          <div v-else class="md" v-html="renderMarkdown(item.block.content)"></div>
         </div>
 
         <!-- Tool 分组：tool_use + tool_result 合并展示 -->
@@ -233,6 +234,12 @@ watch(
   border: none;
   background: transparent;
   padding: 0;
+}
+.plain-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.65;
+  color: #111827;
 }
 
 .block-summary {

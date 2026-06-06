@@ -7,7 +7,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from lumen_agent.agent.context import ContextManager, ToolExecutionGuard
+from lumen_agent.agent.context import ToolExecutionGuard
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 from lumen_agent.config import Settings
@@ -44,11 +44,6 @@ class AgentStreamExecutor:
         self.tools: dict[str, BaseTool] = {t.name: t for t in tools}
         self.tool_schemas: list[dict] = [t.to_internal_schema() for t in tools]
         self.max_turns = max_turns or settings.agent_max_turns
-
-        self.context = ContextManager(
-            max_turns=settings.summary_threshold_turns,
-            max_tool_result_chars=settings.agent_max_tool_result_chars,
-        )
         self.guard = ToolExecutionGuard()
 
     async def run_stream(

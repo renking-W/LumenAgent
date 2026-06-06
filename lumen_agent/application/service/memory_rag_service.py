@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import chromadb
@@ -86,11 +89,49 @@ class MemoryRagService:
         )
         self._logger.debug("记忆条目已索引：%s", entry_id)
 
+    _CHECKPOINT_VERSION = 1
+
+    # ── Checkpoint 持久化 ─────────────────────────────────────────
+
+    def _load_checkpoint(self) -> dict[str, Any]:
+        """加载索引 checkpoint。"""
+        path = self._base_dir / "memory_index_checkpoint.json"
+        if not path.exists():
+            return {"version": self._CHECKPOINT_VERSION, "files": {}}
+        try:
+            data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("version") != self._CHECKPOINT_VERSION:
+                return {"version": self._CHECKPOINT_VERSION, "files": {}}
+            return data
+        except (json.JSONDecodeError, OSError):
+            return {"version": self._CHECKPOINT_VERSION, "files": {}}
+
+    def _save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """持久化索引 checkpoint。"""
+        path = self._base_dir / "memory_index_checkpoint.json"
+        checkpoint["updated_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            path.write_text(
+                json.dumps(checkpoint, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            self._logger.warning("无法写入记忆索引 checkpoint", exc_info=True)
+
+    @staticmethod
+    def _file_signature(file_path: Path) -> dict[str, float | int] | None:
+        """返回文件的 mtime + size 签名，文件不存在时返回 None。"""
+        try:
+            stat = file_path.stat()
+            return {"mtime": stat.st_mtime, "size": stat.st_size}
+        except OSError:
+            return None
+
     async def index_all_memory_files(self, memory_utils: MemoryFileUtils) -> None:
-        """全量扫描所有每日记忆文件，去重后索引到 ChromaDB。
+        """全量扫描所有每日记忆文件，通过 checkpoint 跳过未变更文件后索引到 ChromaDB。
 
         利用 ChromaDB upsert 的幂等性：已存在的条目按相同 ID 覆盖（无副作用），
-        新条目自动补入。首次启动较慢，后续启动仅补录新增条目。
+        新条目自动补入。首次启动会全量索引，后续仅处理新增或修改过的文件。
         """
         memory_dir = memory_utils.memory_dir
         if not memory_dir.exists():
@@ -102,26 +143,49 @@ class MemoryRagService:
             self._logger.info("没有找到每日记忆文件，跳过全量索引")
             return
 
+        checkpoint = self._load_checkpoint()
+        file_records: dict[str, dict[str, Any]] = checkpoint.get("files", {})
+        changed = False
+
         indexed_count = 0
-        skipped_count = 0
+        skipped_entry_count = 0
+        skipped_file_count = 0
+
         for md_file in md_files:
             if md_file.name == "MEMORY.md":
                 continue
+
+            sig = self._file_signature(md_file)
+            if sig is None:
+                continue
+
+            last = file_records.get(md_file.name)
+            if last is not None and last.get("mtime") == sig["mtime"] and last.get("size") == sig["size"]:
+                skipped_file_count += 1
+                continue
+
+            # 文件有变更或新增 → 重新解析并索引
             content = md_file.read_text(encoding="utf-8")
-            date_str = md_file.stem  # "2026-05-26"
+            date_str = md_file.stem
             entries = self._parse_daily_file(content, date_str)
             for entry_id, entry_text, metadata in entries:
-                # 检查是否已索引（Chroma get 按 ID 查询很轻量）
                 existing = self._collection.get(ids=[entry_id])
                 if existing and existing.get("ids") and existing["ids"]:
-                    skipped_count += 1
+                    skipped_entry_count += 1
                     continue
                 await self.index_entry(entry_text, entry_id, metadata)
                 indexed_count += 1
 
+            file_records[md_file.name] = sig  # type: ignore[assignment]
+            changed = True
+
+        if changed:
+            checkpoint["files"] = file_records
+            self._save_checkpoint(checkpoint)
+
         self._logger.info(
-            "全量记忆索引完成：新增 %s 条，跳过 %s 条（已存在）",
-            indexed_count, skipped_count,
+            "全量记忆索引完成：新增 %s 条，跳过 %s 条（已存在），跳过 %s 个文件（未变更）",
+            indexed_count, skipped_entry_count, skipped_file_count,
         )
 
     @staticmethod

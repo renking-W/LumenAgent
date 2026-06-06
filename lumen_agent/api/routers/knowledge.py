@@ -25,9 +25,26 @@ router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
 _logger = logging.getLogger(__name__)
 
 
-def _service(settings: Settings) -> RagService:
-    """创建共享的 RAG 服务实例。"""
-    return RagService(settings)
+_rag_service: RagService | None = None
+
+
+async def _get_service(settings: Settings) -> RagService:
+    """获取共享的 RAG 服务单例（首次调用时初始化长连接）。"""
+    global _rag_service  # noqa: PLW0603
+    if _rag_service is None:
+        svc = RagService(settings)
+        await svc.start()
+        _rag_service = svc
+    return _rag_service
+
+
+async def _close_rag_service() -> None:
+    """关闭 RAG 服务长连接（应用关闭时调用）。"""
+    global _rag_service  # noqa: PLW0603
+    svc = _rag_service
+    _rag_service = None
+    if svc is not None:
+        await svc.close()
 
 
 @router.post("/ingest", response_model=KnowledgeIngestResponse)
@@ -39,7 +56,7 @@ async def ingest_knowledge(
     if not body.text and not body.file_path:
         raise HTTPException(status_code=400, detail="text 和 file_path 至少提供一个")
 
-    service = _service(settings)
+    service = await _get_service(settings)
     _logger.info(
         "知识库接口：收到入库请求，来源名称=%s，知识编号=%s，文件路径=%s，文本长度=%s",
         body.source_name,
@@ -79,7 +96,7 @@ async def search_knowledge(
     settings: Settings = Depends(get_settings),
 ) -> KnowledgeSearchResponse:
     """API 场景下按 query 检索知识库 chunk。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     _logger.info(
         "知识库接口：收到检索请求，查询内容=%r，返回条数=%s，相似度阈值=%s",
         body.query,
@@ -111,7 +128,7 @@ async def search_knowledge(
 @router.get("/collections")
 async def list_collections(settings: Settings = Depends(get_settings)) -> dict:
     """列出当前本地已有的 Chroma collections。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     collections = service.list_collections()
     _logger.info("知识库接口：查询集合列表完成，集合数量=%s", len(collections))
     return {"collections": collections}
@@ -120,7 +137,7 @@ async def list_collections(settings: Settings = Depends(get_settings)) -> dict:
 @router.delete("/rebuild")
 async def rebuild_knowledge(settings: Settings = Depends(get_settings)) -> dict:
     """重建知识库索引：删除当前 collection 并重新创建。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     _logger.info("知识库接口：收到重建请求，集合=%s", settings.rag_collection_name)
     service.rebuild_collection()
     _logger.info("知识库接口：重建完成，集合=%s", settings.rag_collection_name)
@@ -134,7 +151,7 @@ async def delete_knowledge(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """删除指定 knowledge_id 和 file_name 的索引数据。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     _logger.info("知识库接口：收到删除请求，知识编号=%s，文件名=%s", knowledge_id, file_name)
     deleted = await service.delete_document(knowledge_id, file_name)
     if deleted is None:
@@ -146,7 +163,7 @@ async def delete_knowledge(
 @router.get("/documents", response_model=list[KnowledgeDocumentSummary])
 async def list_documents(settings: Settings = Depends(get_settings)) -> list[KnowledgeDocumentSummary]:
     """列出当前知识库中的所有文档。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     docs = await service.list_documents()
     _logger.info("知识库接口：查询文档列表完成，文档数量=%s", len(docs))
     return [KnowledgeDocumentSummary(**doc) for doc in docs]
@@ -159,7 +176,7 @@ async def get_document_detail(
     settings: Settings = Depends(get_settings),
 ) -> KnowledgeDocumentDetail:
     """查看某个文档及其所有切片详情。"""
-    service = _service(settings)
+    service = await _get_service(settings)
     doc = await service.get_document(knowledge_id, file_name)
     if doc is None:
         raise HTTPException(status_code=404, detail="知识文档不存在")
