@@ -15,6 +15,7 @@ from lumen_agent.api.routers import tools as tools_router
 from lumen_agent.api.routers import skills as skills_router
 from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.api.routers import memories as memories_router
+from lumen_agent.api.routers import mcp_servers as mcp_servers_router
 from lumen_agent.config import get_settings, log_config
 
 # ── 项目根目录（基于 app.py 位置推断） ─────────────────────────
@@ -55,6 +56,23 @@ async def lifespan(_app: FastAPI):
     # ── 初始化工作区（幂等） ─────────────────────────────────
     _init_workspace()
 
+    # ── 启动 MCP 全局管理器（全量连接 enabled 的 MCP Server） ──
+    try:
+        from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
+        from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
+
+        settings = get_settings()
+        repo = SqliteMCPServerRepository(settings.conversation_db_path_resolved())
+        enabled_servers = await repo.list_enabled()
+        await get_mcp_manager().start_all(enabled_servers)
+        logging.info(
+            "MCP 管理器启动，已连接 %s / %s 个服务器",
+            len(get_mcp_manager().list_connection_ids()),
+            len(enabled_servers),
+        )
+    except Exception:
+        logging.exception("MCP 管理器启动失败")
+
     # ── 启动时后台索引历史记忆文件 ────────────────────────────
     try:
         asyncio.create_task(_index_memory_on_startup())
@@ -62,6 +80,11 @@ async def lifespan(_app: FastAPI):
         logging.exception("记忆文件后台索引启动失败")
 
     yield
+
+    # ── 关闭 MCP 全局连接 ──────────────────────────────────
+    from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
+
+    await get_mcp_manager().close_all()
 
     # ── 关闭全局 HTTP 连接池（共享 client + 所有活跃流式连接） ──
     from lumen_agent.infrastructure.http_pool import get_http_pool
@@ -114,6 +137,7 @@ def create_app() -> FastAPI:
     application.include_router(skills_router.router)
     application.include_router(knowledge_router.router)
     application.include_router(memories_router.router)
+    application.include_router(mcp_servers_router.router)
     return application
 
 

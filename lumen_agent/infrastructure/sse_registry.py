@@ -29,7 +29,7 @@ class SessionSSERegistry:
         async with self._lock:
             old = self._active.get(session_id)
             if old is not None:
-                logger.warning("session=%s 已有活跃连接，抢占中断旧连接", session_id)
+                logger.info("session=%s 已有活跃连接，抢占中断旧连接", session_id)
                 await old.close()
             self._active[session_id] = handle
 

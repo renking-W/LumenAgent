@@ -1,4 +1,5 @@
 """对话路由：`POST /v1/chat` 整段 JSON；`POST /v1/chat/stream` SSE；`POST /v1/chat/stream/interrupt` 中断流式对话。"""
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
@@ -111,6 +112,8 @@ async def post_chat_stream(
         stream_it = reply_with_agent(
             repo, llm, session_id, body.message, settings,
             on_connect=on_connect,
+            mcp_servers=body.mcp_servers,
+            mcp_server_ids=body.mcp_server_ids,
         )
     else:
         stream_it = reply_single_turn_stream(
@@ -150,6 +153,9 @@ async def post_chat_stream(
                 yield "data: [DONE]\n\n"
             except _LLM_STREAM_FAILURES as e:
                 yield _sse_error_line(e)
+                yield "data: [DONE]\n\n"
+            except asyncio.CancelledError:
+                # 客户端断开 SSE 连接，静默终止，不打印错误堆栈
                 yield "data: [DONE]\n\n"
         finally:
             await registry.unregister(session_id)

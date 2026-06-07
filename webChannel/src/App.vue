@@ -50,6 +50,14 @@
           <span class="nav-title">记忆</span>
           <span class="nav-desc">浏览所有记忆文件</span>
         </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'mcp' }"
+          @click="activeView = 'mcp'"
+        >
+          <span class="nav-title">MCP</span>
+          <span class="nav-desc">管理 MCP Server 配置</span>
+        </button>
       </nav>
 
     </el-aside>
@@ -91,9 +99,18 @@
         <ToolView    v-else-if="activeView === 'tools'"     :tools="tools" :connected="connected" />
         <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
         <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
+        <MCPServerView v-else-if="activeView === 'mcp'" />
       </el-main>
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
+        <div class="composer-mcp-bar">
+          <MCPServerSelector
+            v-if="useAgentMode"
+            :selected-ids="selectedMcpServerIds"
+            :disabled="sending"
+            @update:selected-ids="selectedMcpServerIds = $event"
+          />
+        </div>
         <AppComposer
           :prompt="prompt"
           :sending="sending"
@@ -116,11 +133,13 @@ import ChatView from './components/ChatView.vue'
 import ToolView from './components/ToolView.vue'
 import SkillView from './components/SkillView.vue'
 import MemoryView from './components/MemoryView.vue'
+import MCPServerView from './components/MCPServerView.vue'
+import MCPServerSelector from './components/MCPServerSelector.vue'
 import AppComposer from './components/AppComposer.vue'
 
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp'>('chat')
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)
@@ -134,6 +153,8 @@ const memories = ref<MemoryFileItem[]>([])
 const mainContent = ref<HTMLElement | null>(null)
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 const abortController = ref<AbortController | null>(null)
+
+const selectedMcpServerIds = ref<string[]>([])
 
 const messages = reactive<ChatMessage[]>([])
 
@@ -554,6 +575,9 @@ const sendMessage = async () => {
         message: content,
         session_id: activeSessionId.value || undefined,
         mode: useAgentMode.value ? 'agent' : 'simple',
+        mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
+          ? selectedMcpServerIds.value
+          : undefined,
       }),
       signal: abortController.value.signal,
     })
@@ -676,6 +700,9 @@ watch(activeView, async () => {
 
 /* ── 底部输入区 ── */
 .composer-wrapper { padding: 0; }
+.composer-mcp-bar {
+  padding: 10px 24px 0;
+}
 
 /* ── 移动端汉堡按钮 ── */
 .hamburger {

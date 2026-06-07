@@ -34,3 +34,19 @@ export type MemoryFileItem = {
   content: string
   type: 'long_term' | 'daily'
 }
+
+export type MCPServerInfo = {
+  id: string
+  name: string
+  url: string
+  api_key: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type MCPServerTestResult = {
+  status: 'ok' | 'error'
+  message?: string
+  tools_count?: number
+}

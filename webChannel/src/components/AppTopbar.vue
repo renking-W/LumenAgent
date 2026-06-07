@@ -29,7 +29,7 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  activeView: 'chat' | 'tools' | 'skills' | 'memories'
+  activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp'
   useAgentMode: boolean
 }>()
 
@@ -43,6 +43,7 @@ const pageTitle = computed(() => {
   if (props.activeView === 'tools') return 'Tools Library'
   if (props.activeView === 'skills') return 'Skills Library'
   if (props.activeView === 'memories') return 'Memory Files'
+  if (props.activeView === 'mcp') return 'MCP Servers'
   return 'Agent Console'
 })
 
@@ -50,6 +51,7 @@ const pageSubtitle = computed(() => {
   if (props.activeView === 'tools') return '浏览 Agent 可调用的工具定义、参数结构与说明。'
   if (props.activeView === 'skills') return '浏览所有 SKILL 的可用状态、环境依赖与位置。'
   if (props.activeView === 'memories') return '浏览所有记忆文件的内容与详情，包括长期记忆和每日记忆。'
+  if (props.activeView === 'mcp') return '管理 MCP Server 连接配置，新增、编辑、删除与连通性测试。'
   return '支持 SSE 实时渲染思考、工具调用、工具结果与正文内容。'
 })
 </script>
