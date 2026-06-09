@@ -43,9 +43,15 @@ def _read_knowledge_documents() -> list[dict]:
         return []
 
 
+def _is_mcp_tool(tool: BaseTool) -> bool:
+    """判断工具是否为 MCP 远程工具（名称以 ``mcp_`` 前缀开头）。"""
+    return tool.name.startswith("mcp_")
+
+
 def _render_tool(tool: BaseTool) -> str:
     """将单个 BaseTool 实例渲染为 Markdown 工具描述块。"""
-    lines: list[str] = [f"### {tool.name}", "", tool.description, ""]
+    tag = "（MCP 远程工具）" if _is_mcp_tool(tool) else ""
+    lines: list[str] = [f"### {tool.name} {tag}", "", tool.description, ""]
     props: dict = tool.parameters.get("properties", {})
     required: list[str] = tool.parameters.get("required", [])
 

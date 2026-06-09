@@ -8,6 +8,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _PACKAGE_DIR.parent  # 项目根目录（LumenAgent/）
 _DEFAULT_ENV_FILE = _PACKAGE_DIR / ".env"
 
 def log_config(*, enable_stream: bool = True):
@@ -72,7 +73,7 @@ class Settings(BaseSettings):
     # Agent 工具循环配置
     agent_max_turns: int = Field(default=20, ge=1, le=100)
     agent_max_tool_result_chars: int = Field(default=20000, ge=1000)
-    agent_workspace_dir: str = "workspace"
+    agent_workspace_dir: str = "work_space"
     web_search_api_key: str = ""
 
     # Agent 工具调用策略：auto / none / required / force_<tool_name>
@@ -172,10 +173,10 @@ class Settings(BaseSettings):
         return self.model_context_windows.get(model_name, self.default_model_context_window)
 
     def workspace_dir_resolved(self) -> Path:
-        """工具默认工作区：相对路径时相对包目录解析为绝对路径。"""
+        """工具默认工作区：相对路径时相对项目根目录解析为绝对路径。"""
         p = Path(self.agent_workspace_dir)
         if not p.is_absolute():
-            p = _PACKAGE_DIR / p
+            p = _PROJECT_ROOT / p
         return p.resolve()
 
     def rag_chroma_path_resolved(self) -> Path:

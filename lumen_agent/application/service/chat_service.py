@@ -173,27 +173,14 @@ async def reply_with_agent(
     mcp_tools: list[Any] = []
 
     # a) 从全局 MCP 管理器获取已连接的连接
+    # 仅当前端通过 mcp_server_ids 明确指定时，才加载对应 MCP Server 的工具
+    # 不传 mcp_server_ids 或传 None → 不加载任何 MCP 工具
     global_mgr = get_mcp_manager()
     if mcp_server_ids:
-        # 前端指定了 ID → 只使用指定的
         for sid in mcp_server_ids:
             conn = global_mgr.get_connection(sid)
             if conn is None:
                 logging.warning("MCP Server %s 未连接或不存在，已跳过", sid)
-                continue
-            try:
-                remote_tool_defs = await conn.list_tools()
-                for td in remote_tool_defs:
-                    mcp_tools.append(MCPBridgeTool(td, conn, sid))
-                logging.info("MCP Server %s 加载了 %d 个工具", sid, len(remote_tool_defs))
-            except Exception:
-                logging.warning("MCP Server %s 获取工具列表失败，已跳过", sid, exc_info=True)
-    elif global_mgr.is_initialized:
-        # 未指定 → 使用全部已连接的
-        # 注意：这里不硬遍历全部，而是让前端决定；默认走空列表，用户可通过配置 CRUD 启用
-        for sid in global_mgr.list_connection_ids():
-            conn = global_mgr.get_connection(sid)
-            if conn is None:
                 continue
             try:
                 remote_tool_defs = await conn.list_tools()

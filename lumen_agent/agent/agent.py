@@ -7,6 +7,8 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+
 from lumen_agent.agent.context import ToolExecutionGuard
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
@@ -89,6 +91,12 @@ class AgentStreamExecutor:
                         yield ("reasoning_content", data)
                     elif kind == "tool_use":
                         tool_calls_this_turn.append(data)  # type: ignore[arg-type]
+            except httpx.ReadError:
+                # 流式连接被外部中断（用户取消/中断请求），非模型错误
+                logger.warning("[Agent] 流式连接中断")
+                yield ("error", "stream_interrupted")
+                yield ("new_messages", messages[initial_len:])
+                return
             except Exception as exc:
                 logger.exception("[Agent] 模型调用异常")
                 yield ("error", str(exc))

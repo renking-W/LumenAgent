@@ -232,6 +232,14 @@ const streamingMessageId = computed(() => {
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 const nowStamp = () => new Date().toLocaleTimeString('zh-CN', { hour12: false })
 
+/** 总是创建新块（不做内容合并），适用于 tool_use / tool_result 等独立块 */
+const pushBlock = (kind: string, title: string, content: string, expanded = true) => {
+  const msg = getOrCreateAssistant()
+  const block: ChatBlock = { id: crypto.randomUUID(), kind, title, content, expanded }
+  msg.blocks.push(block)
+  return block
+}
+
 const addMessage = (role: 'user' | 'assistant') => {
   const msg: ChatMessage = {
     id: crypto.randomUUID(),
@@ -423,19 +431,35 @@ const consumeEvent = (event: { type: string; data?: any }) => {
       appendBlock('reasoning', '💭 思考', event.data?.delta ?? '', false)
       break
     case 'tool_calls': {
-      const toolCalls = event.data?.tool_calls ?? []
-      const toolName = Array.isArray(toolCalls) && toolCalls.length > 0
-        ? toolCalls.map((tc: any) => tc.name).filter(Boolean).join(', ')
-        : '工具调用'
-      appendBlock('tool_use', toolName, pretty(toolCalls), false)
+      // tool_calls 仅用于通知，实际的 tool_use 块由 tool_execution_start 按序创建
+      // 这样与历史消息的存储格式一致：每个 tool_use 自带 input 参数
       break
     }
-    case 'tool_execution_start':
-      appendBlock('tool_result', `开始执行 ${event.data?.name ?? 'tool'}`, pretty(event.data ?? {}), false)
+    case 'tool_execution_start': {
+      // 创建独立的 tool_use 块，content = arguments（与历史消息的 cb.input 格式一致）
+      const data = event.data ?? {}
+      const toolName: string = data.name ?? '工具'
+      const args: Record<string, unknown> = data.arguments ?? {}
+      pushBlock('tool_use', `⏳ ${toolName}`, pretty(args), false)
       break
-    case 'tool_execution_end':
-      appendBlock('tool_result', `执行结束 ${event.data?.name ?? 'tool'}`, pretty(event.data ?? {}), false)
+    }
+    case 'tool_execution_end': {
+      // 清除上一个 tool_use 块的 ⏳ 标记
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant') {
+        for (let bi = lastMsg.blocks.length - 1; bi >= 0; bi--) {
+          const block = lastMsg.blocks[bi]
+          if (block.kind === 'tool_use') {
+            block.title = block.title.replace(/^⏳\s*/, '')
+            break
+          }
+        }
+      }
+      // 创建独立的 tool_result 块（与历史消息的 cb.content 格式一致）
+      const data = event.data ?? {}
+      pushBlock('tool_result', `工具结果: ${data.name ?? '工具'}`, data.result_preview ?? '', false)
       break
+    }
     case 'assistant_done':
       statusText.value = '本轮完成'
       break

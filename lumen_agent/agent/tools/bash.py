@@ -40,7 +40,7 @@ class Bash(BaseTool):
             "working_directory": {
                 "type": "string",
                 "description": (
-                    "命令的工作目录（绝对路径或相对 workspace 的路径）必填。"
+                    "命令的工作目录选填，默认为work_space目录。"
                 ),
             },
             "timeout": {
