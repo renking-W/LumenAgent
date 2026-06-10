@@ -12,8 +12,14 @@ from lumen_agent.agent.tools.web_fetch import WebFetch  # noqa: F401
 from lumen_agent.agent.tools.knowledge import KnowledgeSearch, KnowledgeInsert  # noqa: F401
 from lumen_agent.agent.tools.memory_search import MemorySearch  # noqa: F401
 from lumen_agent.agent.tools.env_editor import EnvEditor  # noqa: F401
+from lumen_agent.agent.tools.task_scheduler import TaskScheduler  # noqa: F401
 
-__all__ = ["BaseTool", "ToolResult", "ToolRegistry", "Read", "Write", "Bash", "WebSearch", "WebFetch", "KnowledgeSearch", "KnowledgeInsert", "MemorySearch", "EnvEditor"]
+__all__ = [
+    "BaseTool", "ToolResult", "ToolRegistry",
+    "Read", "Write", "Bash", "WebSearch", "WebFetch",
+    "KnowledgeSearch", "KnowledgeInsert",
+    "MemorySearch", "EnvEditor", "TaskScheduler",
+]
 
 
 def init_tools() -> None:

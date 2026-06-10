@@ -85,6 +85,15 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "deepseek-chat": 65_536,
         "deepseek-reasoner": 131_072,
     },
+    # ── 调度器 ──
+    "SCHEDULER_ENABLED": True,
+    "SCHEDULER_TIMEZONE": "Asia/Shanghai",
+    "SCHEDULER_DEFAULT_MAX_INSTANCES": 1,
+    "SCHEDULER_COALESCE": True,
+    # ── 系统清理任务保留天数（默认 30 天） ──
+    "SCHEDULER_RETAIN_SESSION_DAYS": 30,
+    "SCHEDULER_RETAIN_MEMORY_DAYS": 30,
+    "SCHEDULER_RETAIN_EXECUTION_DAYS": 30,
 }
 
 

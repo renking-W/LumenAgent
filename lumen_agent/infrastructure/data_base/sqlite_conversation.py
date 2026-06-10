@@ -357,6 +357,38 @@ class SqliteConversationRepository:
             await db.commit()
         return True
 
+    async def delete_old_sessions(self, days: int = 30) -> int:
+        """删除 ``updated_at`` 早于 N 天前的会话及其关联消息。
+
+        Args:
+            days: 保留天数，默认 30
+
+        Returns:
+            删除的会话数量
+        """
+        from datetime import datetime, timezone, timedelta
+
+        threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS cnt FROM sessions WHERE updated_at < ?",
+                (threshold,),
+            )
+            row = await cursor.fetchone()
+            total = row["cnt"] if row else 0
+            if total == 0:
+                return 0
+
+            # DELETE CASCADE 会一并删除 messages
+            await db.execute(
+                "DELETE FROM sessions WHERE updated_at < ?",
+                (threshold,),
+            )
+            await db.commit()
+        return total
+
     async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
         """分页返回会话列表（``updated_at`` 倒序）。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,7 @@ from lumen_agent.api.routers import skills as skills_router
 from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.api.routers import memories as memories_router
 from lumen_agent.api.routers import mcp_servers as mcp_servers_router
+from lumen_agent.api.routers import scheduler_router
 from lumen_agent.config import get_settings, log_config, resolve_cors_origins, resolve_db_path
 
 # ── 项目根目录（基于 app.py 位置推断） ─────────────────────────
@@ -79,7 +80,31 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logging.exception("记忆文件后台索引启动失败")
 
+    # ── 启动调度器 + 从 DB 恢复持久化任务 ─────────────────────
+    scheduler_enabled = settings.get("SCHEDULER_ENABLED", False)
+    if scheduler_enabled:
+        try:
+            from lumen_agent.infrastructure.scheduler.scheduler_service import (
+                SchedulerService,
+            )
+
+            tz = settings.get("SCHEDULER_TIMEZONE", "Asia/Shanghai")
+            await SchedulerService.start(timezone=tz)
+            # 从 DB 恢复用户创建的持久化任务
+            await SchedulerService.restore_from_db()
+            # 注册系统内置任务（清理过期执行记录等）
+            SchedulerService.register_system_tasks()
+        except Exception:
+            logging.exception("调度器启动失败")
+
     yield
+
+    # ── 关闭调度器 ─────────────────────────────────────────
+    if scheduler_enabled:
+        from lumen_agent.infrastructure.scheduler.scheduler_service import SchedulerService
+
+        await SchedulerService.stop()
+        logging.info("调度器已停止")
 
     # ── 关闭 MCP 全局连接 ──────────────────────────────────
     from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
@@ -141,6 +166,7 @@ def create_app() -> FastAPI:
     application.include_router(knowledge_router.router)
     application.include_router(memories_router.router)
     application.include_router(mcp_servers_router.router)
+    application.include_router(scheduler_router.router)
     return application
 
 

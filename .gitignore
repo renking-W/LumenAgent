@@ -24,6 +24,7 @@ lumen_agent/workspace/
 work_space/
 
 # Logs
+log/
 lumen_agent/log/
 
 # Frontend
