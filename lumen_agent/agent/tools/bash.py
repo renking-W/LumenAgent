@@ -63,8 +63,8 @@ class Bash(BaseTool):
             if cwd is None:
                 return ToolResult.error(f"working_directory 路径无效或不存在：'{cwd_raw}'。")
         else:
-            from lumen_agent.config import get_settings
-            cwd = get_settings().workspace_dir_resolved()
+            from lumen_agent.config import get_settings, resolve_workspace_dir
+            cwd = resolve_workspace_dir(get_settings())
 
         # 超时
         timeout_val = params.get("timeout")
@@ -128,8 +128,8 @@ def _resolve_cwd(raw: str) -> object:
     try:
         p = Path(raw).expanduser()
         if not p.is_absolute():
-            from lumen_agent.config import get_settings
-            p = get_settings().workspace_dir_resolved() / p
+            from lumen_agent.config import get_settings, resolve_workspace_dir
+            p = resolve_workspace_dir(get_settings()) / p
         p = p.resolve()
     except (OSError, RuntimeError):
         return None

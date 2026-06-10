@@ -18,7 +18,7 @@ from typing import Any
 import chromadb
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
-from lumen_agent.config import Settings
+from lumen_agent.config import Settings, resolve_chroma_path
 from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
 
 _COLLECTION_NAME = "memory_store"
@@ -33,7 +33,7 @@ class MemoryRagService:
         # 复用与知识库相同的 Embedding 客户端
         self._embedding_client = AlibabaEmbeddingClient(settings)
         # 共享 ChromaDB 持久化目录，使用独立的 collection
-        self._base_dir = settings.rag_chroma_path_resolved()
+        self._base_dir = resolve_chroma_path(settings)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._base_dir))
         self._collection = self._client.get_or_create_collection(
@@ -46,8 +46,13 @@ class MemoryRagService:
         query: str,
         *,
         top_k: int = 5,
+        similarity_threshold: float = 0.0,
     ) -> list[dict[str, Any]]:
-        """向量检索历史记忆条目。"""
+        """向量检索历史记忆条目。
+
+        参数:
+            similarity_threshold: 相似度阈值，低于该值的条目将被过滤。默认 0.0 表示不过滤。
+        """
         query_vector = await self._embedding_client.embed_query(query)
         result = self._collection.query(
             query_embeddings=[query_vector],
@@ -58,9 +63,13 @@ class MemoryRagService:
         metadatas = (result.get("metadatas") or [[]])[0]
         distances = (result.get("distances") or [[]])[0]
 
+        raw_count = 0
         rows: list[dict[str, Any]] = []
         for doc, meta, dist in zip(documents, metadatas, distances):
+            raw_count += 1
             score = max(0.0, 1.0 - float(dist))
+            if score < similarity_threshold:
+                continue
             rows.append({
                 "text": doc,
                 "score": round(score, 4),
@@ -68,8 +77,8 @@ class MemoryRagService:
                 "metadata": meta or {},
             })
         self._logger.info(
-            "记忆检索完成：query=%r  top_k=%s  hits=%s",
-            query, top_k, len(rows),
+            "记忆检索完成：query=%r  top_k=%s  raw=%s  threshold=%.2f  hits=%s",
+            query, top_k, raw_count, similarity_threshold, len(rows),
         )
         return rows
 
@@ -208,9 +217,10 @@ class MemoryRagService:
             header = lines[0].strip()
             body = "\n".join(lines[1:]).strip()
 
-            # 解析 header: "## YYYY-MM-DD HH:MM:SS  session=xxx"
+            # 解析 header: "## YYYY-MM-DD HH:MM[:SS]  session=xxx"
+            # 注意：兼容旧数据中「17:44」这种无秒数的时间戳
             m = re.match(
-                r"^##\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+session=(\S+)",
+                r"^##\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+session=(\S+)",
                 header,
             )
             if not m:

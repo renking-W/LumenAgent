@@ -14,7 +14,7 @@ from lumen_agent.api.schemas.mcp_dtos import (
     MCPServerTestResult,
     MCPServerUpdate,
 )
-from lumen_agent.config import Settings
+from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.client.mcp_client import MCPConnection, get_mcp_manager
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 
@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 
 def _get_repo(settings: Settings = Depends(get_settings)) -> SqliteMCPServerRepository:
     """注入 MCP Server 配置仓储。"""
-    return SqliteMCPServerRepository(settings.conversation_db_path_resolved())
+    return SqliteMCPServerRepository(resolve_db_path(settings))
 
 
 @router.get("", response_model=list[MCPServerResponse])

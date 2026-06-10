@@ -16,7 +16,7 @@ class AlibabaEmbeddingClient:
 
     def _headers(self) -> dict[str, str]:
         """构造 embedding 请求头。"""
-        api_key = self._settings.embedding_api_key.strip()
+        api_key = self._settings.get("EMBEDDING_API_KEY", "").strip()
         if not api_key:
             # 这里不要继续拼接 Bearer 空值，否则 httpx 会直接判定 header 非法。
             raise RuntimeError("EMBEDDING_API_KEY is not configured")
@@ -30,7 +30,7 @@ class AlibabaEmbeddingClient:
         if not texts:
             return []
         # 按阿里云兼容接口要求组装请求体。
-        payload = {"model": self._settings.embedding_model, "input": texts}
+        payload = {"model": self._settings.get("EMBEDDING_MODEL", "text-embedding-v4"), "input": texts}
         data = await self._post(payload)
         return self._extract_embeddings(data)
 
@@ -43,7 +43,7 @@ class AlibabaEmbeddingClient:
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """发送 HTTP 请求到 embedding 服务。"""
-        url = self._settings.embedding_base_url.rstrip("/")
+        url = self._settings.get("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings").rstrip("/")
         pool = get_http_pool()
         response = await pool.send("POST", url, headers=self._headers(), json=payload)
         response.raise_for_status()

@@ -8,7 +8,7 @@ import logging
 import chromadb
 
 from lumen_agent.application.uitls.text_splitter import Chunk
-from lumen_agent.config import Settings
+from lumen_agent.config import Settings, resolve_chroma_path
 
 
 class ChromaKnowledgeStore:
@@ -20,19 +20,19 @@ class ChromaKnowledgeStore:
         """初始化本地持久化客户端和 collection。"""
         # 保存配置，主要用于获取持久化目录、集合名和距离度量。
         self._settings = settings
-        self._base_dir = settings.rag_chroma_path_resolved()
+        self._base_dir = resolve_chroma_path(settings)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         # PersistentClient 会把索引文件写入本地目录，适合知识库长期持久化。
         self._client = chromadb.PersistentClient(path=str(self._base_dir))
         self._collection = self._client.get_or_create_collection(
-            name=settings.rag_collection_name,
-            metadata={"hnsw:space": settings.rag_distance_metric},
+            name=settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
+            metadata={"hnsw:space": settings.get("RAG_DISTANCE_METRIC", "cosine")},
         )
         self._logger.info(
             "向量库初始化完成，目录=%s，集合=%s，距离规则=%s",
             str(self._base_dir),
-            settings.rag_collection_name,
-            settings.rag_distance_metric,
+            settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
+            settings.get("RAG_DISTANCE_METRIC", "cosine"),
         )
 
     async def upsert_chunks(
@@ -72,7 +72,7 @@ class ChromaKnowledgeStore:
         )
         self._logger.info(
             "向量库写入完成，集合=%s，知识编号=%s，文件名=%s，块数量=%s",
-            self._settings.rag_collection_name,
+            self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
             knowledge_id,
             file_name,
             len(chunks),
@@ -112,7 +112,7 @@ class ChromaKnowledgeStore:
             )
         self._logger.info(
             "向量库检索完成，集合=%s，返回条数=%s，相似度阈值=%s，命中数量=%s",
-            self._settings.rag_collection_name,
+            self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
             top_k,
             similarity_threshold,
             len(rows),
@@ -125,10 +125,10 @@ class ChromaKnowledgeStore:
 
     def delete_collection(self) -> None:
         """删除当前 collection，用于重建索引。"""
-        self._client.delete_collection(self._settings.rag_collection_name)
+        self._client.delete_collection(self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"))
         self._collection = self._client.get_or_create_collection(
-            name=self._settings.rag_collection_name,
-            metadata={"hnsw:space": self._settings.rag_distance_metric},
+            name=self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
+            metadata={"hnsw:space": self._settings.get("RAG_DISTANCE_METRIC", "cosine")},
         )
 
     def delete_knowledge(self, knowledge_id: str) -> None:

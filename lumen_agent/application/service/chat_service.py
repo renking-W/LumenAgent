@@ -11,7 +11,7 @@ from lumen_agent.agent.tokens import get_token_counter
 from lumen_agent.application.common.context_assembly import assemble_for_llm
 from lumen_agent.application.service.summary_service import maybe_trigger_summary
 from lumen_agent.application.service.title_service import maybe_generate_title
-from lumen_agent.config import Settings
+from lumen_agent.config import Settings, get_context_window
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
@@ -34,8 +34,8 @@ async def reply_single_turn(
     asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
 
     # 2) 组装上下文（含 token 预算检查 / 强制压缩）
-    counter = get_token_counter(settings.deepseek_model)
-    context_window = settings.context_window_for(settings.deepseek_model)
+    counter = get_token_counter(settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    context_window = get_context_window(settings, settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
     ctx = await assemble_for_llm(
         repo, llm, settings,
         session_id=session_id,
@@ -88,8 +88,8 @@ async def reply_single_turn_stream(
     asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
 
     # 2) 组装上下文
-    counter = get_token_counter(settings.deepseek_model)
-    context_window = settings.context_window_for(settings.deepseek_model)
+    counter = get_token_counter(settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    context_window = get_context_window(settings, settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
     ctx = await assemble_for_llm(
         repo, llm, settings,
         session_id=session_id,
@@ -218,8 +218,8 @@ async def reply_with_agent(
 
     try:
         # 3) 组装上下文（含 token 预算检查 / 强制压缩）
-        counter = get_token_counter(settings.deepseek_model)
-        context_window = settings.context_window_for(settings.deepseek_model)
+        counter = get_token_counter(settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+        context_window = get_context_window(settings, settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
         ctx = await assemble_for_llm(
             repo, llm, settings,
             session_id=session_id,

@@ -27,7 +27,7 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1)
     session_id: str | None = Field(default=None, min_length=1)
-    mode: Literal["simple", "agent"] = "simple"
+    mode: Literal["simple", "agent"] = "agent"
     mcp_servers: list[MCPServerConfig] | None = Field(
         default=None,
         description="外部 MCP Server 列表，仅 agent 模式下生效",

@@ -16,8 +16,8 @@ def _resolve_path(raw: str) -> Path:
     p = Path(raw).expanduser()
     if p.is_absolute():
         return p.resolve()
-    from lumen_agent.config import get_settings
-    return (get_settings().workspace_dir_resolved() / p).resolve()
+    from lumen_agent.config import get_settings, resolve_workspace_dir
+    return (resolve_workspace_dir(get_settings()) / p).resolve()
 
 
 @ToolRegistry.register

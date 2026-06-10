@@ -138,10 +138,10 @@ async def list_collections(settings: Settings = Depends(get_settings)) -> dict:
 async def rebuild_knowledge(settings: Settings = Depends(get_settings)) -> dict:
     """重建知识库索引：删除当前 collection 并重新创建。"""
     service = await _get_service(settings)
-    _logger.info("知识库接口：收到重建请求，集合=%s", settings.rag_collection_name)
+    _logger.info("知识库接口：收到重建请求，集合=%s", settings.get("RAG_COLLECTION_NAME", "knowledge_base"))
     service.rebuild_collection()
-    _logger.info("知识库接口：重建完成，集合=%s", settings.rag_collection_name)
-    return {"detail": "rebuild ok", "collection_name": settings.rag_collection_name}
+    _logger.info("知识库接口：重建完成，集合=%s", settings.get("RAG_COLLECTION_NAME", "knowledge_base"))
+    return {"detail": "rebuild ok", "collection_name": settings.get("RAG_COLLECTION_NAME", "knowledge_base")}
 
 
 @router.delete("/{knowledge_id}/{file_name}")

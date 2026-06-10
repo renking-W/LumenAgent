@@ -46,7 +46,7 @@ def _sse_error_line(exc: BaseException) -> str:
 
 def _require_api_key(settings: Settings) -> None:
     """校验 API KEY 是否配置。"""
-    if not settings.deepseek_api_key.strip():
+    if not settings.get("DEEPSEEK_API_KEY", "").strip():
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="DEEPSEEK_API_KEY is not configured",

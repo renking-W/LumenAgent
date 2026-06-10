@@ -85,7 +85,6 @@
 - new_summary：直接按照纯文本（txt）格式输出即可
 - count_summary：按照下方md格式输出。注意：一定需要包含当前的时间字段 `时间：HH:mm`
 ```markdown
-时间：HH:mm
 - 用户xxx，助手xxx
 - 助手xxx
 -

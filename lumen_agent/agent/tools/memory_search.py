@@ -41,13 +41,15 @@ class MemorySearch(BaseTool):
         top_k = int(params.get("top_k") or 5)
         settings = get_settings()
         service = MemoryRagService(settings)
+        threshold = settings.get("MEMORY_SEARCH_SIMILARITY_THRESHOLD", 0.25)
 
         self._logger.info(
-            "记忆检索工具：开始检索，query=%r  top_k=%s",
+            "记忆检索工具：开始检索，query=%r  top_k=%s  threshold=%.2f",
             query,
             top_k,
+            threshold,
         )
-        results = await service.search(query, top_k=top_k)
+        results = await service.search(query, top_k=top_k, similarity_threshold=threshold)
         payload = {
             "query": query,
             "top_k": top_k,

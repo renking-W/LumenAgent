@@ -8,7 +8,7 @@ from typing import Any
 import logging
 
 from lumen_agent.application.uitls.text_splitter import Chunk, split_text_into_chunks
-from lumen_agent.config import Settings
+from lumen_agent.config import Settings, resolve_db_path, resolve_chroma_path
 from lumen_agent.infrastructure.client.chroma_client import ChromaKnowledgeStore
 from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
 from lumen_agent.infrastructure.data_base.sqlite_knowledge import SqliteKnowledgeRepository
@@ -49,9 +49,9 @@ class RagService:
         # Chroma 存储封装负责持久化入库和向量检索。
         self._store = ChromaKnowledgeStore(settings)
         # SQLite 知识库仓储负责文档列表与 chunk 映射。
-        self._meta_store = SqliteKnowledgeRepository(settings.conversation_db_path_resolved())
+        self._meta_store = SqliteKnowledgeRepository(resolve_db_path(settings))
         # JSON 索引文件负责 file_name 与 source 的快速映射展示。
-        self._index_store = KnowledgeIndexStore(settings.rag_chroma_path_resolved() / "knowledge_index.json")
+        self._index_store = KnowledgeIndexStore(resolve_chroma_path(settings) / "knowledge_index.json")
 
     async def start(self) -> None:
         """启动时初始化长连接（由工厂方法或 lifespan 调用）。"""
@@ -75,8 +75,8 @@ class RagService:
         # 这里采用“递归分隔 + 重叠”的策略，尽量保持语义完整。
         chunks = split_text_into_chunks(
             text,
-            chunk_size=self._settings.rag_chunk_size,
-            chunk_overlap=self._settings.rag_chunk_overlap,
+            chunk_size=self._settings.get("RAG_CHUNK_SIZE", 500),
+            chunk_overlap=self._settings.get("RAG_CHUNK_OVERLAP", 150),
         )
         self._logger.info(
             "知识入库：文本切分完成，来源=%s，文件名=%s，知识编号=%s，块数量=%s，文本长度=%s",
@@ -126,18 +126,18 @@ class RagService:
     ) -> SearchResult:
         """向量检索知识库 chunk。"""
         # 若调用方不传参数，则回退到配置文件中的默认值。
-        k = top_k if top_k is not None else self._settings.rag_top_k
+        k = top_k if top_k is not None else self._settings.get("RAG_TOP_K", 5)
         threshold = (
             similarity_threshold
             if similarity_threshold is not None
-            else self._settings.rag_similarity_threshold
+            else self._settings.get("RAG_SIMILARITY_THRESHOLD", 0.2)
         )
         self._logger.info(
             "知识检索：开始检索，查询内容=%r，返回条数=%s，相似度阈值=%s，集合=%s",
             query,
             k,
             threshold,
-            self._settings.rag_collection_name,
+            self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
         )
         # 先对 query 做 embedding，再交给 Chroma 做向量相似度检索。
         query_vector = await self._embedding_client.embed_query(query)
@@ -153,7 +153,7 @@ class RagService:
         )
         return SearchResult(
             query=query,
-            collection_name=self._settings.rag_collection_name,
+            collection_name=self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
             top_k=k,
             similarity_threshold=threshold,
             chunks=raw_results,
@@ -229,7 +229,7 @@ class RagService:
                 source_name=source_name,
                 source_path=source_path,
                 chunks_added=0,
-                collection_name=self._settings.rag_collection_name,
+                collection_name=self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
             )
         chunk_rows = [
             {
@@ -255,7 +255,7 @@ class RagService:
             file_name,
             knowledge_id_value,
             len(chunks),
-            self._settings.rag_collection_name,
+            self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
         )
         # 将 chunk、向量和元信息一次性 upsert 到向量库，避免多次 IO。
         try:
@@ -275,5 +275,5 @@ class RagService:
             source_name=source_name,
             source_path=source_path,
             chunks_added=len(chunks),
-            collection_name=self._settings.rag_collection_name,
+            collection_name=self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
         )

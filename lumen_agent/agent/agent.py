@@ -45,7 +45,7 @@ class AgentStreamExecutor:
         self.adapter = adapter
         self.tools: dict[str, BaseTool] = {t.name: t for t in tools}
         self.tool_schemas: list[dict] = [t.to_internal_schema() for t in tools]
-        self.max_turns = max_turns or settings.agent_max_turns
+        self.max_turns = max_turns or settings.get("AGENT_MAX_TURNS", 20)
         self.guard = ToolExecutionGuard()
 
     async def run_stream(

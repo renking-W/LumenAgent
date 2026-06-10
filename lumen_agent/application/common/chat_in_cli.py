@@ -19,13 +19,13 @@ import questionary
 from knowledge_in_cli import knowledge_operation
 from lumen_agent.application.service.chat_service import reply_with_agent
 from lumen_agent.agent.tools import init_tools
-from lumen_agent.config import get_settings
+from lumen_agent.config import get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_conversation import SqliteConversationRepository
 from lumen_agent.model_adapters import get_model_adapter
 
 
 settings = get_settings()
-repo = SqliteConversationRepository(settings.conversation_db_path_resolved())
+repo = SqliteConversationRepository(resolve_db_path(settings))
 llm = get_model_adapter(settings)
 
 

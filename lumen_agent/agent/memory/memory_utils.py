@@ -41,7 +41,8 @@ class MemoryFileUtils:
             return ""
         return path.read_text(encoding="utf-8")
 
-    def append_daily_summary(self, session_id: str, count_summary: str) -> Path | None:
+    def append_daily_summary(self, session_id: str, count_summary: str) -> tuple[Path, str] | None:
+        """追加当日记忆并返回 ``(file_path, timestamp)``；count_summary 为空时返回 None。"""
         body = (count_summary or "").strip()
         if not body:
             return None
@@ -49,13 +50,14 @@ class MemoryFileUtils:
         self.ensure_dir()
         now = datetime.now().astimezone()
         file_path = self.daily_file_path(now.date())
-        header = f"## {now.strftime('%Y-%m-%d %H:%M:%S')}  session={session_id}\n\n"
+        ts = now.strftime('%Y-%m-%d %H:%M:%S')
+        header = f"## {ts}  session={session_id}\n\n"
 
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(header)
             f.write(body)
             f.write("\n\n---\n\n")
-        return file_path
+        return file_path, ts
 
     def append_message_backup(
         self,

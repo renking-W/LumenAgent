@@ -74,14 +74,14 @@ async def assemble_for_llm(
     ----
     AssembledContext，其 .messages 可直接传给 LLM / AgentStreamExecutor。
     """
-    force_threshold = int(context_window * settings.context_force_compress_ratio)
+    force_threshold = int(context_window * settings.get("CONTEXT_FORCE_COMPRESS_RATIO", 0.5))
 
     async def _build(after_compress: bool = False) -> AssembledContext:
         session = await repo.get_session(session_id)
         summary = (session.get("summary") or "") if session else ""
 
         # 只取最近 N 条消息而非全量
-        fetch_limit = settings.summary_threshold_turns
+        fetch_limit = settings.get("SUMMARY_THRESHOLD_TURNS", 6)
         all_msgs = await repo.list_recent_messages(session_id, fetch_limit)
 
         turns = extract_complete_turns(all_msgs)
@@ -94,8 +94,8 @@ async def assemble_for_llm(
         history_msgs = compress_tool_blocks(
             turns_to_messages(complete_turns),
             counter,
-            tool_result_token_limit=settings.tool_result_compress_token_limit,
-            head_tail_chars=settings.tool_result_head_tail_chars,
+            tool_result_token_limit=settings.get("TOOL_RESULT_COMPRESS_TOKEN_LIMIT", 2000),
+            head_tail_chars=settings.get("TOOL_RESULT_HEAD_TAIL_CHARS", 20),
         )
 
         # 构建 messages：[system?] + [summary system?] + history + user

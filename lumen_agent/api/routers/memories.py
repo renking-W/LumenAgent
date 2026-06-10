@@ -1,14 +1,16 @@
-"""记忆文件路由：读取所有记忆文件内容供前端展示。"""
+"""记忆文件路由：读取所有记忆文件内容供前端展示 + 强制重索引。"""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+import chromadb
 from fastapi import APIRouter
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.api.schemas.memory_dtos import MemoryFileItem
+from lumen_agent.config import get_settings, resolve_chroma_path
 
 router = APIRouter(prefix="/v1/memories", tags=["memories"])
 _logger = logging.getLogger(__name__)
@@ -51,3 +53,41 @@ async def list_memories() -> list[MemoryFileItem]:
         len(items),
     )
     return items
+
+
+@router.post("/reindex")
+async def reindex_memories() -> dict:
+    """强制全量重索引记忆文件：清空 ChromaDB + checkpoint 后重新向量化所有记忆条目。"""
+    from lumen_agent.application.service.memory_rag_service import MemoryRagService
+
+    settings = get_settings()
+    chroma_dir = resolve_chroma_path(settings)
+    checkpoint_path = chroma_dir / "memory_index_checkpoint.json"
+
+    # 1) 删除 checkpoint（下次启动或本次 reindex 不会跳过文件）
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+        _logger.info("已删除 memory_index_checkpoint.json")
+
+    # 2) 删除 ChromaDB 中的 memory_store collection
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    try:
+        client.delete_collection("memory_store")
+        _logger.info("已删除 ChromaDB memory_store collection")
+    except ValueError:
+        _logger.warning("ChromaDB memory_store collection 不存在，将新建")
+
+    # 3) 全量重新索引
+    service = MemoryRagService(settings)
+    await service.index_all_memory_files(_MEMORY_UTILS)
+
+    # 重新索引后统计条目数
+    new_collection = client.get_collection("memory_store")
+    total = new_collection.count()
+    _logger.info("记忆全量重索引完成，当前 memory_store 条目数: %s", total)
+
+    return {
+        "status": "ok",
+        "message": f"记忆全量重索引完成，共 {total} 条",
+        "total_entries": total,
+    }

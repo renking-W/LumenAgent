@@ -141,21 +141,20 @@ async def _write_daily_memory_append(
     count_summary: str,
 ) -> None:
     """将 count_summary 追加写入当天的记忆文档，同时写入向量索引库。"""
-    file_path = _MEMORY_UTILS.append_daily_summary(session_id, count_summary)
-    if file_path is not None:
+    result = _MEMORY_UTILS.append_daily_summary(session_id, count_summary)
+    if result is not None:
+        file_path, ts = result
         logging.info("session=%s 当日记忆已追加到 %s", session_id, file_path)
         # 同步写入 ChromaDB 向量索引（异步任务，失败不阻塞主流程）
         try:
             body = (count_summary or "").strip()
-            now = datetime.now().astimezone()
-            ts = now.strftime("%Y-%m-%d %H:%M:%S")
             header = f"## {ts}  session={session_id}\n\n"
             entry_text = header + body
-            ts_safe = now.strftime("%Y-%m-%d_%H-%M-%S")
-            entry_id = f"daily:{now.strftime('%Y-%m-%d')}:{ts_safe}:{session_id}"
+            ts_safe = ts.replace(":", "-").replace(" ", "_")
+            entry_id = f"daily:{ts[:10]}:{ts_safe}:{session_id}"
             metadata = {
                 "source": "daily",
-                "date": now.strftime("%Y-%m-%d"),
+                "date": ts[:10],
                 "session_id": session_id,
                 "timestamp": ts,
             }
@@ -207,9 +206,9 @@ async def maybe_trigger_summary(
 
     失败不抛：仅记录日志、保持原状态，等下一轮再尝试（与指南边界约定一致）。
     """
-    threshold = settings.summary_threshold_turns
-    compress_turns = settings.summary_compress_turns
-    keep_turns = settings.summary_keep_turns
+    threshold = settings.get("SUMMARY_THRESHOLD_TURNS", 6)
+    compress_turns = settings.get("SUMMARY_COMPRESS_TURNS", 4)
+    keep_turns = settings.get("SUMMARY_KEEP_TURNS", 2)
 
     session = await repo.get_session(session_id)
     if session is None:
@@ -261,8 +260,8 @@ async def maybe_trigger_summary(
             )
             return
 
-        # 从后往前数 compress_turns 轮压缩为摘要
-        to_compress = turns_to_messages(turns[-compress_turns:])
+        # 从前往后数 compress_turns 轮压缩为摘要
+        to_compress = turns_to_messages(turns[:compress_turns])
         rounds_text = _format_rounds(to_compress)
 
         # 渲染 prompt（含文件读取），放在 try 块内以确保异常可被捕获并记录

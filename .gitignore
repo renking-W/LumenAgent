@@ -13,6 +13,7 @@ build/
 
 # Environment
 lumen_agent/.env
+lumen_agent/config.json
 
 # Local data
 *.db

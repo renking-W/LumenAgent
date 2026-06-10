@@ -1,22 +1,100 @@
-"""环境变量 + 可选 `lumen_agent/.env`（字段名即 pydantic-settings 规则，如 `DEEPSEEK_API_KEY`）。"""
+"""配置系统：config.json + .env 双层合并，按 key 访问。
+
+加载顺序:
+  1. config.json — 结构化默认配置（不存在则自动生成）
+  2. .env — K=V 覆盖层（同名 key 以 .env 为准，独有 key 也加入）
+
+使用方式:
+  ```python
+  from lumen_agent.config import get_settings, resolve_workspace_dir
+
+  settings = get_settings()
+  api_key = settings.get("DEEPSEEK_API_KEY")
+  workspace = resolve_workspace_dir(settings)
+  ```
+"""
+
+from __future__ import annotations
+
+import json
 import logging
+import os
 from functools import lru_cache
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-
-from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Any
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _PACKAGE_DIR.parent  # 项目根目录（LumenAgent/）
-_DEFAULT_ENV_FILE = _PACKAGE_DIR / ".env"
+_PROJECT_ROOT = _PACKAGE_DIR.parent
+_CONFIG_JSON_PATH = _PACKAGE_DIR / "config.json"
+_ENV_PATH = _PACKAGE_DIR / ".env"
 
-def log_config(*, enable_stream: bool = True):
+logger = logging.getLogger(__name__)
+
+# ── 默认配置 ─────────────────────────────────────────────────────
+_DEFAULT_CONFIG: dict[str, Any] = {
+    "_note": "LumenAgent 配置文件。同名 .env 变量会覆盖此文件的值。修改后重启生效。",
+    "_version": "1.0",
+    # ── DeepSeek ──
+    "DEEPSEEK_API_KEY": "",
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+    "DEEPSEEK_MODEL": "deepseek-v4-flash",
+    "DEEPSEEK_TEMPERATURE": None,
+    "DEEPSEEK_MAX_TOKENS": None,
+    "DEEPSEEK_TOP_P": None,
+    "DEEPSEEK_ENABLE_THINKING": True,
+    # ── 服务 ──
+    "HOST": "127.0.0.1",
+    "PORT": 8000,
+    "RELOAD": False,
+    "CORS_ORIGINS": "http://127.0.0.1:5173,http://localhost:5173",
+    # ── 会话 ──
+    "CONVERSATION_DB_PATH": "data/conversations.db",
+    "CONVERSATION_MAX_CONTEXT_MESSAGES": 5,
+    # ── 摘要窗口 ──
+    "SUMMARY_THRESHOLD_TURNS": 6,
+    "SUMMARY_COMPRESS_TURNS": 4,
+    "SUMMARY_KEEP_TURNS": 2,
+    # ── Embedding ──
+    "EMBEDDING_API_KEY": "",
+    "EMBEDDING_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+    "EMBEDDING_MODEL": "text-embedding-v4",
+    # ── RAG / 知识库 ──
+    "RAG_COLLECTION_NAME": "knowledge_base",
+    "RAG_CHUNK_SIZE": 500,
+    "RAG_CHUNK_OVERLAP": 150,
+    "RAG_TOP_K": 5,
+    "RAG_SIMILARITY_THRESHOLD": 0.2,
+    "RAG_DISTANCE_METRIC": "cosine",
+    "RAG_CHROMA_PATH": "data/chroma",
+    # ── Agent ──
+    "AGENT_MAX_TURNS": 20,
+    "AGENT_MAX_TOOL_RESULT_CHARS": 20000,
+    "AGENT_WORKSPACE_DIR": "work_space",
+    "AGENT_TOOL_CHOICE": "auto",
+    # ── 记忆检索 ──
+    "MEMORY_SEARCH_TOP_K": 5,
+    "MEMORY_SEARCH_SIMILARITY_THRESHOLD": 0.25,
+    # ── Token / 上下文 ──
+    "TOOL_RESULT_COMPRESS_TOKEN_LIMIT": 2000,
+    "TOOL_RESULT_HEAD_TAIL_CHARS": 20,
+    "CONTEXT_FORCE_COMPRESS_RATIO": 0.5,
+    "DEFAULT_MODEL_CONTEXT_WINDOW": 131072,
+    "MODEL_CONTEXT_WINDOWS": {
+        "deepseek-v4-flash": 1_000_000,
+        "deepseek-chat": 65_536,
+        "deepseek-reasoner": 131_072,
+    },
+}
+
+
+# ── 日志初始化（独立函数，不依赖 Settings） ──────────────────────
+
+def log_config(*, enable_stream: bool = True) -> None:
     """初始化 logger：按天落盘 + 可选终端输出。"""
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    # 避免重复初始化时 handler 堆积
-    logger.handlers.clear()
+    _logger = logging.getLogger()
+    _logger.setLevel(logging.INFO)
+    _logger.handlers.clear()
 
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
@@ -30,173 +108,175 @@ def log_config(*, enable_stream: bool = True):
         backupCount=30,
     )
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    _logger.addHandler(file_handler)
 
     if enable_stream:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+        _logger.addHandler(stream_handler)
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=str(_DEFAULT_ENV_FILE),
-        env_file_encoding="utf-8",
-        extra="ignore",
+# ── config.json 生成 ─────────────────────────────────────────────
+
+def _ensure_config_json() -> bool:
+    """若 config.json 不存在则生成默认文件。返回是否新创建。"""
+    if _CONFIG_JSON_PATH.exists():
+        return False
+    _CONFIG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_JSON_PATH.write_text(
+        json.dumps(_DEFAULT_CONFIG, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
+    logger.info("已生成默认配置文件：%s", _CONFIG_JSON_PATH)
+    return True
 
-    # deepseek 相关配置
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-flash"
-    deepseek_temperature: float | None = None
-    deepseek_max_tokens: int | None = None
-    deepseek_top_p: float | None = None
-    # None = 不传该字段（由模型默认行为决定）；True/False = 显式开关思考模式
-    deepseek_enable_thinking: bool | None = None
 
-    host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
-    reload: bool = False
+# ── .env 解析 ────────────────────────────────────────────────────
 
-    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173,http://localhost:8080"
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """解析 .env 文件为 K=V 字典（跳过注释和空行）。"""
+    if not path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        result[key.strip()] = value.strip()
+    return result
 
-    # 会话 SQLite：相对路径基于包目录（`lumen_agent/`）
-    conversation_db_path: str = "data/conversations.db"
-    conversation_max_context_messages: int = Field(default=5, ge=1)
 
-    # 滑动窗口摘要：默认每 6 轮触发，前 4 轮压缩、后 2 轮保留为原文进入下一窗口
-    summary_threshold_turns: int = Field(default=6, ge=2)
-    summary_compress_turns: int = Field(default=4, ge=1)
-    summary_keep_turns: int = Field(default=2, ge=1)
+def _coerce_type(value: str, existing: Any) -> Any:
+    """尝试将 .env 字符串值转换为已有值的类型。"""
+    if existing is None:
+        return value
+    if isinstance(existing, bool):
+        return value.lower() in ("true", "1", "yes")
+    if isinstance(existing, int):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    if isinstance(existing, float):
+        try:
+            return float(value)
+        except ValueError:
+            return value
+    if isinstance(existing, dict):
+        # 复杂类型不能从 .env 单行覆盖，保留原值
+        return existing
+    return value
 
-    # Agent 工具循环配置
-    agent_max_turns: int = Field(default=20, ge=1, le=100)
-    agent_max_tool_result_chars: int = Field(default=20000, ge=1000)
-    agent_workspace_dir: str = "work_space"
-    web_search_api_key: str = ""
 
-    # Agent 工具调用策略：auto / none / required / force_<tool_name>
-    agent_tool_choice: str = Field(default="auto", pattern=r"^(auto|none|required|force_.+)$")
+def _merge_env_into_config(config: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    """将 .env K=V 合并到 config 中。.env 同名 key 覆盖，独有 key 追加。"""
+    merged = dict(config)
+    for key, value in env.items():
+        upper_key = key.upper()
+        if upper_key in merged:
+            merged[upper_key] = _coerce_type(value, merged[upper_key])
+        else:
+            merged[upper_key] = value
+    return merged
 
-    # 知识库 / RAG
-    # embedding_api_key：阿里云 Embedding 接口的鉴权密钥，和 deepseek_api_key 一样从 .env 读取。
-    embedding_api_key: str = ""
-    # embedding_base_url：阿里云兼容 OpenAI 的 Embedding 网关地址，默认指向 DashScope 兼容模式。
-    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
-    # embedding_model：向量化使用的模型名，当前要求固定为 text-embedding-v4。
-    embedding_model: str = "text-embedding-v4"
-    # rag_collection_name：Chroma 里的 collection 名称，用于区分不同知识库集合。
-    rag_collection_name: str = "knowledge_base"
-    # rag_chunk_size：切分文本时单个 chunk 的目标长度，单位为字符。
-    rag_chunk_size: int = Field(default=500, ge=100)
-    # rag_chunk_overlap：相邻 chunk 的重叠字符数，用于减少语义断裂。
-    rag_chunk_overlap: int = Field(default=150, ge=0)
-    # rag_top_k：每次检索最多返回多少个 chunk。
-    rag_top_k: int = Field(default=5, ge=1, le=50)
-    # rag_similarity_threshold：检索结果的相似度过滤阈值，低于该值的 chunk 会被丢弃。
-    rag_similarity_threshold: float = Field(default=0.2, ge=0.0, le=1.0)
-    # rag_distance_metric：Chroma 使用的距离度量，默认 cosine。
-    rag_distance_metric: str = "cosine"
-    # rag_chroma_path：Chroma 持久化目录，默认相对 lumen_agent/ 解析到 data/chroma。
-    rag_chroma_path: str = "data/chroma"
 
-    # ── Token 预算 & 上下文窗口 ─────────────────────────────────────────────
-    # 每个模型的上下文窗口（token 数），键为模型名，缺省时用 default_model_context_window
-    model_context_windows: dict[str, int] = Field(
-        default={
-            "deepseek-v4-flash": 1_000_000,   # 约等于1M
-            "deepseek-chat": 65_536,         # 64K
-            "deepseek-reasoner": 131_072,    # 128K
-        }   
-    )
-    default_model_context_window: int = Field(default=131_072, ge=1024)
+# ── 计算型独立函数 ──────────────────────────────────────────────
 
-    # 强制压缩阈值（占窗口比例）；超过此比例触发 force_compress_now
-    context_force_compress_ratio: float = Field(default=0.5, gt=0.0, lt=1.0)
+def resolve_db_path(settings: "Settings") -> Path:
+    """解析会话数据库的绝对路径。"""
+    p = Path(settings.get("CONVERSATION_DB_PATH", "data/conversations.db"))
+    return p if p.is_absolute() else _PACKAGE_DIR / p
 
-    # 单个 tool_result.content 压缩阈值（token 数）
-    tool_result_compress_token_limit: int = Field(default=2000, ge=100)
-    # 压缩后保留的头尾字符数
-    tool_result_head_tail_chars: int = Field(default=20, ge=5)
 
-    @field_validator("deepseek_base_url")
-    @classmethod
-    def strip_trailing_slash(cls, v: str) -> str:
-        """去掉 Base URL 尾斜杠，避免拼接路径出现双斜杠。"""
-        return v.rstrip("/")
+def resolve_workspace_dir(settings: "Settings") -> Path:
+    """解析工作空间的绝对路径。"""
+    p = Path(settings.get("AGENT_WORKSPACE_DIR", "work_space"))
+    return p if p.is_absolute() else _PROJECT_ROOT / p
 
-    @field_validator("deepseek_temperature")
-    @classmethod
-    def validate_temperature(cls, v: float | None) -> float | None:
-        """采样温度范围 0～2；None 表示不传该字段。"""
-        if v is None:
-            return None
-        if not 0.0 <= v <= 2.0:
-            raise ValueError("deepseek_temperature must be between 0.0 and 2.0")
-        return v
 
-    @field_validator("deepseek_top_p")
-    @classmethod
-    def validate_top_p(cls, v: float | None) -> float | None:
-        """top_p 范围 0～1；None 表示不传。"""
-        if v is None:
-            return None
-        if not 0.0 <= v <= 1.0:
-            raise ValueError("deepseek_top_p must be between 0.0 and 1.0")
-        return v
+def resolve_chroma_path(settings: "Settings") -> Path:
+    """解析 Chroma 持久化目录的绝对路径。"""
+    p = Path(settings.get("RAG_CHROMA_PATH", "data/chroma"))
+    return p if p.is_absolute() else _PACKAGE_DIR / p
 
-    @field_validator("deepseek_max_tokens")
-    @classmethod
-    def validate_max_tokens(cls, v: int | None) -> int | None:
-        """max_tokens 若设置须 >= 1。"""
-        if v is None:
-            return None
-        if v < 1:
-            raise ValueError("deepseek_max_tokens must be >= 1 when set")
-        return v
 
-    @property
-    def cors_origin_list(self) -> list[str]:
-        """将逗号分隔的 CORS 字符串解析为列表。"""
-        return [x.strip() for x in self.cors_origins.split(",") if x.strip()]
+def resolve_cors_origins(settings: "Settings") -> list[str]:
+    """解析 CORS 允许来源列表。"""
+    raw = settings.get("CORS_ORIGINS", "")
+    return [x.strip() for x in raw.split(",") if x.strip()]
 
-    def conversation_db_path_resolved(self) -> Path:
-        """会话库路径：相对路径时相对包目录解析为绝对路径。"""
-        p = Path(self.conversation_db_path)
-        if not p.is_absolute():
-            p = _PACKAGE_DIR / p
-        return p
 
-    def context_window_for(self, model_name: str) -> int:
-        """返回指定模型的上下文窗口大小（token 数）。未配置时返回默认值。"""
-        return self.model_context_windows.get(model_name, self.default_model_context_window)
+def get_context_window(settings: "Settings", model_name: str) -> int:
+    """返回指定模型的上下文窗口大小（token 数）。"""
+    windows = settings.get("MODEL_CONTEXT_WINDOWS", {})
+    if isinstance(windows, dict):
+        return windows.get(model_name, settings.get("DEFAULT_MODEL_CONTEXT_WINDOW", 131072))
+    return settings.get("DEFAULT_MODEL_CONTEXT_WINDOW", 131072)
 
-    def workspace_dir_resolved(self) -> Path:
-        """工具默认工作区：相对路径时相对项目根目录解析为绝对路径。"""
-        p = Path(self.agent_workspace_dir)
-        if not p.is_absolute():
-            p = _PROJECT_ROOT / p
-        return p.resolve()
 
-    def rag_chroma_path_resolved(self) -> Path:
-        """Chroma 持久化目录：相对路径时相对包目录解析为绝对路径。"""
-        p = Path(self.rag_chroma_path)
-        if not p.is_absolute():
-            p = _PACKAGE_DIR / p
-        return p.resolve()
+# ── Settings 类 ─────────────────────────────────────────────────
 
-    @model_validator(mode="after")
-    def _check_summary_window(self) -> "Settings":
-        """启动期校验：compress + keep == threshold，避免窗口算法错位。"""
-        if self.summary_compress_turns + self.summary_keep_turns != self.summary_threshold_turns:
-            raise ValueError(
-                "summary_compress_turns + summary_keep_turns must equal summary_threshold_turns"
-            )
-        return self
+class Settings:
+    """Dict-like 配置容器：config.json + .env 合并，纯 key 访问。"""
 
+    def __init__(self) -> None:
+        self._data = self._load_and_merge()
+
+    # ── 加载 ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _load_and_merge() -> dict[str, Any]:
+        """加载 config.json → .env 覆盖 → 返回合并结果。"""
+        _ensure_config_json()
+
+        # 1. 读 JSON
+        try:
+            config: dict[str, Any] = json.loads(_CONFIG_JSON_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("config.json 读取失败，回退到默认值: %s", exc)
+            config = dict(_DEFAULT_CONFIG)
+
+        # 2. 读 .env
+        env_data = _parse_env_file(_ENV_PATH)
+
+        # 3. 合并
+        merged = _merge_env_into_config(config, env_data)
+
+        # 4. 摘要窗口校验（仅 WARNING，不阻塞）
+        compress = merged.get("SUMMARY_COMPRESS_TURNS")
+        keep = merged.get("SUMMARY_KEEP_TURNS")
+        threshold = merged.get("SUMMARY_THRESHOLD_TURNS")
+        if compress is not None and keep is not None and threshold is not None:
+            if compress + keep != threshold:
+                logger.warning(
+                    "摘要窗口参数配置异常: compress(%s) + keep(%s) != threshold(%s)，"
+                    "请检查 config.json / .env",
+                    compress, keep, threshold,
+                )
+
+        return merged
+
+    # ── 访问 ────────────────────────────────────────────────────
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """按 key 获取配置值（自动转大写，不区分大小写）。"""
+        return self._data.get(key.upper(), default)
+
+    def __contains__(self, key: str) -> bool:
+        return key.upper() in self._data
+
+
+# ── 导出工厂 ────────────────────────────────────────────────────
 
 @lru_cache
 def get_settings() -> Settings:
-    """单例；单测改环境后需 `get_settings.cache_clear()`。"""
+    """单例。修改配置后请调用 ``refresh_settings()`` 清缓存。"""
     return Settings()
+
+
+def refresh_settings() -> None:
+    """清除缓存，下次 ``get_settings()`` 返回新实例（热更新）。"""
+    get_settings.cache_clear()
