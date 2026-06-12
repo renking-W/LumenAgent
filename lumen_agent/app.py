@@ -16,6 +16,7 @@ from lumen_agent.api.routers import skills as skills_router
 from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.api.routers import memories as memories_router
 from lumen_agent.api.routers import mcp_servers as mcp_servers_router
+from lumen_agent.api.routers import logs_router
 from lumen_agent.api.routers import scheduler_router
 from lumen_agent.config import get_settings, log_config, resolve_cors_origins, resolve_db_path
 
@@ -38,6 +39,7 @@ def _init_workspace() -> None:
     # 创建目录结构
     (workspace / "memory").mkdir(parents=True, exist_ok=True)
     (workspace / "skills").mkdir(parents=True, exist_ok=True)
+    (workspace / "konwledge").mkdir(parents=True, exist_ok=True)
 
     # 拷贝模板文件
     for filename in _WORKSPACE_SEED_FILES:
@@ -81,7 +83,7 @@ async def lifespan(_app: FastAPI):
         logging.exception("记忆文件后台索引启动失败")
 
     # ── 启动调度器 + 从 DB 恢复持久化任务 ─────────────────────
-    scheduler_enabled = settings.get("SCHEDULER_ENABLED", False)
+    scheduler_enabled = settings.get("SCHEDULER_ENABLED", True)
     if scheduler_enabled:
         try:
             from lumen_agent.infrastructure.scheduler.scheduler_service import (
@@ -167,6 +169,7 @@ def create_app() -> FastAPI:
     application.include_router(memories_router.router)
     application.include_router(mcp_servers_router.router)
     application.include_router(scheduler_router.router)
+    application.include_router(logs_router.router)
     return application
 
 

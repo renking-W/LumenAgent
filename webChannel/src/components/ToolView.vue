@@ -1,42 +1,58 @@
 <template>
-  <div class="catalog-pane">
-    <div class="hero-card">
-      <div>
-        <div class="hero-kicker">Agent Tools</div>
+  <div class="tool-page">
+    <!-- ======== 紧凑顶栏 ======== -->
+    <div class="tool-header">
+      <div class="tool-header-left">
+        <div class="tool-kicker">Agent Tools</div>
         <h2>工具能力总览</h2>
       </div>
-      <div class="hero-stats">
-        <div class="stat-box">
-          <span class="stat-label">工具数量</span>
-          <span class="stat-value">{{ tools.length }}</span>
+      <div class="tool-header-stats">
+        <div class="tool-stat">
+          <span class="tool-stat-value">{{ tools.length }}</span>
+          <span class="tool-stat-label">工具数量</span>
         </div>
-        <div class="stat-box">
-          <span class="stat-label">连接状态</span>
-          <span class="stat-value" :class="connected ? 'ok' : 'bad'">
+        <div class="tool-stat-divider"></div>
+        <div class="tool-stat">
+          <span class="tool-stat-value" :class="connected ? 'ok' : 'bad'">
+            <span class="tool-status-dot" :class="connected ? 'dot-ok' : 'dot-bad'"></span>
             {{ connected ? '正常' : '异常' }}
           </span>
+          <span class="tool-stat-label">连接状态</span>
         </div>
       </div>
     </div>
 
-    <div class="grid-cards">
-      <article v-for="tool in tools" :key="tool.name" class="card">
-        <div class="card-top">
-          <div>
-            <h3>{{ tool.name }}</h3>
-            <p>{{ tool.description }}</p>
+    <!-- 空状态 -->
+    <div v-if="tools.length === 0" class="empty-state">
+      <div class="empty-icon">🛠️</div>
+      <h3>暂无可用工具</h3>
+      <p>当前没有可用的工具定义，请检查后端服务是否正常运行</p>
+    </div>
+
+    <!-- 工具列表 -->
+    <div v-else class="tool-grid">
+      <article v-for="tool in tools" :key="tool.name" class="tool-card">
+        <div class="tool-card-head">
+          <div class="tool-card-title-row">
+            <h3 class="tool-card-name">{{ tool.name }}</h3>
+            <el-tag size="small" effect="light" type="info">Tool</el-tag>
           </div>
-          <div class="card-top-actions">
-            <el-tag type="info" effect="light">Tool</el-tag>
-            <el-button size="small" type="primary" plain @click="showToolDetail(tool)">
-              查看详情
-            </el-button>
-          </div>
+          <p class="tool-card-desc">{{ tool.description }}</p>
         </div>
-        <details class="schema-box">
-          <summary>查看参数结构</summary>
-          <pre>{{ pretty(tool.parameters) }}</pre>
+        <details class="tool-card-params">
+          <summary class="tool-card-params-summary">
+            <span>参数结构</span>
+            <span class="tool-card-params-arrow">→</span>
+          </summary>
+          <div class="tool-card-params-body">
+            <pre class="tool-card-params-pre">{{ pretty(tool.parameters) }}</pre>
+          </div>
         </details>
+        <div class="tool-card-actions">
+          <el-button size="small" type="primary" plain @click="showToolDetail(tool)">
+            查看详情
+          </el-button>
+        </div>
       </article>
     </div>
 
@@ -81,69 +97,200 @@ const showToolDetail = (tool: ToolInfo) => {
 </script>
 
 <style scoped>
-.catalog-pane {
-  padding: 24px;
+.tool-page {
+  padding: var(--space-5) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   min-height: 100%;
 }
-.hero-card {
-  background: #ffffff; border: 1px solid #e5e7eb; border-radius: 24px;
-  padding: 22px; display: flex; justify-content: space-between;
-  gap: 16px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+
+/* ── 紧凑顶栏 ── */
+.tool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-sm);
 }
-.hero-kicker {
-  font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase;
-  color: #2563eb; margin-bottom: 6px;
+.tool-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.hero-card h2 { margin: 0; color: #111827; }
-.hero-card p { margin: 8px 0 0; color: #6b7280; }
-.hero-stats {
-  display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr));
-  gap: 12px; min-width: 260px;
+.tool-kicker {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-gold-600);
+  font-weight: 600;
 }
-.stat-box {
-  border: 1px solid #e5e7eb; border-radius: 18px; padding: 14px;
-  background: #f8fafc; display: flex; flex-direction: column; gap: 6px;
+.tool-header-left h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-navy-900);
 }
-.stat-label { font-size: 0.8rem; color: #6b7280; }
-.stat-value { font-size: 1.2rem; font-weight: 700; color: #111827; }
-.stat-value.ok { color: #059669; }
-.stat-value.bad { color: #dc2626; }
-.grid-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.card {
-  background: #ffffff; border: 1px solid #e5e7eb; border-radius: 22px;
-  padding: 18px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-  display: flex; flex-direction: column; gap: 14px;
-  height: 320px; overflow: hidden;
+.tool-header-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
-.card-top {
-  display: flex; justify-content: space-between; gap: 12px;
-  align-items: start; flex-shrink: 0; overflow: hidden;
+.tool-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
-.card h3 { margin: 0; color: #111827; font-size: 1rem; }
-.card p {
-  margin: 8px 0 0; color: #6b7280; line-height: 1.6;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden; line-clamp: 3;
+.tool-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-navy-800);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.card-top > div { min-width: 0; overflow: hidden; }
-.card-top-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-.schema-box { border: 1px solid #e5e7eb; border-radius: 16px; flex-shrink: 0; }
-.schema-box summary {
-  cursor: pointer; padding: 12px 14px; font-weight: 600;
-  color: #111827; background: #f8fafc;
+.tool-stat-value.ok { color: var(--color-success); }
+.tool-stat-value.bad { color: var(--color-error); }
+.tool-stat-label {
+  font-size: 0.72rem;
+  color: var(--color-slate-400);
 }
-.schema-box pre {
-  padding: 12px 14px; background: #ffffff; margin: 0;
-  max-height: 220px; overflow: auto;
+.tool-stat-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--color-slate-200);
 }
-.dialog-section { margin-bottom: 20px; }
-.dialog-label { font-size: 0.9rem; color: #111827; margin: 0 0 8px; font-weight: 600; }
-.dialog-text { color: #6b7280; line-height: 1.7; white-space: pre-wrap; }
+.tool-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-ok { background: var(--color-success); }
+.dot-bad { background: var(--color-error); }
+
+/* ── 工具网格 ── */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: var(--space-4);
+}
+.tool-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: all var(--transition-normal);
+}
+.tool-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-gold-200);
+  transform: translateY(-1px);
+}
+.tool-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tool-card-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-navy-900);
+  font-family: var(--font-mono);
+}
+.tool-card-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--color-slate-500);
+}
+
+/* ── 参数结构 ── */
+.tool-card-params {
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.tool-card-params-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  background: var(--color-slate-50);
+  transition: background var(--transition-fast);
+  user-select: none;
+}
+.tool-card-params-summary:hover {
+  background: var(--color-slate-100);
+}
+.tool-card-params-summary::-webkit-details-marker {
+  display: none;
+}
+.tool-card-params-arrow {
+  font-size: 0.8rem;
+  transition: transform var(--transition-fast);
+}
+.tool-card-params[open] .tool-card-params-arrow {
+  transform: rotate(90deg);
+}
+.tool-card-params-body {
+  border-top: 1px solid var(--color-slate-200);
+}
+.tool-card-params-pre {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow: auto;
+  background: var(--color-navy-900);
+  color: var(--color-slate-200);
+  font-family: var(--font-mono);
+}
+
+/* ── 操作按钮 ── */
+.tool-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-slate-100);
+}
+
+/* ── 弹窗 ── */
+.dialog-section { margin-bottom: var(--space-5); }
+.dialog-label { font-size: 0.9rem; color: var(--color-navy-900); margin: 0 0 var(--space-2); font-weight: 600; }
+.dialog-text { color: var(--color-slate-500); line-height: 1.7; white-space: pre-wrap; }
 .dialog-pre {
-  background: #f8fafc; padding: 14px; border-radius: 12px;
-  border: 1px solid #e5e7eb; max-height: 360px; overflow: auto;
+  background: var(--color-slate-50); padding: var(--space-4); border-radius: var(--radius-lg);
+  border: 1px solid var(--color-slate-200); max-height: 360px; overflow: auto;
 }
+
+/* ── 空状态 ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 64px 24px; color: var(--color-slate-400); gap: var(--space-2);
+  border: 2px dashed var(--color-slate-200); border-radius: var(--radius-2xl); background: var(--color-white);
+}
+.empty-icon { font-size: 3rem; }
+.empty-state h3 { margin: 0; color: var(--color-slate-500); font-weight: 600; font-size: 1.1rem; }
+.empty-state p { margin: 0; font-size: 0.9rem; color: var(--color-slate-400); }
 </style>

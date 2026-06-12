@@ -22,10 +22,11 @@ router = APIRouter(prefix="/v1/sessions", tags=["sessions"])
 async def list_sessions(
     limit: int = 50,
     offset: int = 0,
+    kind: int | None = None,
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> list[SessionSummary]:
-    """分页列出会话摘要。"""
-    rows = await repo.list_sessions(limit=limit, offset=offset)
+    """分页列出会话摘要。kind 可选：0=normal, 1=scheduled。"""
+    rows = await repo.list_sessions(limit=limit, offset=offset, kind=kind)
     return [SessionSummary.model_validate(r) for r in rows]
 
 
@@ -64,6 +65,7 @@ async def get_session_summary(
         summary=session["summary"],
         count=session["count"],
         title=session["title"],
+        kind=session.get("kind", 0),
     )
 
 

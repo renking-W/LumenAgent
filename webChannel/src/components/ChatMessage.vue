@@ -1,20 +1,21 @@
 <template>
-  <article
-    class="message"
-    :class="[message.role, { streaming: isStreaming }]"
-    ref="msgRef"
-  >
-    <div class="message-meta">
-      <span class="role-badge">{{ message.roleLabel }}</span>
-      <span class="time">{{ message.time }}</span>
-      <el-tag
-        v-if="message.status === 0"
-        size="small"
-        type="warning"
-        effect="light"
-      >已中断</el-tag>
-    </div>
-    <div class="message-content">
+  <div class="message-row" :class="message.role">
+    <img v-if="message.role === 'assistant'" class="msg-avatar" src="/logo.svg" alt="AI" />
+    <article
+      class="message"
+      :class="{ streaming: isStreaming }"
+      ref="msgRef"
+    >
+      <div class="message-meta">
+        <span class="role-badge">{{ message.roleLabel }}</span>
+        <el-tag
+          v-if="message.status === 0"
+          size="small"
+          type="warning"
+          effect="light"
+        >已中断</el-tag>
+      </div>
+      <div class="message-content">
       <template v-for="item in groupedBlocks" :key="item.id">
         <!-- 可折叠块：思考、错误 -->
         <details v-if="item.kind === 'single' && isCollapsible(item.block.kind)" class="block block--collapsible" :open="item.block.expanded">
@@ -68,7 +69,12 @@
       <!-- 流式光标 -->
       <span v-if="isStreaming" class="streaming-cursor">▍</span>
     </div>
+    <div class="message-footer">
+      <span class="time">{{ message.time }}</span>
+    </div>
   </article>
+  <img v-if="message.role === 'user'" class="msg-avatar" src="/user.svg" alt="User" />
+</div>
 </template>
 
 <script setup lang="ts">
@@ -172,63 +178,111 @@ watch(
 </script>
 
 <style scoped>
-.message {
+.message-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
   max-width: 940px;
-  width: 100%;
-  padding: 20px;
-  border-radius: 20px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  width: 65%;
   animation: msg-fade-in 0.3s ease;
 }
-.message.user {
-  align-self: flex-end;
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
-.message.assistant {
+.message-row.assistant {
   align-self: flex-start;
+}
+.message-row.user {
+  align-self: flex-end;
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-200);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+.message-row.user .message {
+  background: linear-gradient(135deg, var(--color-gold-50), #FFFBEB);
+  border-color: var(--color-gold-200);
+  border-bottom-right-radius: var(--radius-sm);
+}
+.message-row.assistant .message {
+  border-bottom-left-radius: var(--radius-sm);
+}
+.message.streaming {
+  border-color: var(--color-gold-300);
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.08), var(--shadow-sm);
+}
+
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: var(--space-5);
+  padding: 5px;
+  object-fit: contain;
+  background: var(--color-slate-100);
+}
+.message-row.user .msg-avatar {
+  background: var(--color-gold-100);
 }
 
 .message-meta {
   display: flex;
-  gap: 12px;
+  gap: var(--space-2);
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-3);
 }
 .role-badge {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #e0e7ff;
-  color: #3730a3;
-  font-size: 0.82rem;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-50);
+  color: var(--color-indigo-600);
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.02em;
 }
-.user .role-badge {
-  background: #dbeafe;
-  color: #1d4ed8;
+.message-row.user .role-badge {
+  background: var(--color-gold-100);
+  color: var(--color-gold-700);
+}
+
+.message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-slate-100);
+}
+.message-row.assistant .message-footer {
+  justify-content: flex-start;
+}
+.message-row.user .message-footer {
+  border-top-color: rgba(234, 179, 8, 0.12);
 }
 .time {
-  color: #6b7280;
-  font-size: 0.85rem;
+  color: var(--color-slate-400);
+  font-size: 0.75rem;
 }
 
 .message-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 /* ── 块容器 ── */
 .block {
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--color-white);
 }
 .block--collapsible {
-  border-color: #e5e7eb;
+  border-color: var(--color-slate-200);
 }
 .block--text {
   border: none;
@@ -239,7 +293,7 @@ watch(
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.65;
-  color: #111827;
+  color: var(--color-navy-800);
 }
 
 .block-summary {
@@ -248,57 +302,62 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
+  padding: 10px 14px;
   font-weight: 600;
-  color: #111827;
-  background: #f8fafc;
+  font-size: 0.88rem;
+  color: var(--color-navy-700);
+  background: var(--color-slate-50);
   user-select: none;
+  transition: background var(--transition-fast);
+}
+.block-summary:hover {
+  background: var(--color-slate-100);
 }
 .block-summary::-webkit-details-marker {
   display: none;
 }
 .block-summary-title {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 .block-summary-kind {
-  font-size: 0.75rem;
-  color: #6b7280;
-  background: #e5e7eb;
+  font-size: 0.72rem;
+  color: var(--color-slate-400);
+  background: var(--color-slate-200);
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
 .block-body {
-  padding: 14px;
-  border-top: 1px solid #e5e7eb;
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-slate-200);
 }
 
 /* ── 重试按钮 ── */
 .retry-btn {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: 6px 16px;
   font-size: 0.85rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #374151;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-navy-600);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 .retry-btn:hover {
-  background: #f3f4f6;
-  border-color: #2563eb;
-  color: #2563eb;
+  background: var(--color-gold-50);
+  border-color: var(--color-gold-500);
+  color: var(--color-gold-600);
 }
 
 /* ── 流式光标 ── */
 .streaming-cursor {
   display: inline-block;
   font-size: 1.2rem;
-  color: #2563eb;
+  color: var(--color-gold-500);
   animation: cursor-blink 0.9s step-end infinite;
   margin-left: 2px;
   line-height: 1;
@@ -306,28 +365,28 @@ watch(
 
 /* ── Tool 详情 ── */
 .tool-detail {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .tool-detail:last-child {
   margin-bottom: 0;
 }
 .tool-detail-label {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-slate-400);
   margin-bottom: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 .tool-detail-value {
   font-size: 0.9rem;
-  color: #111827;
+  color: var(--color-navy-800);
 }
 .tool-detail-pre {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 12px;
+  background: var(--color-slate-50);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
   font-size: 0.82rem;
   max-height: 240px;
   overflow: auto;

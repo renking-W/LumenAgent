@@ -64,14 +64,21 @@ const insertNewline = (e: KeyboardEvent) => {
 
 <style scoped>
 .composer {
-  padding: 18px 24px 24px;
-  border-top: 1px solid #e5e7eb; background: #ffffff;
+  padding: var(--space-4) var(--space-6) var(--space-5);
+  border-top: 1px solid var(--color-slate-200);
+  background: var(--color-white);
 }
 .composer-grid {
-  display: grid; grid-template-columns: 1fr 260px;
-  gap: 16px; align-items: end;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: var(--space-4);
+  align-items: end;
 }
-.composer-side { display: flex; flex-direction: column; gap: 10px; }
+.composer-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
 
 @media (max-width: 768px) {
   .composer-grid {

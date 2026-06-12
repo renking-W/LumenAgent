@@ -17,6 +17,70 @@ from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 
+async def merge_and_persist_messages(
+    repo: ConversationRepositoryPort,
+    session_id: str,
+    new_messages: list[dict[str, Any]],
+) -> None:
+    """合并、回填并持久化 Agent 工具循环产生的新消息。
+
+    处理内容：
+    1. 将 tool_result 与前面的 assistant 消息合并（避免存储冗余的"用户"角色消息）
+    2. 回填没有 tool_result 的孤立 tool_use 的 (interrupted)
+    3. 将合并后的每条消息写入 DB
+    """
+    # Step 1: 将 tool_result 与前面的 assistant 合并
+    merged: list[dict[str, Any]] = []
+    for msg in new_messages:
+        role = msg.get("role", "")
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            content = [b for b in content if isinstance(b, dict)]
+
+        if (
+            role == "user"
+            and content
+            and all(b.get("type") == "tool_result" for b in content)
+        ):
+            if merged and merged[-1]["role"] == "assistant":
+                merged[-1]["content"].extend(content)
+            else:
+                merged.append({"role": "user", "content": content})
+        elif role == "assistant":
+            if merged and merged[-1]["role"] == "assistant":
+                merged[-1]["content"].extend(content)
+            else:
+                merged.append({"role": "assistant", "content": list(content)})
+        else:
+            merged.append({"role": role, "content": content})
+
+    # Step 2: 兜底 — 孤立 tool_use 补 (interrupted)
+    for msg in merged:
+        if msg["role"] != "assistant":
+            continue
+        use_ids = {
+            b["id"] for b in msg["content"]
+            if b.get("type") == "tool_use" and b.get("id")
+        }
+        result_ids = {
+            b["tool_use_id"] for b in msg["content"]
+            if b.get("type") == "tool_result" and b.get("tool_use_id")
+        }
+        for tid in use_ids - result_ids:
+            msg["content"].append({
+                "type": "tool_result",
+                "tool_use_id": tid,
+                "content": "(interrupted)",
+                "is_error": True,
+            })
+
+    # Step 3: 持久化
+    for msg in merged:
+        if not msg.get("content"):
+            continue
+        await repo.append_message(session_id, msg["role"], msg["content"])
+
+
 async def reply_single_turn(
     repo: ConversationRepositoryPort,
     llm: ModelAdapter,
@@ -246,58 +310,7 @@ async def reply_with_agent(
         final_text = ""
         async for kind, data in executor.run_stream(messages, on_connect=on_connect):
             if kind == "new_messages":
-                new_msgs: list[dict[str, Any]] = data  # type: ignore[assignment]
-
-                # ──Step 1: 合并 tool_result → 前一条 assistant ──────────
-                merged: list[dict[str, Any]] = []
-                for msg in new_msgs:
-                    role = msg.get("role", "")
-                    content = msg.get("content", [])
-                    if isinstance(content, list):
-                        content = [b for b in content if isinstance(b, dict)]
-
-                    if (
-                        role == "user"
-                        and content
-                        and all(b.get("type") == "tool_result" for b in content)
-                    ):
-                        if merged and merged[-1]["role"] == "assistant":
-                            merged[-1]["content"].extend(content)
-                        else:
-                            merged.append({"role": "user", "content": content})
-                    elif role == "assistant":
-                        if merged and merged[-1]["role"] == "assistant":
-                            merged[-1]["content"].extend(content)
-                        else:
-                            merged.append({"role": "assistant", "content": list(content)})
-                    else:
-                        merged.append({"role": role, "content": content})
-
-                # ──Step 2: 兜底 — 孤立 tool_use 补 (interrupted) ──────
-                for msg in merged:
-                    if msg["role"] != "assistant":
-                        continue
-                    use_ids = {
-                        b["id"] for b in msg["content"]
-                        if b.get("type") == "tool_use" and b.get("id")
-                    }
-                    result_ids = {
-                        b["tool_use_id"] for b in msg["content"]
-                        if b.get("type") == "tool_result" and b.get("tool_use_id")
-                    }
-                    for tid in use_ids - result_ids:
-                        msg["content"].append({
-                            "type": "tool_result",
-                            "tool_use_id": tid,
-                            "content": "(interrupted)",
-                            "is_error": True,
-                        })
-
-                # ──Step 3: 持久化 ──────────────────────────────────────
-                for msg in merged:
-                    if not msg.get("content"):
-                        continue
-                    await repo.append_message(session_id, msg["role"], msg["content"])
+                await merge_and_persist_messages(repo, session_id, data)  # type: ignore[arg-type]
             elif kind == "done":
                 final_text = data  # type: ignore[assignment]
                 yield (kind, data)

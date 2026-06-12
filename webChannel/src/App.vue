@@ -8,57 +8,118 @@
     ></div>
 
     <!-- ======== 左侧栏 ======== -->
-    <el-aside width="250px" class="sidebar" :class="{ 'sidebar--mobile': sidebarVisible }">
+    <el-aside width="250px" class="sidebar" :class="{ 'sidebar--mobile': sidebarVisible, 'sidebar--collapsed': sidebarCollapsed }">
       <div class="brand">
-        <div class="brand-mark">L</div>
-        <div>
+        <div class="brand-mark" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'">
+          <img class="brand-mark-img" src="/logo.svg" alt="LumenAgent" />
+        </div>
+        <div v-if="!sidebarCollapsed" class="brand-text">
           <div class="brand-title">LumenAgent</div>
-          <div class="brand-subtitle">Claude-style Web Channel</div>
+          <div class="brand-subtitle">AI Agent 管理控制台</div>
         </div>
       </div>
 
       <nav class="nav">
+        <!-- ── 核心功能 ── -->
+        <div v-if="!sidebarCollapsed" class="nav-section-label">核心</div>
         <button
           class="nav-item"
           :class="{ active: activeView === 'chat' }"
           @click="activeView = 'chat'"
         >
-          <span class="nav-title">对话</span>
-          <span class="nav-desc">实时流式聊天</span>
+          <span class="nav-icon">💬</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">对话</span>
+            <span class="nav-desc">实时流式聊天</span>
+          </span>
         </button>
         <button
           class="nav-item"
           :class="{ active: activeView === 'tools' }"
           @click="activeView = 'tools'"
         >
-          <span class="nav-title">工具</span>
-          <span class="nav-desc">单独展示所有 Tool</span>
+          <span class="nav-icon">🛠️</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">工具</span>
+            <span class="nav-desc">单独展示所有 Tool</span>
+          </span>
         </button>
         <button
           class="nav-item"
           :class="{ active: activeView === 'skills' }"
           @click="activeView = 'skills'"
         >
-          <span class="nav-title">技能</span>
-          <span class="nav-desc">单独展示所有 Skill</span>
+          <span class="nav-icon">🎯</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">技能</span>
+            <span class="nav-desc">单独展示所有 Skill</span>
+          </span>
         </button>
         <button
           class="nav-item"
           :class="{ active: activeView === 'memories' }"
           @click="activeView = 'memories'"
         >
-          <span class="nav-title">记忆</span>
-          <span class="nav-desc">浏览所有记忆文件</span>
+          <span class="nav-icon">🧠</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">记忆</span>
+            <span class="nav-desc">浏览所有记忆文件</span>
+          </span>
         </button>
+
+        <!-- ── 扩展管理 ── -->
+        <div v-if="!sidebarCollapsed" class="nav-section-separator"></div>
+        <div v-if="!sidebarCollapsed" class="nav-section-label">扩展</div>
         <button
           class="nav-item"
           :class="{ active: activeView === 'mcp' }"
           @click="activeView = 'mcp'"
         >
-          <span class="nav-title">MCP</span>
-          <span class="nav-desc">管理 MCP Server 配置</span>
+          <span class="nav-icon">🔌</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">MCP</span>
+            <span class="nav-desc">管理 MCP Server 配置</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'knowledge' }"
+          @click="activeView = 'knowledge'"
+        >
+          <span class="nav-icon">📚</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">知识库</span>
+            <span class="nav-desc">管理知识文档与检索</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'scheduler' }"
+          @click="activeView = 'scheduler'"
+        >
+          <span class="nav-icon">⏰</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">定时任务</span>
+            <span class="nav-desc">管理 AI 定时调度任务</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'logs' }"
+          @click="activeView = 'logs'"
+        >
+          <span class="nav-icon">📋</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">日志</span>
+            <span class="nav-desc">系统日志实时监控</span>
+          </span>
         </button>
       </nav>
+
+      <!-- ── 侧栏底部信息 ── -->
+      <div v-if="!sidebarCollapsed" class="sidebar-footer">
+        <span class="sidebar-footer-version">LumenAgent v0.0.1</span>
+      </div>
 
     </el-aside>
 
@@ -100,6 +161,9 @@
         <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
         <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
         <MCPServerView v-else-if="activeView === 'mcp'" />
+        <KnowledgeView v-else-if="activeView === 'knowledge'" />
+        <SchedulerView v-else-if="activeView === 'scheduler'" />
+        <LogView v-else-if="activeView === 'logs'" />
       </el-main>
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
@@ -135,11 +199,15 @@ import SkillView from './components/SkillView.vue'
 import MemoryView from './components/MemoryView.vue'
 import MCPServerView from './components/MCPServerView.vue'
 import MCPServerSelector from './components/MCPServerSelector.vue'
+import KnowledgeView from './components/KnowledgeView.vue'
+import SchedulerView from './components/SchedulerView.vue'
+import LogView from './components/LogView.vue'
 import AppComposer from './components/AppComposer.vue'
 
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp'>('chat')
+const sidebarCollapsed = ref(false)
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'knowledge' | 'scheduler' | 'logs'>('chat')
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)
@@ -377,11 +445,17 @@ const loadSessionMessages = async (sessionId: string) => {
   try {
     const res = await fetch(`/v1/sessions/${sessionId}/messages?limit=20`)
     if (!res.ok) return
-    const stored: StoredMsg[] = await res.json()
+    let stored: StoredMsg[] = await res.json()
     activeSessionId.value = sessionId
     beforeSeq.value = undefined
     hasMore.value = stored.length === 20
     loadingMore.value = false
+
+    // 定时任务会话：隐藏第一条用户消息（seq=0，调度器自动注入的 prompt）
+    const isScheduled = sessionId.startsWith('__scheduled__')
+    if (isScheduled && stored.length > 0) {
+      stored = stored.filter((s) => s.seq !== 0)
+    }
 
     const parsed = parseStoredMessages(stored)
     if (parsed.length > 0) {
@@ -436,11 +510,15 @@ const consumeEvent = (event: { type: string; data?: any }) => {
       break
     }
     case 'tool_execution_start': {
-      // 创建独立的 tool_use 块，content = arguments（与历史消息的 cb.input 格式一致）
+      // 创建独立的 tool_use 块，存储完整工具调用信息供中断时使用
       const data = event.data ?? {}
+      const toolCallId: string = data.tool_call_id ?? ''
       const toolName: string = data.name ?? '工具'
       const args: Record<string, unknown> = data.arguments ?? {}
-      pushBlock('tool_use', `⏳ ${toolName}`, pretty(args), false)
+      // content 格式为 {id, name, input}，与历史消息的 tool_use 格式一致，
+      // 这样 interruptChat 也能正确解析回 tool_use 条目
+      const toolCall = { id: toolCallId, name: toolName, input: args }
+      pushBlock('tool_use', `⏳ ${toolName}`, pretty(toolCall), false)
       break
     }
     case 'tool_execution_end': {
@@ -501,9 +579,10 @@ const interruptChat = async () => {
           break
         case 'tool_use': {
           try {
-            const toolCalls = JSON.parse(block.content)
-            if (Array.isArray(toolCalls)) {
-              for (const tc of toolCalls) {
+            const parsed = JSON.parse(block.content)
+            if (Array.isArray(parsed)) {
+              // 历史消息格式：数组包含多个工具调用
+              for (const tc of parsed) {
                 contentBlocks.push({
                   type: 'tool_use',
                   id: tc.id,
@@ -512,6 +591,15 @@ const interruptChat = async () => {
                 })
                 pendingToolUseIds.add(tc.id)
               }
+            } else if (parsed && typeof parsed === 'object' && parsed.id) {
+              // 流式实时格式：单个 {id, name, input} 对象（来自 tool_execution_start）
+              contentBlocks.push({
+                type: 'tool_use',
+                id: parsed.id,
+                name: parsed.name || 'tool',
+                input: parsed.input || {},
+              })
+              pendingToolUseIds.add(parsed.id)
             }
           } catch {
             contentBlocks.push({ type: 'tool_use', text: block.content })
@@ -666,6 +754,14 @@ watch(activeView, async () => {
         if (Array.isArray(data)) memories.value = data
       }
     } catch { /* ignore */ }
+  } else if (activeView.value === 'knowledge') {
+    // KnowledgeView 自身 onMounted 会加载数据，无需额外操作
+  } else if (activeView.value === 'scheduler') {
+    // SchedulerView 自身 onMounted 会加载数据，无需额外操作
+  } else if (activeView.value === 'chat') {
+    // 切回对话界面时自动滚动到底部
+    await nextTick()
+    scrollToBottom()
   }
 })
 </script>
@@ -674,58 +770,219 @@ watch(activeView, async () => {
 /* ── 整体容器 ── */
 .shell {
   height: 100%;
-  color: #1f2937;
-  background: #ffffff;
+  color: var(--color-navy-800);
+  background: var(--color-slate-50);
 }
 
 /* ── 左侧栏 ── */
 .sidebar {
-  padding: 20px;
+  padding: var(--space-5) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   overflow: hidden;
-  border-right: 1px solid #e5e7eb;
-  background: #ffffff;
+  border-right: 1px solid var(--color-navy-800);
+  background: var(--color-navy-900);
+  transition: width var(--transition-slow), padding var(--transition-slow);
 }
+.sidebar--collapsed {
+  width: 76px !important;
+  padding: var(--space-5) var(--space-3);
+}
+
+/* ── 品牌区域 ── */
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 4px 10px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--color-navy-700);
+  margin-bottom: var(--space-2);
+}
+.brand-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .brand-mark {
-  width: 44px; height: 44px; border-radius: 14px;
+  width: 40px; height: 40px; border-radius: var(--radius-lg);
   display: grid; place-items: center;
-  font-weight: 700; color: #ffffff;
-  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  background: var(--color-gold-500);
+  cursor: pointer; user-select: none;
+  transition: all var(--transition-normal); flex-shrink: 0;
+  position: relative;
+  color: var(--color-navy-900);
 }
-.brand-title { font-size: 1.1rem; font-weight: 700; color: #111827; }
-.brand-subtitle { font-size: 0.85rem; color: #6b7280; }
-.nav { display: flex; flex-direction: column; gap: 10px; }
+.brand-mark-img {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+/* 品牌标记发光环 */
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid var(--color-gold-500);
+  opacity: 0.3;
+  transition: opacity var(--transition-normal);
+}
+.brand-mark:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 24px rgba(234, 179, 8, 0.4);
+}
+.brand-mark:hover::after {
+  opacity: 0.6;
+}
+.sidebar--collapsed .brand {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.sidebar--collapsed .brand-mark {
+  width: 40px; height: 40px;
+}
+.brand-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-white);
+  letter-spacing: -0.01em;
+}
+.brand-subtitle {
+  font-size: 0.78rem;
+  color: var(--color-slate-400);
+  margin-top: 2px;
+}
+
+/* ── 导航 ── */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+/* ── 导航分组标签 ── */
+.nav-section-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-navy-500);
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  user-select: none;
+}
+.nav-section-separator {
+  height: 1px;
+  background: var(--color-navy-700);
+  margin: var(--space-2) var(--space-3);
+}
 .nav-item {
-  text-align: left; border: 1px solid #e5e7eb; background: #ffffff;
-  border-radius: 16px; padding: 14px 16px; cursor: pointer;
-  transition: all 0.2s ease; display: flex; flex-direction: column; gap: 4px;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-slate-400);
+  position: relative;
 }
-.nav-item:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05); }
-.nav-item.active { border-color: #93c5fd; background: #eff6ff; }
-.nav-title { font-weight: 700; color: #111827; }
-.nav-desc { font-size: 0.84rem; color: #6b7280; }
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-slate-200);
+}
+.nav-item.active {
+  background: rgba(234, 179, 8, 0.08);
+  color: var(--color-gold-500);
+  border-color: rgba(234, 179, 8, 0.15);
+}
+/* 激活指示条 */
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--color-gold-500);
+  border-radius: 0 2px 2px 0;
+}
+.sidebar--collapsed .nav-item {
+  padding: 10px 8px;
+  justify-content: center;
+}
+.sidebar--collapsed .nav-item:hover { transform: none; }
+.sidebar--collapsed .nav-item.active::before { display: none; }
+
+.nav-icon {
+  width: 34px; height: 34px; border-radius: var(--radius-md);
+  display: grid; place-items: center;
+  font-size: 1.1rem; flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all var(--transition-fast);
+}
+.active .nav-icon {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.2);
+}
+.nav-item:hover .nav-icon {
+  background: rgba(255, 255, 255, 0.08);
+}
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.nav-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: inherit;
+  transition: color var(--transition-fast);
+}
+.nav-desc {
+  font-size: 0.75rem;
+  color: var(--color-navy-500);
+  transition: color var(--transition-fast);
+}
+.nav-item.active .nav-desc {
+  color: var(--color-gold-600);
+}
 
 /* ── 右侧区域 ── */
-.right-area { background: #f8fafc; }
+.right-area {
+  background: var(--color-slate-50);
+}
 
 /* ── 顶栏 ── */
-.topbar-wrapper { padding: 0; border-bottom: 1px solid #e5e7eb; background: #ffffff; }
+.topbar-wrapper {
+  padding: 0;
+  border-bottom: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+}
 
 /* ── 主体内容（滚动容器） ── */
-.main-content { padding: 0; overflow: auto; }
+.main-content {
+  padding: 0;
+  overflow: auto;
+}
 
 /* ── 底部输入区 ── */
-.composer-wrapper { padding: 0; }
+.composer-wrapper {
+  padding: 0;
+}
 .composer-mcp-bar {
-  padding: 10px 24px 0;
+  padding: var(--space-3) var(--space-6) 0;
 }
 
 /* ── 移动端汉堡按钮 ── */
@@ -734,23 +991,43 @@ watch(activeView, async () => {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
   cursor: pointer;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
   padding: 0;
-  margin-right: 12px;
+  margin-right: var(--space-3);
+}
+.hamburger:hover {
+  border-color: var(--color-gold-500);
+  background: var(--color-gold-50);
 }
 .hamburger-bar {
   display: block;
   width: 18px;
   height: 2px;
-  background: #374151;
+  background: var(--color-navy-600);
   border-radius: 1px;
+  transition: background var(--transition-fast);
+}
+.hamburger:hover .hamburger-bar {
+  background: var(--color-gold-600);
+}
+
+/* ── 侧栏底部 ── */
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-3) 0;
+  border-top: 1px solid var(--color-navy-700);
+}
+.sidebar-footer-version {
+  font-size: 0.72rem;
+  color: var(--color-navy-500);
+  user-select: none;
 }
 
 /* ── 移动端遮罩 ── */
@@ -758,18 +1035,15 @@ watch(activeView, async () => {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(2, 6, 23, 0.5);
+  backdrop-filter: blur(4px);
   z-index: 100;
 }
 
 /* ── 响应式：<1180px ── */
 @media (max-width: 1180px) {
-  .hamburger {
-    display: flex;
-  }
-  .sidebar-overlay {
-    display: block;
-  }
+  .hamburger { display: flex; }
+  .sidebar-overlay { display: block; }
   .sidebar {
     display: none !important;
   }
@@ -780,14 +1054,14 @@ watch(activeView, async () => {
     left: 0;
     bottom: 0;
     z-index: 200;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    box-shadow: 4px 0 32px rgba(2, 6, 23, 0.3);
   }
 }
 
 /* ── 响应式：<768px ── */
 @media (max-width: 768px) {
   .topbar-wrapper {
-    padding: 0 8px;
+    padding: 0 var(--space-2);
   }
 }
 </style>

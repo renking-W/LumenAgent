@@ -52,6 +52,7 @@ class SessionSummary(BaseModel):
     created_at: str
     updated_at: str
     title: str = ""
+    kind: int = 0
 
 
 class ContentBlock(BaseModel):
@@ -106,3 +107,4 @@ class SessionSummaryDetail(BaseModel):
     summary: str
     count: int
     title: str = ""
+    kind: int = 0

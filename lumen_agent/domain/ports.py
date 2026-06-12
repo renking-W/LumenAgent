@@ -11,6 +11,7 @@ class SessionRow(TypedDict):
     created_at: str
     updated_at: str
     title: str
+    kind: int
 
 
 class SessionFullRow(TypedDict):
@@ -22,6 +23,7 @@ class SessionFullRow(TypedDict):
     count: int
     summary: str
     title: str
+    kind: int
 
 
 @runtime_checkable
@@ -54,8 +56,8 @@ class LLMClientPort(Protocol):
 class ConversationRepositoryPort(Protocol):
     """会话与消息的持久化端口（实现可为 SQLite 等）。"""
 
-    async def ensure_session(self, session_id: str) -> None:
-        """若不存在则创建会话行（幂等）。"""
+    async def ensure_session(self, session_id: str, kind: int = 0) -> None:
+        """若不存在则创建会话行（幂等）。kind: 0=normal, 1=scheduled。"""
         ...
 
     async def list_messages(
@@ -84,8 +86,8 @@ class ConversationRepositoryPort(Protocol):
         """
         ...
 
-    async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
-        """分页列出会话元数据（通常按更新时间倒序）。"""
+    async def list_sessions(self, *, limit: int = 50, offset: int = 0, kind: int | None = None) -> list[SessionRow]:
+        """分页列出会话元数据（通常按更新时间倒序）。kind 可选，按类型筛选。"""
         ...
 
     async def get_session(self, session_id: str) -> SessionFullRow | None:

@@ -132,22 +132,22 @@ onMounted(fetchServers)
 
 <style scoped>
 .mcp-selector {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 8px 14px;
-  transition: all 0.2s ease;
+  background: var(--color-slate-50);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-4);
+  transition: all var(--transition-normal);
 }
 .mcp-selector--empty {
   opacity: 0.6;
 }
 .mcp-selector--collapsed {
-  background: #ffffff;
-  border-color: #e5e7eb;
+  background: var(--color-white);
+  border-color: var(--color-slate-200);
 }
 .mcp-selector--collapsed:hover {
-  border-color: #bfdbfe;
-  background: #f8fafc;
+  border-color: var(--color-gold-300);
+  background: var(--color-gold-50);
 }
 
 .mcp-selector-header {
@@ -161,14 +161,14 @@ onMounted(fetchServers)
 .mcp-selector-label {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-slate-500);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .mcp-collapse-icon {
   font-size: 0.6rem;
-  color: #9ca3af;
+  color: var(--color-slate-400);
   width: 12px;
   flex-shrink: 0;
   transition: transform 0.2s ease;
@@ -179,7 +179,7 @@ onMounted(fetchServers)
 .mcp-selected-summary {
   font-size: 0.78rem;
   font-weight: 400;
-  color: #3b82f6;
+  color: var(--color-gold-600);
   margin-left: 2px;
   max-width: 220px;
   overflow: hidden;
@@ -189,7 +189,7 @@ onMounted(fetchServers)
 .mcp-selector-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* 收缩体动画 */
@@ -219,15 +219,15 @@ onMounted(fetchServers)
 .mcp-selector-loading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.82rem;
-  color: #9ca3af;
+  color: var(--color-slate-400);
 }
 .mcp-loading-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #93c5fd;
+  background: var(--color-gold-400);
   animation: mcp-pulse 1.2s ease-in-out infinite;
 }
 @keyframes mcp-pulse {
@@ -238,7 +238,7 @@ onMounted(fetchServers)
 /* 空状态 */
 .mcp-selector-empty {
   font-size: 0.82rem;
-  color: #9ca3af;
+  color: var(--color-slate-400);
 }
 
 /* 标签列表 */
@@ -254,33 +254,33 @@ onMounted(fetchServers)
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #374151;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+  color: var(--color-navy-600);
   font-size: 0.82rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   user-select: none;
 }
 .mcp-tag:hover {
-  border-color: #93c5fd;
-  background: #eff6ff;
+  border-color: var(--color-gold-300);
+  background: var(--color-gold-50);
 }
 .mcp-tag--active {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--color-gold-500);
+  background: var(--color-gold-50);
+  color: var(--color-gold-700);
 }
 .mcp-tag-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #d1d5db;
+  background: var(--color-slate-300);
   flex-shrink: 0;
 }
 .mcp-tag--active .mcp-tag-dot {
-  background: #3b82f6;
+  background: var(--color-gold-500);
 }
 .mcp-tag-name {
   max-width: 140px;
@@ -291,6 +291,6 @@ onMounted(fetchServers)
 .mcp-tag-check {
   font-size: 0.7rem;
   font-weight: 700;
-  color: #2563eb;
+  color: var(--color-gold-600);
 }
 </style>

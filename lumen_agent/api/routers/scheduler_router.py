@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
 from lumen_agent.api.dependency import get_settings
 from lumen_agent.config import Settings, resolve_db_path
@@ -19,6 +20,12 @@ from lumen_agent.infrastructure.scheduler.scheduler_service import (
 
 router = APIRouter(prefix="/v1/scheduler", tags=["scheduler"])
 _logger = logging.getLogger(__name__)
+
+
+class UpdatePromptRequest(BaseModel):
+    """``PUT /v1/scheduler/jobs/{job_id}/prompt`` 请求体。"""
+
+    prompt: str = Field(..., min_length=1, description="新的任务提示词")
 
 
 def _get_repo(settings: Settings = Depends(get_settings)) -> SqliteSchedulerRepository:
@@ -176,6 +183,15 @@ async def create_job(
         "session_id": f"__scheduled__{task_id}",
     })
 
+    # ── 创建对应的会话（kind=1 定时任务） ────────────────────
+    from lumen_agent.infrastructure.data_base.sqlite_conversation import (
+        SqliteConversationRepository,
+    )
+
+    conv_repo = SqliteConversationRepository(resolve_db_path(settings))
+    await conv_repo.ensure_session(f"__scheduled__{task_id}", kind=1)
+    await conv_repo.update_session_title(f"__scheduled__{task_id}", name)
+
     _logger.info("API 创建定时任务: id=%s name=%s trigger=%s/%s",
                  task_id, name, trigger_type, trigger_expr)
 
@@ -259,6 +275,67 @@ async def list_executions(
         "total": len(records),
         "executions": records,
     }
+
+
+@router.put("/jobs/{job_id}/prompt")
+async def update_job_prompt(
+    job_id: str,
+    body: UpdatePromptRequest,
+    repo: SqliteSchedulerRepository = Depends(_get_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str]:
+    """更新定时任务的提示词。同时更新 DB 和调度器中的运行时参数。"""
+    task = await repo.get_task(job_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
+
+    prompt = body.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="prompt 不能为空")
+
+    # 1) 更新数据库
+    await repo.update_task(job_id, {"prompt": prompt})
+
+    # 2) 如果调度器正在运行，用新 prompt 重新注册任务
+    if SchedulerService.is_running():
+        try:
+            SchedulerService.remove_job(job_id)
+        except Exception:
+            pass  # 作业可能不存在
+        try:
+            if task["trigger_type"] == "cron":
+                tz = task.get("timezone", settings.get("SCHEDULER_TIMEZONE", "Asia/Shanghai"))
+                trigger = SchedulerService.cron_trigger(task["trigger_expr"], timezone=tz)
+            elif task["trigger_type"] == "interval":
+                trigger = SchedulerService.interval_trigger(int(task["trigger_expr"]))
+            elif task["trigger_type"] == "date":
+                trigger = SchedulerService.date_trigger(task["trigger_expr"])
+            else:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="无效的触发器类型")
+
+            SchedulerService.add_job(
+                func="lumen_agent.infrastructure.scheduler.tasks:execute_scheduled_agent_task",
+                trigger=trigger,
+                job_id=job_id,
+                name=task["name"],
+                kwargs={
+                    "task_id": job_id,
+                    "session_id": task.get("session_id", f"__scheduled__{job_id}"),
+                    "task_name": task["name"],
+                    "prompt": prompt,
+                    "trigger_type": task["trigger_type"],
+                },
+                replace_existing=True,
+            )
+        except Exception as exc:
+            _logger.exception("使用更新后的提示词重新注册调度任务失败")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"重新注册调度任务失败: {exc}",
+            )
+
+    _logger.info("已更新定时任务提示词: id=%s", job_id)
+    return {"status": "ok", "job_id": job_id, "prompt": prompt}
 
 
 @router.get("/health")

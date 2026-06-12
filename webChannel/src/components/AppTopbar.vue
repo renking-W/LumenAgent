@@ -2,7 +2,6 @@
   <header class="topbar">
     <div>
       <h1>{{ pageTitle }}</h1>
-      <p>{{ pageSubtitle }}</p>
     </div>
     <div class="topbar-actions">
       <el-switch
@@ -29,7 +28,7 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp'
+  activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'knowledge' | 'scheduler' | 'logs'
   useAgentMode: boolean
 }>()
 
@@ -44,6 +43,9 @@ const pageTitle = computed(() => {
   if (props.activeView === 'skills') return 'Skills Library'
   if (props.activeView === 'memories') return 'Memory Files'
   if (props.activeView === 'mcp') return 'MCP Servers'
+  if (props.activeView === 'knowledge') return 'Knowledge Base'
+  if (props.activeView === 'scheduler') return 'Scheduled Tasks'
+  if (props.activeView === 'logs') return 'System Logs'
   return 'Agent Console'
 })
 
@@ -52,6 +54,8 @@ const pageSubtitle = computed(() => {
   if (props.activeView === 'skills') return '浏览所有 SKILL 的可用状态、环境依赖与位置。'
   if (props.activeView === 'memories') return '浏览所有记忆文件的内容与详情，包括长期记忆和每日记忆。'
   if (props.activeView === 'mcp') return '管理 MCP Server 连接配置，新增、编辑、删除与连通性测试。'
+  if (props.activeView === 'knowledge') return '管理知识文档，支持入库文本/文件、检索切片、查看文档详情与重建索引。'
+  if (props.activeView === 'scheduler') return '管理 AI 定时任务，支持 cron / interval / date 三种触发模式。'
   return '支持 SSE 实时渲染思考、工具调用、工具结果与正文内容。'
 })
 </script>
@@ -59,10 +63,22 @@ const pageSubtitle = computed(() => {
 <style scoped>
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 16px; padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb; background: #ffffff;
+  gap: var(--space-4); padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+  min-height: 52px;
 }
-.topbar h1 { margin: 0; font-size: 1.6rem; color: #111827; }
-.topbar p { margin: 6px 0 0; color: #6b7280; }
-.topbar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.topbar h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-navy-800);
+  letter-spacing: -0.01em;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
 </style>

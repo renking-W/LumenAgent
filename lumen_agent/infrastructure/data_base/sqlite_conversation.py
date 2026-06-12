@@ -38,7 +38,8 @@ class SqliteConversationRepository:
                 description TEXT NOT NULL DEFAULT '会话记录',
                 count INTEGER NOT NULL DEFAULT 0,
                 summary TEXT NOT NULL DEFAULT '',
-                title TEXT NOT NULL DEFAULT ''
+                title TEXT NOT NULL DEFAULT '',
+                kind INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,8 +66,10 @@ class SqliteConversationRepository:
                 pass  # 字段已存在
         await db.commit()
 
-    async def ensure_session(self, session_id: str) -> None:
-        """保证 ``sessions`` 中存在该 ``session_id``（不存在则插入）。"""
+    async def ensure_session(self, session_id: str, kind: int = 0) -> None:
+        """保证 ``sessions`` 中存在该 ``session_id``（不存在则插入）。
+        kind: 0=normal, 1=scheduled。
+        """
         # 确保有文件目录，不存在则创建
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
@@ -77,8 +80,8 @@ class SqliteConversationRepository:
             try:
                 # 不存在插入，存在忽略
                 await db.execute(
-                    "INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
-                    (session_id, now, now),
+                    "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, kind) VALUES (?, ?, ?, ?)",
+                    (session_id, now, now, kind),
                 )
                 await db.commit()
             except Exception:
@@ -223,7 +226,7 @@ class SqliteConversationRepository:
             await self._prepare(db)
             cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at, count, summary, title
+                SELECT id, created_at, updated_at, count, summary, title, kind
                 FROM sessions WHERE id = ?
                 """,
                 (session_id,),
@@ -238,6 +241,7 @@ class SqliteConversationRepository:
             "count": int(row["count"]),
             "summary": row["summary"] or "",
             "title": row["title"] or "",
+            "kind": int(row["kind"]) if row["kind"] is not None else 0,
         }
 
     async def list_recent_messages(
@@ -389,19 +393,30 @@ class SqliteConversationRepository:
             await db.commit()
         return total
 
-    async def list_sessions(self, *, limit: int = 50, offset: int = 0) -> list[SessionRow]:
-        """分页返回会话列表（``updated_at`` 倒序）。"""
+    async def list_sessions(self, *, limit: int = 50, offset: int = 0, kind: int | None = None) -> list[SessionRow]:
+        """分页返回会话列表（``updated_at`` 倒序）。kind 可选，按类型筛选。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
-            cursor = await db.execute(
-                """
-                SELECT id, created_at, updated_at, title FROM sessions
-                ORDER BY updated_at DESC
-                LIMIT ? OFFSET ?
-                """,
-                (limit, offset),
-            )
+            if kind is not None:
+                cursor = await db.execute(
+                    """
+                    SELECT id, created_at, updated_at, title, kind FROM sessions
+                    WHERE kind = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (kind, limit, offset),
+                )
+            else:
+                cursor = await db.execute(
+                    """
+                    SELECT id, created_at, updated_at, title, kind FROM sessions
+                    ORDER BY updated_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
+                )
             rows = await cursor.fetchall()
         return [
             {
@@ -409,6 +424,7 @@ class SqliteConversationRepository:
                 "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
                 "title": r["title"] or "",
+                "kind": int(r["kind"]) if r["kind"] is not None else 0,
             }
             for r in rows
         ]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,59 +35,43 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
 
     kwargs 包含（由 task_scheduler 工具创建时传入）:
         - task_id: str
-        - session_id: str
-        - prompt: str
         - task_name: str
+        - prompt: str
         - trigger_type: str       — "cron" / "interval" / "date"
-        - system_prompt: str|None
     """
     task_id = kwargs.get("task_id", "?")
     task_name = kwargs.get("task_name", "")
     prompt = kwargs.get("prompt", "")
     trigger_type = kwargs.get("trigger_type", "")
-    session_id = kwargs.get("session_id", f"__scheduled__{task_id}")
+    session_id = f"job-{uuid.uuid4()}"
     logger.info(
         "[ScheduledTask] 触发执行: task_id=%s name=%s prompt=%.80s",
         task_id, task_name, prompt,
     )
 
     try:
-        from lumen_agent.agent.agent import AgentStreamExecutor
-        from lumen_agent.agent.prompts.builder import build_system_prompt
-        from lumen_agent.agent.skills import load_skills
-        from lumen_agent.agent.tools import init_tools
-        from lumen_agent.agent.tools.registry import ToolRegistry
-        from lumen_agent.config import get_settings
+        from lumen_agent.application.service.chat_service import (
+            reply_with_agent,
+        )
+        from lumen_agent.config import get_settings, resolve_db_path
+        from lumen_agent.infrastructure.data_base.sqlite_conversation import (
+            SqliteConversationRepository,
+        )
         from lumen_agent.model_adapters import get_model_adapter
-
-        init_tools()
 
         settings = get_settings()
         llm = get_model_adapter(settings)
-        tools = ToolRegistry.create_all_tools()
-        skills = load_skills()
-        system_content = build_system_prompt(tools, skills) or None
+        repo = SqliteConversationRepository(resolve_db_path(settings))
 
-        messages: list[dict[str, Any]] = []
-        if system_content:
-            messages.append({"role": "system", "content": system_content})
-        messages.append({"role": "user", "content": prompt})
-
-        executor = AgentStreamExecutor(
-            adapter=llm,
-            tools=tools,
-            settings=settings,
-        )
+        # 预创建会话（kind=1 定时任务），reply_with_agent 内部
+        # ensure_session 使用 INSERT OR IGNORE，不会覆盖已存在的行
+        await repo.ensure_session(session_id, kind=1)
+        await repo.update_session_title(session_id, task_name)
 
         final_text = ""
-        async for kind, data in executor.run_stream(messages):
-            if kind == "content":
-                final_text += data
-            elif kind == "done":
+        async for kind, data in reply_with_agent(repo, llm, session_id, prompt, settings):
+            if kind == "done":
                 final_text = data
-            elif kind == "error":
-                logger.error("[ScheduledTask] Agent 执行错误: %s", data)
-                return await _save_result(task_id, session_id, "failed", data)
 
         logger.info(
             "[ScheduledTask] 执行完成: task_id=%s chars=%d",

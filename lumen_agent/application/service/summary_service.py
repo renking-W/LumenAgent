@@ -260,8 +260,8 @@ async def maybe_trigger_summary(
             )
             return
 
-        # 从前往后数 compress_turns 轮压缩为摘要
-        to_compress = turns_to_messages(turns[:compress_turns])
+        # 从后往前数，跳过保留的 keep_turns 轮，其余压缩为摘要
+        to_compress = turns_to_messages(turns[:-keep_turns]) if keep_turns > 0 else turns_to_messages(turns)
         rounds_text = _format_rounds(to_compress)
 
         # 渲染 prompt（含文件读取），放在 try 块内以确保异常可被捕获并记录

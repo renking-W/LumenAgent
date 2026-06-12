@@ -16,9 +16,16 @@
 
       <!-- 空状态 -->
       <div v-if="messages.length === 0" class="empty-state">
-        <div class="empty-icon">💬</div>
+        <div class="empty-state-graphic">
+          <div class="empty-state-ring"></div>
+          <span class="empty-state-icon">💬</span>
+        </div>
         <h2>开始新的对话</h2>
-        <p>在下方输入你的问题，AI 将实时流式回复</p>
+        <p class="empty-state-desc">在下方输入你的问题，AI 将实时流式回复</p>
+        <div class="empty-state-suggestions">
+          <button class="suggestion-chip" @click="$emit('new-session')">📝 开始新会话</button>
+          <button class="suggestion-chip" @click="$emit('scroll-to-bottom')">👇 查看底部输入区</button>
+        </div>
       </div>
 
       <!-- 消息列表 -->
@@ -127,9 +134,9 @@ defineExpose({ refreshSessions, scrollPaneToBottom, restoreScrollAfterPrepend })
 
 .scroll-top-indicator {
   text-align: center;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   font-size: 0.82rem;
-  color: #9ca3af;
+  color: var(--color-slate-400);
   flex-shrink: 0;
 }
 .loading-more {
@@ -137,7 +144,7 @@ defineExpose({ refreshSessions, scrollPaneToBottom, restoreScrollAfterPrepend })
   animation: pulse-dot 1.2s ease-in-out infinite;
 }
 .no-more {
-  color: #d1d5db;
+  color: var(--color-slate-300);
 }
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.5; }
@@ -146,13 +153,13 @@ defineExpose({ refreshSessions, scrollPaneToBottom, restoreScrollAfterPrepend })
 
 .chat-pane {
   flex: 1;
-  padding: 24px;
+  padding: var(--space-5) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   min-height: 100%;
   min-width: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  background: var(--color-slate-50);
   overflow-y: auto;
 }
 
@@ -163,48 +170,94 @@ defineExpose({ refreshSessions, scrollPaneToBottom, restoreScrollAfterPrepend })
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--color-slate-400);
   user-select: none;
-  gap: 8px;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  border: 2px dashed var(--color-slate-200);
+  border-radius: var(--radius-2xl);
+  background: var(--color-white);
+  margin: var(--space-8) 0;
 }
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 8px;
+.empty-state-graphic {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-2);
+}
+.empty-state-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-slate-200);
+  animation: empty-ring-pulse 3s ease-in-out infinite;
+}
+.empty-state-icon {
+  font-size: 2rem;
+  z-index: 1;
+}
+@keyframes empty-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.08); opacity: 0.8; }
 }
 .empty-state h2 {
   margin: 0;
-  color: #6b7280;
+  color: var(--color-navy-700);
   font-weight: 600;
   font-size: 1.2rem;
 }
-.empty-state p {
+.empty-state-desc {
   margin: 0;
-  font-size: 0.9rem;
-  color: #9ca3af;
+  font-size: 0.88rem;
+  color: var(--color-slate-400);
+}
+.empty-state-suggestions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.suggestion-chip {
+  padding: 6px 16px;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-full);
+  background: var(--color-slate-50);
+  color: var(--color-slate-500);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.suggestion-chip:hover {
+  border-color: var(--color-gold-300);
+  background: var(--color-gold-50);
+  color: var(--color-gold-700);
 }
 
 /* ── 滚动到底部按钮 ── */
 .scroll-bottom-btn {
   position: absolute;
-  bottom: 16px;
-  right: 24px;
+  bottom: var(--space-4);
+  right: var(--space-6);
   width: 40px;
   height: 40px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #374151;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+  color: var(--color-navy-600);
   font-size: 1.2rem;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
   display: grid;
   place-items: center;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   z-index: 10;
 }
 .scroll-bottom-btn:hover {
-  background: #f3f4f6;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  background: var(--color-gold-50);
+  border-color: var(--color-gold-500);
+  color: var(--color-gold-600);
+  box-shadow: var(--shadow-glow);
   transform: translateY(-2px);
 }
 

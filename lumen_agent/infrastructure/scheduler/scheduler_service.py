@@ -113,7 +113,7 @@ class SchedulerService:
                 # 跳过已过期的一次性任务
                 if task["trigger_type"] == "date":
                     from dateutil import parser
-                    run_date = parser.parse(task["trigger_expr"])
+                    run_date = parser.parse(task["trigger_expr"]).replace(tzinfo=timezone.utc)
                     if run_date < now:
                         await repo.update_task(task["id"], {"enabled": False})
                         skipped_expired += 1

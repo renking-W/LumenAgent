@@ -10,15 +10,27 @@
     <!-- 会话列表主体 -->
     <div v-show="!collapsed" class="session-body">
       <div class="session-head">
-        <span class="session-title">历史会话</span>
+        <div class="session-tabs">
+          <button
+            class="session-tab"
+            :class="{ active: sessionKind === 0 }"
+            @click="switchKind(0)"
+          >历史会话</button>
+          <button
+            class="session-tab"
+            :class="{ active: sessionKind === 1 }"
+            @click="switchKind(1)"
+          >定时任务</button>
+        </div>
         <div class="session-actions">
-          <el-button size="small" type="primary" plain @click="emit('new-session')">＋ 新会话</el-button>
           <el-button size="small" circle @click="fetchSessions" :loading="loading">⟳</el-button>
         </div>
       </div>
 
       <div v-if="loading" class="session-status">加载中...</div>
-      <div v-else-if="sessions.length === 0" class="session-status">暂无会话</div>
+      <div v-else-if="sessions.length === 0" class="session-status">
+        {{ sessionKind === 1 ? '暂无定时任务会话' : '暂无历史会话' }}
+      </div>
       <div v-else class="session-items">
         <div
           v-for="s in sessions"
@@ -27,13 +39,23 @@
           :class="{ active: s.id === activeSessionId }"
         >
           <div class="session-item-main" @click="selectSession(s.id)">
-            <div class="session-name">{{ s.title || '新会话' }}</div>
+            <div class="session-name">{{ s.title || (sessionKind === 1 ? '定时任务' : '新会话') }}</div>
             <div class="session-footer">
               <span class="session-footer-time">{{ formatTime(s.created_at) }}</span>
               <span class="session-footer-dot">·</span>
               <span class="session-footer-relative">{{ formatRelative(s.updated_at) }}</span>
             </div>
           </div>
+          <div class="session-actions-vertical">
+          <el-button
+            size="small"
+            circle
+            class="rename-btn"
+            title="重命名"
+            @click.stop="handleRename(s)"
+          >
+            <span class="rename-icon">✎</span>
+          </el-button>
           <el-popconfirm
             title="确定删除此会话？"
             confirm-button-text="删除"
@@ -52,6 +74,7 @@
               </el-button>
             </template>
           </el-popconfirm>
+          </div>
         </div>
       </div>
     </div>
@@ -60,6 +83,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 
 const props = defineProps<{
   activeSessionId: string
@@ -71,16 +95,17 @@ const emit = defineEmits<{
   'new-session': []
 }>()
 
-type SessionSummary = { id: string; created_at: string; updated_at: string; title: string }
+type SessionSummary = { id: string; created_at: string; updated_at: string; title: string; kind?: number }
 
 const collapsed = ref(false)
 const loading = ref(false)
 const sessions = ref<SessionSummary[]>([])
+const sessionKind = ref<number>(0)
 
 const fetchSessions = async () => {
   loading.value = true
   try {
-    const res = await fetch('/v1/sessions?limit=50')
+    const res = await fetch(`/v1/sessions?limit=50&kind=${sessionKind.value}`)
     if (res.ok) sessions.value = await res.json()
   } catch {
     // ignore
@@ -89,8 +114,40 @@ const fetchSessions = async () => {
   }
 }
 
+const switchKind = (kind: number) => {
+  sessionKind.value = kind
+  fetchSessions()
+}
+
 const selectSession = (id: string) => {
   emit('select-session', id)
+}
+
+const handleRename = async (session: SessionSummary) => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入新的会话标题',
+      '重命名会话',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: session.title || '新会话',
+        inputPlaceholder: '会话标题',
+      }
+    )
+    if (value && value.trim()) {
+      const res = await fetch(`/v1/sessions/${session.id}/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: value.trim() }),
+      })
+      if (res.ok) {
+        session.title = value.trim()
+      }
+    }
+  } catch {
+    // 用户取消或请求失败，静默处理
+  }
 }
 
 const handleDelete = async (id: string, event?: MouseEvent) => {
@@ -136,16 +193,16 @@ onMounted(fetchSessions)
   flex-shrink: 0;
   display: flex;
   flex-direction: row;
-  border-right: 1px solid #e5e7eb;
-  background: #ffffff;
-  transition: width 0.25s ease;
+  border-right: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+  transition: width var(--transition-slow);
   overflow: hidden;
 }
 .session-panel.collapsed {
   width: auto;
 }
 .toggle-btn {
-  margin: 8px;
+  margin: var(--space-2);
   flex-shrink: 0;
 }
 .session-body {
@@ -156,63 +213,96 @@ onMounted(fetchSessions)
   min-width: 0;
 }
 .session-head {
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-slate-200);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid #e5e7eb;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.session-head .session-actions {
+  align-self: flex-end;
 }
 .session-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
-.session-title {
-  font-weight: 600;
-  color: #111827;
-  font-size: 0.95rem;
+
+/* ── 分类切换标签 ── */
+.session-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--color-slate-100);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+.session-tab {
+  flex: 1;
+  text-align: center;
+  border: none;
+  background: transparent;
+  color: var(--color-slate-500);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.session-tab:hover {
+  color: var(--color-navy-700);
+}
+.session-tab.active {
+  background: var(--color-white);
+  color: var(--color-navy-800);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
 }
 .session-status {
-  padding: 24px 14px;
+  padding: var(--space-6) var(--space-4);
   text-align: center;
-  color: #9ca3af;
+  color: var(--color-slate-400);
   font-size: 0.85rem;
 }
 .session-items {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--space-2);
 }
 .session-item {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 4px 4px 12px;
-  border-radius: 10px;
+  padding: 3px 3px 3px 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 0.15s;
-  margin-bottom: 4px;
+  transition: background var(--transition-fast);
+  margin-bottom: 2px;
 }
 .session-item:hover {
-  background: #f3f4f6;
+  background: var(--color-slate-50);
 }
 .session-item.active {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--color-gold-50);
+  border: 1px solid var(--color-gold-200);
 }
 .session-item-main {
   flex: 1;
   min-width: 0;
-  padding: 6px 0;
+  padding: var(--space-1) 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .session-name {
   font-size: 0.88rem;
-  color: #111827;
+  color: var(--color-navy-800);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -223,22 +313,42 @@ onMounted(fetchSessions)
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  font-size: 0.75rem;
-  color: #9ca3af;
+  font-size: 0.72rem;
+  color: var(--color-slate-400);
 }
 .session-footer-dot {
-  color: #d1d5db;
+  color: var(--color-slate-300);
 }
-.delete-btn {
-  opacity: 0;
-  transition: opacity 0.15s;
+.session-actions-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex-shrink: 0;
+}
+.delete-btn,
+.rename-btn {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
   width: 24px;
   height: 24px;
   font-size: 0.75rem;
+  padding: 0;
 }
-.session-item:hover .delete-btn {
+.session-item:hover .delete-btn,
+.session-item:hover .rename-btn {
   opacity: 1;
+}
+.rename-btn {
+  color: var(--color-slate-500);
+}
+.rename-btn:hover {
+  color: var(--color-gold-600);
+  background: var(--color-gold-50);
+}
+.rename-icon {
+  font-style: normal;
+  font-size: 1rem;
+  line-height: 1;
 }
 .delete-icon {
   font-style: normal;

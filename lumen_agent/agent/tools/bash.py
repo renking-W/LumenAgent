@@ -29,6 +29,7 @@ class Bash(BaseTool):
         + "单次输出上限 50KB；超出自动截断并提示。"
         "默认超时 30 秒，可通过 timeout 参数设置（最大 120 秒）。"
         "不要用此工具运行需要交互式输入的命令。"
+        "在使用该工具时：如果是 项目需要/临时 等则不需要指定 working_directory，如果是全局需要则需要指定 working_directory"
     )
     parameters = {
         "type": "object",
