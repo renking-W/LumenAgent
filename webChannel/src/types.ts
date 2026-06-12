@@ -164,3 +164,21 @@ export type SchedulerHealthResponse = {
   running: boolean
   jobs: unknown[]
 }
+
+// ── API Key ──────────────────────────────────────────
+export type ApiKeyItem = {
+  id: string
+  name: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ApiKeyCreatedResponse = ApiKeyItem & {
+  key: string
+}
+
+export type ApiKeyListResponse = {
+  total: number
+  keys: ApiKeyItem[]
+}

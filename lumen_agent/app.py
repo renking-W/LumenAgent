@@ -16,6 +16,7 @@ from lumen_agent.api.routers import skills as skills_router
 from lumen_agent.api.routers import knowledge as knowledge_router
 from lumen_agent.api.routers import memories as memories_router
 from lumen_agent.api.routers import mcp_servers as mcp_servers_router
+from lumen_agent.api.routers import api_keys as api_keys_router
 from lumen_agent.api.routers import logs_router
 from lumen_agent.api.routers import scheduler_router
 from lumen_agent.config import get_settings, log_config, resolve_cors_origins, resolve_db_path
@@ -82,6 +83,12 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logging.exception("记忆文件后台索引启动失败")
 
+    # ── 确保至少有一个 API Key（首次启动自动生成） ────────────
+    try:
+        await _ensure_default_api_key()
+    except Exception:
+        logging.exception("默认 API Key 初始化失败")
+
     # ── 启动调度器 + 从 DB 恢复持久化任务 ─────────────────────
     scheduler_enabled = settings.get("SCHEDULER_ENABLED", True)
     if scheduler_enabled:
@@ -140,6 +147,30 @@ async def _index_memory_on_startup() -> None:
         logging.exception("记忆文件全量索引失败，将在下一次启动时重试")
 
 
+async def _ensure_default_api_key() -> None:
+    """第一次启动时自动生成一个默认 API Key 并打印到日志。"""
+    from lumen_agent.application.service.api_key_service import generate_api_key
+    from lumen_agent.infrastructure.data_base.sqlite_api_key import (
+        SqliteApiKeyRepository,
+    )
+
+    settings = get_settings()
+    repo = SqliteApiKeyRepository(resolve_db_path(settings))
+    count = await repo.count_all()
+    if count > 0:
+        return  # 已有 Key，无需生成
+
+    raw_key, key_hash = generate_api_key()
+    meta = await repo.create(key_hash, name="Default Key")
+    border = "=" * 60
+    logging.info(border)
+    logging.info("首次启动：已自动生成默认 API Key")
+    logging.info("Key: %s", raw_key)
+    logging.info("ID:  %s", meta["id"])
+    logging.info("请妥善保管此密钥，它仅在本次启动时显示一次。")
+    logging.info(border)
+
+
 def create_app() -> FastAPI:
     """创建 FastAPI 实例：CORS、健康检查、挂载 chat / sessions 路由。"""
     settings = get_settings()
@@ -169,6 +200,7 @@ def create_app() -> FastAPI:
     application.include_router(memories_router.router)
     application.include_router(mcp_servers_router.router)
     application.include_router(scheduler_router.router)
+    application.include_router(api_keys_router.router)
     application.include_router(logs_router.router)
     return application
 

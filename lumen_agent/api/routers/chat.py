@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from lumen_agent.api.dependency import get_conversation_repo, get_llm_client
+from lumen_agent.api.dependency import get_conversation_repo, get_llm_client, verify_api_key
 from lumen_agent.api.schemas.session_dtos import ChatRequest, ChatResponse, InterruptRequest
 from lumen_agent.api.schemas.stream_events import (
     StreamErrorData,
@@ -27,7 +27,11 @@ from lumen_agent.infrastructure.http_pool import StreamHandle
 from lumen_agent.infrastructure.sse_registry import get_sse_registry
 from lumen_agent.model_adapters.base import ModelAdapter
 
-router = APIRouter(prefix="/v1", tags=["chat"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 _LLM_STREAM_FAILURES = (httpx.HTTPStatusError, httpx.RequestError, RuntimeError)
 

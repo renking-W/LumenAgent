@@ -20,6 +20,9 @@
       <el-button v-else type="primary" plain @click="$emit('refresh')">
         刷新数据
       </el-button>
+      <el-button plain @click="emit('open-api-keys')">
+        🔑 API Key
+      </el-button>
     </div>
   </header>
 </template>
@@ -32,10 +35,11 @@ const props = defineProps<{
   useAgentMode: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'update:useAgentMode': [value: boolean]
   'scroll-to-bottom': []
   refresh: []
+  'open-api-keys': []
 }>()
 
 const pageTitle = computed(() => {

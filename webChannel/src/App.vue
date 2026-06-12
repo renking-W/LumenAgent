@@ -137,6 +137,7 @@
           @update:use-agent-mode="useAgentMode = $event"
           @scroll-to-bottom="scrollToBottom"
           @refresh="refreshCapabilities"
+          @open-api-keys="apiKeyDialogVisible = true"
         />
       </el-header>
 
@@ -186,6 +187,9 @@
         />
       </el-footer>
     </el-container>
+
+    <!-- ======== API Key 管理弹窗 ======== -->
+    <ApiKeyManager v-model="apiKeyDialogVisible" />
   </el-container>
 </template>
 
@@ -203,6 +207,7 @@ import KnowledgeView from './components/KnowledgeView.vue'
 import SchedulerView from './components/SchedulerView.vue'
 import LogView from './components/LogView.vue'
 import AppComposer from './components/AppComposer.vue'
+import ApiKeyManager from './components/ApiKeyManager.vue'
 
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
@@ -223,6 +228,7 @@ const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 const abortController = ref<AbortController | null>(null)
 
 const selectedMcpServerIds = ref<string[]>([])
+const apiKeyDialogVisible = ref(false)
 
 const messages = reactive<ChatMessage[]>([])
 
