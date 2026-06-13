@@ -1,0 +1,14 @@
+{
+  "name": "lumen-agent",
+  "version": "1.0.0",
+  "bin": {
+    "lumen-start": "./start.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "license": "MIT"
+}

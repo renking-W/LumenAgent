@@ -45,7 +45,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "DEEPSEEK_ENABLE_THINKING": True,
     # ── 服务 ──
     "HOST": "127.0.0.1",
-    "PORT": 8000,
+    "PORT": 21675,
     "RELOAD": False,
     "CORS_ORIGINS": "http://127.0.0.1:5173,http://localhost:5173",
     # ── 会话 ──

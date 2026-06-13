@@ -5,9 +5,13 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from flask import Flask, send_from_directory, request
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 import logging
+import os
+import threading
 
 from lumen_agent.api.routers import chat as chat_router
 from lumen_agent.api.routers import sessions as sessions_router
@@ -222,10 +226,60 @@ def run_uvicorn() -> None:
     )
 
 
+_FRONTEND_PORT = 1675
+_PROXY_TARGET = "http://127.0.0.1:21675"
+
+
+def run_frontend():
+    """启动 Flask 服务：serve 前端静态文件，/v1/* 代理到 FastAPI。"""
+    front = Flask(__name__, static_folder="../webChannel/dist", static_url_path="")
+    proxy_client = httpx.Client(base_url=_PROXY_TARGET)
+
+    # ── 代理 /v1/* 到 FastAPI ──────────────────────────
+    @front.route("/v1/<path:subpath>", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    def proxy_api(subpath):
+        try:
+            resp = proxy_client.request(
+                method=request.method,
+                url=f"/v1/{subpath}",
+                params=request.args,
+                content=request.get_data(),
+                headers={
+                    k: v for k, v in request.headers
+                    if k.lower() not in ("host", "content-length", "transfer-encoding")
+                },
+            )
+            return resp.content, resp.status_code, dict(resp.headers)
+        except httpx.RequestError as e:
+            return {"error": f"代理请求失败: {e}"}, 502
+
+    # ── 首页 ──────────────────────────────────────────
+    @front.route("/")
+    def index():
+        return send_from_directory(front.static_folder, "index.html")
+
+    # ── SPA 兜底：404 时返回 index.html ──────────────
+    @front.errorhandler(404)
+    def not_found(e):
+        file_path = request.path.lstrip("/")
+        full = os.path.join(front.static_folder, file_path)
+        if file_path and os.path.isfile(full):
+            return send_from_directory(front.static_folder, file_path)
+        return send_from_directory(front.static_folder, "index.html")
+
+    front.run(host="0.0.0.0", port=_FRONTEND_PORT)
+
+
 def main() -> None:
-    """Web 入口（仅 HTTP，无 CLI）：配置日志后启动 uvicorn。"""
+    """Web 入口：启动 Flask 线程 + uvicorn。"""
     log_config()
     _init_workspace()
+
+    # Flask 在后台线程运行
+    t = threading.Thread(target=run_frontend, daemon=True)
+    t.start()
+
+    # uvicorn 在主线程运行（阻塞）
     run_uvicorn()
 
 

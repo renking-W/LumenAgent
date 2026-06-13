@@ -30,3 +30,12 @@ tiktoken>=0.7.0
 
 # 知识库 / RAG 向量存储
 chromadb>=0.5.0
+
+# 定时任务调度（AsyncIOScheduler、CronTrigger、IntervalTrigger）
+apscheduler>=3.10.0
+
+# CLI 交互式提示（chat_in_cli、knowledge_in_cli）
+questionary>=2.1.0
+
+# Web 框架（前端静态文件代理）
+flask>=3.0.0

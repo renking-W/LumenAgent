@@ -3,7 +3,7 @@
     "target": "ES2022",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "node16",
     "strict": true,
     "jsx": "preserve",
     "baseUrl": ".",
