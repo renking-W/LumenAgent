@@ -51,9 +51,13 @@ def _to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             content: list[Any] = [b for b in raw_content if isinstance(b, dict)]
         else:
             content = ensure_blocks(raw_content)
+        # 回复增量
         text_parts: list[str] = []
+        # 思考增量
         thinking_parts: list[str] = []
+        # 工具调用
         tool_use_blocks: list[dict] = []
+        # 工具调用结果
         tool_result_blocks: list[dict] = []
 
         for block in content:

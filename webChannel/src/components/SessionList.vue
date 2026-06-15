@@ -27,6 +27,14 @@
         </div>
       </div>
 
+      <!-- 新建会话按钮（仅历史会话可见） -->
+      <div v-if="sessionKind === 0" class="new-session-area">
+        <button class="new-session-btn" @click="emit('new-session')">
+          <span class="new-session-icon">＋</span>
+          新建会话
+        </button>
+      </div>
+
       <div v-if="loading" class="session-status">加载中...</div>
       <div v-else-if="sessions.length === 0" class="session-status">
         {{ sessionKind === 1 ? '暂无定时任务会话' : '暂无历史会话' }}
@@ -351,6 +359,41 @@ onMounted(fetchSessions)
   line-height: 1;
 }
 .delete-icon {
+  font-style: normal;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ── 新建会话按钮 ── */
+.new-session-area {
+  padding: var(--space-2) var(--space-3) 0;
+}
+.new-session-btn {
+  width: 100%;
+  border: 1px dashed var(--color-slate-300);
+  background: var(--color-slate-50);
+  color: var(--color-slate-500);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: inherit;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+.new-session-btn:hover {
+  border-color: var(--color-gold-400);
+  background: var(--color-gold-50);
+  color: var(--color-gold-600);
+  border-style: solid;
+}
+.new-session-icon {
   font-style: normal;
   font-size: 1rem;
   line-height: 1;
