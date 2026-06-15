@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from lumen_agent.config import Settings
-from lumen_agent.infrastructure.client.deepseek_client import DeepSeekHttpClient
+from lumen_agent.model_adapters.client import DeepSeekHttpClient
 from lumen_agent.model_adapters.base import ModelAdapter
 from lumen_agent.model_adapters.deepseek import DeepSeekAdapter
 

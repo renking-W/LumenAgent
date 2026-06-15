@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,7 +14,7 @@ from lumen_agent.api.schemas.mcp_dtos import (
     MCPServerUpdate,
 )
 from lumen_agent.config import Settings, resolve_db_path
-from lumen_agent.infrastructure.client.mcp_client import MCPConnection, get_mcp_manager
+from lumen_agent.model_adapters.client import MCPConnection, get_mcp_manager
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 
 router = APIRouter(prefix="/v1/mcp/servers", tags=["mcp"])

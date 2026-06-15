@@ -217,7 +217,7 @@ async def reply_with_agent(
     from lumen_agent.agent.tools.mcp_bridge import MCPBridgeTool
     from lumen_agent.agent.prompts.builder import build_system_prompt
     from lumen_agent.agent.skills import load_skills
-    from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
+    from lumen_agent.model_adapters.client import get_mcp_manager
 
     # 确保工具已注册（幂等）
     init_tools()
@@ -265,7 +265,7 @@ async def reply_with_agent(
                 else config.get("api_key")
             )
             try:
-                from lumen_agent.infrastructure.client.mcp_client import MCPConnection
+                from lumen_agent.model_adapters.client import MCPConnection
                 conn = MCPConnection(url, api_key)
                 await conn.connect()
                 temp_connections.append(conn)

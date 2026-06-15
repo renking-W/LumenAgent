@@ -19,7 +19,7 @@ import chromadb
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.config import Settings, resolve_chroma_path
-from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
+from lumen_agent.model_adapters.client.embedding_client import AlibabaEmbeddingClient
 
 _COLLECTION_NAME = "memory_store"
 

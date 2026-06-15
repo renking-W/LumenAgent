@@ -66,7 +66,7 @@ async def lifespan(_app: FastAPI):
 
     # ── 启动 MCP 全局管理器（全量连接 enabled 的 MCP Server） ──
     try:
-        from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
+        from lumen_agent.model_adapters.client import get_mcp_manager
         from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 
         settings = get_settings()
@@ -120,7 +120,7 @@ async def lifespan(_app: FastAPI):
         logging.info("调度器已停止")
 
     # ── 关闭 MCP 全局连接 ──────────────────────────────────
-    from lumen_agent.infrastructure.client.mcp_client import get_mcp_manager
+    from lumen_agent.model_adapters.client import get_mcp_manager
 
     await get_mcp_manager().close_all()
 

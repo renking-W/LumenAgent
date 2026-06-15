@@ -9,8 +9,8 @@ import logging
 
 from lumen_agent.application.uitls.text_splitter import Chunk, split_text_into_chunks
 from lumen_agent.config import Settings, resolve_db_path, resolve_chroma_path
-from lumen_agent.infrastructure.client.chroma_client import ChromaKnowledgeStore
-from lumen_agent.infrastructure.client.embedding_client import AlibabaEmbeddingClient
+from lumen_agent.model_adapters.client.chroma_client import ChromaKnowledgeStore
+from lumen_agent.model_adapters.client.embedding_client import AlibabaEmbeddingClient
 from lumen_agent.infrastructure.data_base.sqlite_knowledge import SqliteKnowledgeRepository
 from lumen_agent.infrastructure.data_base.knowledge_index_store import KnowledgeIndexStore
 
