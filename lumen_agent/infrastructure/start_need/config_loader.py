@@ -21,14 +21,14 @@ _ENV_PATH = _PACKAGE_DIR / ".env"
 _DEFAULT_CONFIG: dict[str, Any] = {
     "_note": "LumenAgent 配置文件。同名 .env 变量会覆盖此文件的值。修改后重启生效。",
     "_version": "1.0",
-    # ── DeepSeek ──
-    "DEEPSEEK_API_KEY": "",
-    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-    "DEEPSEEK_MODEL": "deepseek-v4-flash",
-    "DEEPSEEK_TEMPERATURE": None,
-    "DEEPSEEK_MAX_TOKENS": None,
-    "DEEPSEEK_TOP_P": None,
-    "DEEPSEEK_ENABLE_THINKING": True,
+    # ── LLM ──
+    "LLM_API_KEY": "",
+    "LLM_BASE_URL": "https://api.deepseek.com",
+    "LLM_MODEL": "deepseek-v4-flash",
+    "LLM_TEMPERATURE": None,
+    "LLM_MAX_TOKENS": None,
+    "LLM_TOP_P": None,
+    "LLM_ENABLE_THINKING": True,
     # ── 服务 ──
     "HOST": "127.0.0.1",
     "PORT": 21675,

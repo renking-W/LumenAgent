@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from lumen_agent.api.routers import (
     api_keys as api_keys_router,
     chat as chat_router,
+    configs as configs_router,
     knowledge as knowledge_router,
     logs_router,
     mcp_servers as mcp_servers_router,
@@ -175,5 +176,6 @@ def create_app() -> FastAPI:
     application.include_router(mcp_servers_router.router)
     application.include_router(scheduler_router.router)
     application.include_router(api_keys_router.router)
+    application.include_router(configs_router.router)
     application.include_router(logs_router.router)
     return application

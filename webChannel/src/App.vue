@@ -83,6 +83,17 @@
         </button>
         <button
           class="nav-item"
+          :class="{ active: activeView === 'config' }"
+          @click="activeView = 'config'"
+        >
+          <span class="nav-icon">⚙️</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">系统配置</span>
+            <span class="nav-desc">编辑系统运行参数</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
           :class="{ active: activeView === 'knowledge' }"
           @click="activeView = 'knowledge'"
         >
@@ -162,6 +173,7 @@
         <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
         <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
         <MCPServerView v-else-if="activeView === 'mcp'" />
+        <ConfigView v-else-if="activeView === 'config'" />
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
         <LogView v-else-if="activeView === 'logs'" />
@@ -206,13 +218,14 @@ import MCPServerSelector from './components/MCPServerSelector.vue'
 import KnowledgeView from './components/KnowledgeView.vue'
 import SchedulerView from './components/SchedulerView.vue'
 import LogView from './components/LogView.vue'
+import ConfigView from './components/ConfigView.vue'
 import AppComposer from './components/AppComposer.vue'
 import ApiKeyManager from './components/ApiKeyManager.vue'
 
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
 const sidebarCollapsed = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'knowledge' | 'scheduler' | 'logs'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)

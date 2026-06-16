@@ -12,7 +12,7 @@ from lumen_agent.api.schemas.session_dtos import (
     StoredMessage,
     UpdateTitleRequest,
 )
-from lumen_agent.domain.messages import normalize_content_blocks, text_message
+from lumen_agent.application.service.session_service import normalize_and_prepare_content
 from lumen_agent.domain.ports import ConversationRepositoryPort
 
 router = APIRouter(prefix="/v1/sessions", tags=["sessions"])
@@ -96,12 +96,7 @@ async def append_session_message(
     - 恢复上下文时插入系统消息 → ``status=1``
     """
     await repo.ensure_session(session_id)
-    if isinstance(body.content, list):
-        # content 此时已是 list[dict]，直接透传给仓储层
-        content = body.content
-    else:
-        content = text_message(body.role, body.content)["content"]
-    content = normalize_content_blocks(content)
+    content = normalize_and_prepare_content(body.role, body.content)
     await repo.append_message(session_id, body.role, content, status=body.status)
     return {"status": "ok", "session_id": session_id}
 

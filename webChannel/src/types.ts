@@ -182,3 +182,23 @@ export type ApiKeyListResponse = {
   total: number
   keys: ApiKeyItem[]
 }
+
+// ── 系统配置 ──────────────────────────────────────────
+export type ConfigItem = {
+  key: string
+  value: unknown
+  category: 'basic' | 'advanced'
+}
+
+export type ConfigListResponse = {
+  basic: ConfigItem[]
+  advanced: ConfigItem[]
+}
+
+export type UpdateConfigResponse = {
+  status: string
+  key: string
+  value: string
+  source: string
+  note: string
+}

@@ -142,10 +142,10 @@ LumenAgent/
 创建 `lumen_agent/.env` 文件（项目内已包含模板）：
 
 ```env
-# ── DeepSeek 配置 ──
-DEEPSEEK_API_KEY=sk-your-deepseek-api-key
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+# ── LLM 配置 ──
+LLM_API_KEY=sk-your-deepseek-api-key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
 
 # ── 阿里云 Embedding（可选，知识库 RAG + 记忆向量检索需要，纯对话可不配）──
 EMBEDDING_API_KEY=sk-your-dashscope-api-key

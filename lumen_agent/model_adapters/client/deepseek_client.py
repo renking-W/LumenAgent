@@ -157,7 +157,7 @@ class DeepSeekHttpClient:
     def _chat_headers(self) -> dict[str, str]:
         """构造 Chat Completions 请求头（Bearer + JSON）。"""
         return {
-            "Authorization": f"Bearer {self._settings.get('DEEPSEEK_API_KEY', '')}",
+            "Authorization": f"Bearer {self._settings.get('LLM_API_KEY', '')}",
             "Content-Type": "application/json",
         }
 
@@ -171,22 +171,22 @@ class DeepSeekHttpClient:
     ) -> dict[str, Any]:
         """组装请求 JSON：模型、messages、可选 stream / 采样参数 / 工具定义。"""
         payload: dict[str, Any] = {
-            "model": self._settings.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+            "model": self._settings.get("LLM_MODEL", "deepseek-v4-flash"),
             "messages": messages,
         }
         if stream:
             payload["stream"] = True
         effective_temperature = (
-            temperature if temperature is not None else self._settings.get("DEEPSEEK_TEMPERATURE")
+            temperature if temperature is not None else self._settings.get("LLM_TEMPERATURE")
         )
         if effective_temperature is not None:
             payload["temperature"] = effective_temperature
-        if self._settings.get("DEEPSEEK_MAX_TOKENS") is not None:
-            payload["max_tokens"] = self._settings.get("DEEPSEEK_MAX_TOKENS")
-        if self._settings.get("DEEPSEEK_TOP_P") is not None:
-            payload["top_p"] = self._settings.get("DEEPSEEK_TOP_P")
-        if self._settings.get("DEEPSEEK_ENABLE_THINKING") is not None:
-            payload["enable_thinking"] = self._settings.get("DEEPSEEK_ENABLE_THINKING")
+        if self._settings.get("LLM_MAX_TOKENS") is not None:
+            payload["max_tokens"] = self._settings.get("LLM_MAX_TOKENS")
+        if self._settings.get("LLM_TOP_P") is not None:
+            payload["top_p"] = self._settings.get("LLM_TOP_P")
+        if self._settings.get("LLM_ENABLE_THINKING") is not None:
+            payload["enable_thinking"] = self._settings.get("LLM_ENABLE_THINKING")
         if tools:
             payload["tools"] = _to_openai_tools(tools)
             tool_choice = self._settings.get("AGENT_TOOL_CHOICE")
@@ -201,7 +201,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> str:
         """同步调用上游，解析 ``choices[0].message.content`` 为完整字符串。"""
-        url = f'{self._settings.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = _to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -230,7 +230,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> list[dict[str, Any]]:
         """非流式调用上游，返回 content blocks 列表（含 text + thinking）。"""
-        url = f'{self._settings.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = _to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -275,7 +275,7 @@ class DeepSeekHttpClient:
         参数:
             on_connect: 连接建立后的回调，接收 ``StreamHandle`` 供注册到中断注册表。
         """
-        url = f'{self._settings.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = _to_openai_messages(messages)
         payload = self._build_chat_payload(

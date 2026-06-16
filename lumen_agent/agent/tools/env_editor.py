@@ -37,7 +37,7 @@ class EnvEditor(BaseTool):
             },
             "key": {
                 "type": "string",
-                "description": "配置键名（大写，如 DEEPSEEK_API_KEY），action=set/set_json 时必填。",
+                "description": "配置键名（大写，如 LLM_API_KEY），action=set/set_json 时必填。",
             },
             "value": {
                 "type": "string",
@@ -71,7 +71,7 @@ class EnvEditor(BaseTool):
         config_data = self._load_json()
         env_data = self._parse_env()
         default_keys = {
-            "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_MODEL",
+            "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
             "HOST", "PORT", "CORS_ORIGINS",
             "CONVERSATION_DB_PATH", "CONVERSATION_MAX_CONTEXT_MESSAGES",
             "SUMMARY_THRESHOLD_TURNS", "SUMMARY_COMPRESS_TURNS", "SUMMARY_KEEP_TURNS",

@@ -9,7 +9,7 @@
   from lumen_agent.config import get_settings, resolve_workspace_dir
 
   settings = get_settings()
-  api_key = settings.get("DEEPSEEK_API_KEY")
+  api_key = settings.get("LLM_API_KEY")
   workspace = resolve_workspace_dir(settings)
   ```
 """

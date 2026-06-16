@@ -50,10 +50,10 @@ def _sse_error_line(exc: BaseException) -> str:
 
 def _require_api_key(settings: Settings) -> None:
     """校验 API KEY 是否配置。"""
-    if not settings.get("DEEPSEEK_API_KEY", "").strip():
+    if not settings.get("LLM_API_KEY", "").strip():
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DEEPSEEK_API_KEY is not configured",
+            detail="LLM_API_KEY is not configured",
         )
 
 
