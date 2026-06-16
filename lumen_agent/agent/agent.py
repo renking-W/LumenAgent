@@ -57,14 +57,14 @@ class AgentStreamExecutor:
         """主入口：启动工具循环，yield 事件流。
 
         yield (kind, data):
-          ("content", str)                    – 文本增量
-          ("reasoning_content", str)          – 思维链增量
-          ("tool_calls", list[dict])          – 本轮模型发起的工具调用列表
-          ("tool_execution_start", dict)      – 单个工具开始执行
-          ("tool_execution_end", dict)        – 单个工具执行完毕
-          ("done", str)                       – 最终回复（无工具调用时）
-          ("new_messages", list[dict])        – 本次循环新产生的全部消息（在 done 前 yield）
-          ("error", str)                      – 错误
+          ("text", str)                          – 文本增量
+          ("thinking", str)                      – 思维链增量
+          ("tool_calls", list[dict])             – 本轮模型发起的工具调用列表
+          ("tool_use", dict)                     – 单个工具开始执行
+          ("tool_result", dict)                  – 单个工具执行完毕
+          ("done", str)                          – 最终回复（无工具调用时）
+          ("new_messages", list[dict])           – 本次循环新产生的全部消息（在 done 前 yield）
+          ("error", str)                         – 错误
         """
         initial_len = len(messages)
         for turn in range(self.max_turns):
@@ -75,20 +75,20 @@ class AgentStreamExecutor:
             # messages = self.context.truncate_tool_results(messages)
 
             tool_calls_this_turn: list[dict] = []
-            full_content = ""
-            full_reasoning = ""
+            full_text = ""
+            full_thinking = ""
 
             # ── 1. 流式调用模型  这里循环调用llm，直到llm返回一个done为止
             try:
                 async for kind, data in self.adapter.chat_stream(
                     messages, tools=self.tool_schemas, on_connect=on_connect
                 ):
-                    if kind == "content":
-                        full_content += data  # type: ignore[operator]
-                        yield ("content", data)
-                    elif kind == "reasoning_content":
-                        full_reasoning += data  # type: ignore[operator]
-                        yield ("reasoning_content", data)
+                    if kind == "text":
+                        full_text += data  # type: ignore[operator]
+                        yield ("text", data)
+                    elif kind == "thinking":
+                        full_thinking += data  # type: ignore[operator]
+                        yield ("thinking", data)
                     elif kind == "tool_use":
                         tool_calls_this_turn.append(data)  # type: ignore[arg-type]
             except httpx.ReadError:
@@ -105,12 +105,12 @@ class AgentStreamExecutor:
 
             # ── 2. 将 assistant 响应追加到消息历史 ─────────────
             assistant_blocks: list[dict] = []
-            if full_reasoning.strip():
+            if full_thinking.strip():
                 assistant_blocks.append(
-                    {"type": "thinking", "thinking": full_reasoning}
+                    {"type": "thinking", "thinking": full_thinking}
                 )
-            if full_content:
-                assistant_blocks.append({"type": "text", "text": full_content})
+            if full_text:
+                assistant_blocks.append({"type": "text", "text": full_text})
             for tc in tool_calls_this_turn:
                 assistant_blocks.append(
                     {
@@ -126,7 +126,7 @@ class AgentStreamExecutor:
             if not tool_calls_this_turn:
                 logger.info(f"[Agent] 第 {turn + 1} 轮无工具调用，循环结束")
                 yield ("new_messages", messages[initial_len:])
-                yield ("done", full_content)
+                yield ("done", full_text)
                 return
 
             # ── 4. 通知前端本轮工具列表 ─────────────────────────
@@ -148,11 +148,11 @@ class AgentStreamExecutor:
                 if not guard_result.allowed:
                     logger.warning(f"[Agent] Guard 拦截工具 '{tool_name}': {guard_result.reason}")
                     yield (
-                        "tool_execution_start",
+                        "tool_use",
                         {"tool_call_id": tool_id, "name": tool_name, "arguments": tool_input},
                     )
                     yield (
-                        "tool_execution_end",
+                        "tool_result",
                         {
                             "tool_call_id": tool_id,
                             "name": tool_name,
@@ -177,7 +177,7 @@ class AgentStreamExecutor:
 
                 # 正常执行
                 yield (
-                    "tool_execution_start",
+                    "tool_use",
                     {"tool_call_id": tool_id, "name": tool_name, "arguments": tool_input},
                 )
 
@@ -195,7 +195,7 @@ class AgentStreamExecutor:
                 )
 
                 yield (
-                    "tool_execution_end",
+                    "tool_result",
                     {
                         "tool_call_id": tool_id,
                         "name": tool_name,

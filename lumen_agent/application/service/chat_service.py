@@ -169,13 +169,13 @@ async def reply_single_turn_stream(
         f"force_compressed={ctx.force_compressed}"
     )
 
-    # 3) 流式生成；累加 content + reasoning_content 用于落库
+    # 3) 流式生成；累加 text + thinking 用于落库
     accumulated = ""
     accumulated_thinking = ""
     async for kind, chunk in llm.chat_stream(messages, on_connect=on_connect):
-        if kind == "content":
+        if kind == "text":
             accumulated += chunk
-        elif kind == "reasoning_content":
+        elif kind == "thinking":
             accumulated_thinking += chunk
         yield (kind, chunk)
 
@@ -201,6 +201,7 @@ async def reply_with_agent(
     on_connect: StreamHandleCallback | None = None,
     mcp_servers: list[Any] | None = None,
     mcp_server_ids: list[str] | None = None,
+    self_system : str | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
 
@@ -278,7 +279,7 @@ async def reply_with_agent(
 
     all_tools = tools + mcp_tools
     skills = load_skills()
-    system_content = build_system_prompt(all_tools, skills) or None
+    system_content = build_system_prompt(all_tools, skills,self_system) or None
 
     try:
         # 3) 组装上下文（含 token 预算检查 / 强制压缩）
@@ -314,7 +315,7 @@ async def reply_with_agent(
             elif kind == "done":
                 final_text = data  # type: ignore[assignment]
                 yield (kind, data)
-            elif kind == "content":
+            elif kind == "text":
                 final_text += data  # type: ignore[operator]
                 yield (kind, data)
             else:

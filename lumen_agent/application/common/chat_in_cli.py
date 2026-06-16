@@ -35,7 +35,7 @@ def _show_tool_event(kind: str, data: object) -> None:
         tools = data if isinstance(data, list) else []
         names = [t.get("name", "?") for t in tools]
         print(f"\n  ── 调用工具: {', '.join(names)} ──", flush=True)
-    elif kind == "tool_execution_end":
+    elif kind == "tool_result":
         info = data if isinstance(data, dict) else {}
         name = info.get("name", "?")
         status = info.get("status", "?")
@@ -80,12 +80,12 @@ async def async_main() -> None:
                 repo, llm, session_id, msg, settings
             ):
                 match kind:
-                    case "reasoning_content":
+                    case "thinking":
                         if not _thinking:
                             print("Assistant: 思考中...", end="\r", flush=True)
                             _thinking = True
                             _has_prefix = True
-                    case "content":
+                    case "text":
                         if _thinking:
                             print("\rAssistant: ", end="", flush=True)
                             _thinking = False
@@ -94,7 +94,7 @@ async def async_main() -> None:
                             print("Assistant: ", end="", flush=True)
                             _has_prefix = True
                         print(data, end="", flush=True)
-                    case "tool_calls" | "tool_execution_start" | "tool_execution_end":
+                    case "tool_calls" | "tool_use" | "tool_result":
                         if _thinking:
                             print("\r" + " " * 60 + "\r", end="", flush=True)
                             _thinking = False

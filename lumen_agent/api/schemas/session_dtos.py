@@ -36,6 +36,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="要使用的 MCP Server ID 列表，None=使用全部已启用的",
     )
+    self_system: str | None = Field(
+        default=None,
+        description="系统提示语，可选，缺省由系统生成",
+    )
 
 
 class ChatResponse(BaseModel):

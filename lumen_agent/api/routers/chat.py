@@ -118,6 +118,7 @@ async def post_chat_stream(
             on_connect=on_connect,
             mcp_servers=body.mcp_servers,
             mcp_server_ids=body.mcp_server_ids,
+            self_system=body.self_system,
         )
     else:
         stream_it = reply_single_turn_stream(

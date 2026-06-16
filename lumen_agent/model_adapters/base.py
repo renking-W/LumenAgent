@@ -51,9 +51,9 @@ class ModelAdapter(ABC):
         """流式对话。
 
         yield (kind, data):
-          ("content", str)              – 文本增量
-          ("reasoning_content", str)    – 思维链增量
-          ("tool_use", dict)            – 工具调用块（仅当 tools 不为 None 且模型发起调用时）
+          ("text", str)              – 文本增量
+          ("thinking", str)          – 思维链增量（适配层从 reasoning_content 转换）
+          ("tool_use", dict)         – 工具调用块（仅当 tools 不为 None 且模型发起调用时）
 
         tools 为 None 时行为与旧版完全一致（不向模型传工具定义）。
 

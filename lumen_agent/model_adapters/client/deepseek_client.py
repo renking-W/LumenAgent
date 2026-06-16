@@ -287,5 +287,7 @@ class DeepSeekHttpClient:
         await handle.connect()
         if on_connect is not None:
             await on_connect(handle)
+        # 将 OpenAI 协议的字段名映射为内部统一命名
+        _KIND_MAP = {"content": "text", "reasoning_content": "thinking"}
         async for kind, data in handle.receive():
-            yield (kind, data)
+            yield (_KIND_MAP.get(kind, kind), data)

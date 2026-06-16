@@ -239,14 +239,14 @@ const hasMore = ref(true)
 
 // ── 流式过程中独立维护的分组列表（中断时从此读取，不依赖 messages 的 blocks） ──
 const pendingTexts = ref<ChatBlock[]>([])
-const pendingReasonings = ref<ChatBlock[]>([])
+const pendingThinkings = ref<ChatBlock[]>([])
 const pendingToolUses = ref<ChatBlock[]>([])
 const pendingToolResults = ref<ChatBlock[]>([])
 const pendingErrors = ref<ChatBlock[]>([])
 
 const clearPendingBlocks = () => {
   pendingTexts.value = []
-  pendingReasonings.value = []
+  pendingThinkings.value = []
   pendingToolUses.value = []
   pendingToolResults.value = []
   pendingErrors.value = []
@@ -255,7 +255,7 @@ const clearPendingBlocks = () => {
 const pushPendingBlock = (block: ChatBlock) => {
   switch (block.kind) {
     case 'text': pendingTexts.value.push(block); break
-    case 'reasoning': pendingReasonings.value.push(block); break
+    case 'thinking': pendingThinkings.value.push(block); break
     case 'tool_use': pendingToolUses.value.push(block); break
     case 'tool_result': pendingToolResults.value.push(block); break
     case 'error': pendingErrors.value.push(block); break
@@ -418,7 +418,7 @@ const formatStoredTime = (iso: string) => {
 }
 
 const cbToBlock = (cb: CB): ChatBlock => {
-  if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'reasoning', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
+  if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
   if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
   if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
   return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
@@ -504,18 +504,17 @@ const loadMoreMessages = async () => {
 
 const consumeEvent = (event: { type: string; data?: any }) => {
   switch (event.type) {
-    case 'message_update':
+    case 'text':
       appendBlock('text', '正文', event.data?.delta ?? '')
       break
-    case 'reasoning_update':
-      appendBlock('reasoning', '💭 思考', event.data?.delta ?? '', false)
+    case 'thinking':
+      appendBlock('thinking', '💭 思考', event.data?.delta ?? '', false)
       break
     case 'tool_calls': {
-      // tool_calls 仅用于通知，实际的 tool_use 块由 tool_execution_start 按序创建
-      // 这样与历史消息的存储格式一致：每个 tool_use 自带 input 参数
+      // tool_calls 仅用于通知，实际的 tool_use 块由 tool_use 事件按序创建
       break
     }
-    case 'tool_execution_start': {
+    case 'tool_use': {
       // 创建独立的 tool_use 块，存储完整工具调用信息供中断时使用
       const data = event.data ?? {}
       const toolCallId: string = data.tool_call_id ?? ''
@@ -527,7 +526,7 @@ const consumeEvent = (event: { type: string; data?: any }) => {
       pushBlock('tool_use', `⏳ ${toolName}`, pretty(toolCall), false)
       break
     }
-    case 'tool_execution_end': {
+    case 'tool_result': {
       // 清除上一个 tool_use 块的 ⏳ 标记
       const lastMsg = messages[messages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant') {
@@ -580,7 +579,7 @@ const interruptChat = async () => {
         case 'text':
           contentBlocks.push({ type: 'text', text: block.content })
           break
-        case 'reasoning':
+        case 'thinking':
           contentBlocks.push({ type: 'thinking', thinking: block.content })
           break
         case 'tool_use': {

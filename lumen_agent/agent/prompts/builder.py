@@ -245,11 +245,15 @@ class SystemPromptBuilder:
 
     def build(self) -> str:
         return _SECTION_SEP.join(self._sections)
-
+    def add_self_system(self, text: str | None) -> "SystemPromptBuilder":
+        if text:
+            self._sections.append("\n\n一下为用户自定义系统提示词：\n"+text)
+        return self
 
 def build_system_prompt(
     tools: list[BaseTool],
     skills: list[SkillMeta] | None = None,
+    self_system : str | None = None,
 ) -> str:
     """工厂函数：按规范顺序组装系统提示词，返回完整 system 字符串。"""
     return (
@@ -262,5 +266,6 @@ def build_system_prompt(
         .add_user_identity()
         .add_project_context()
         .add_runtime_info()
+        .add_self_system(self_system)
         .build()
     )

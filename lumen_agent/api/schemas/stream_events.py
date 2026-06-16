@@ -10,20 +10,20 @@ from pydantic import BaseModel, Field
 
 # ── 文本 / 思维链 ──────────────────────────────────────────────────────────────
 
-class StreamMessageUpdateData(BaseModel):
+class StreamTextData(BaseModel):
     delta: str
 
 
-class StreamMessageUpdateEvent(BaseModel):
-    type: Literal["message_update"] = "message_update"
-    data: StreamMessageUpdateData
+class StreamTextEvent(BaseModel):
+    type: Literal["text"] = "text"
+    data: StreamTextData
 
 
-class ReasoningUpdateEvent(BaseModel):
-    """思维链增量事件（DeepSeek thinking 模式下的 reasoning_content）。"""
+class StreamThinkingEvent(BaseModel):
+    """思维链增量事件（DeepSeek thinking 模式下的 reasoning_content，已转为内部 thinking）。"""
 
-    type: Literal["reasoning_update"] = "reasoning_update"
-    data: StreamMessageUpdateData
+    type: Literal["thinking"] = "thinking"
+    data: StreamTextData
 
 
 # ── 工具调用通知 ───────────────────────────────────────────────────────────────
@@ -41,20 +41,20 @@ class ToolCallsEvent(BaseModel):
     data: ToolCallsEventData
 
 
-class ToolExecutionStartData(BaseModel):
+class StreamToolUseData(BaseModel):
     tool_call_id: str
     name: str
     arguments: dict[str, Any]
 
 
-class ToolExecutionStartEvent(BaseModel):
+class StreamToolUseEvent(BaseModel):
     """单个工具开始执行。"""
 
-    type: Literal["tool_execution_start"] = "tool_execution_start"
-    data: ToolExecutionStartData
+    type: Literal["tool_use"] = "tool_use"
+    data: StreamToolUseData
 
 
-class ToolExecutionEndData(BaseModel):
+class StreamToolResultData(BaseModel):
     tool_call_id: str
     name: str
     status: str           # "success" | "error"
@@ -62,11 +62,11 @@ class ToolExecutionEndData(BaseModel):
     result_preview: str   # 前 200 字符，非完整数据
 
 
-class ToolExecutionEndEvent(BaseModel):
+class StreamToolResultEvent(BaseModel):
     """单个工具执行完毕。"""
 
-    type: Literal["tool_execution_end"] = "tool_execution_end"
-    data: ToolExecutionEndData
+    type: Literal["tool_result"] = "tool_result"
+    data: StreamToolResultData
 
 
 class AssistantDoneEvent(BaseModel):
@@ -93,9 +93,9 @@ def _make_tool_calls_event(data: Any) -> BaseModel:
     return ToolCallsEvent(data=ToolCallsEventData(tool_calls=data))
 
 
-def _make_tool_execution_start_event(data: Any) -> BaseModel:
-    return ToolExecutionStartEvent(
-        data=ToolExecutionStartData(
+def _make_tool_use_event(data: Any) -> BaseModel:
+    return StreamToolUseEvent(
+        data=StreamToolUseData(
             tool_call_id=data.get("tool_call_id", ""),
             name=data.get("name", ""),
             arguments=data.get("arguments", {}),
@@ -103,9 +103,9 @@ def _make_tool_execution_start_event(data: Any) -> BaseModel:
     )
 
 
-def _make_tool_execution_end_event(data: Any) -> BaseModel:
-    return ToolExecutionEndEvent(
-        data=ToolExecutionEndData(
+def _make_tool_result_event(data: Any) -> BaseModel:
+    return StreamToolResultEvent(
+        data=StreamToolResultData(
             tool_call_id=data.get("tool_call_id", ""),
             name=data.get("name", ""),
             status=data.get("status", ""),
@@ -117,15 +117,15 @@ def _make_tool_execution_end_event(data: Any) -> BaseModel:
 
 # kind → SSE 事件工厂；新增块类型只需在此注册，路由层无需修改
 _EVENT_REGISTRY: dict[str, Callable[[Any], BaseModel]] = {
-    "content": lambda d: StreamMessageUpdateEvent(
-        data=StreamMessageUpdateData(delta=d)
+    "text": lambda d: StreamTextEvent(
+        data=StreamTextData(delta=d)
     ),
-    "reasoning_content": lambda d: ReasoningUpdateEvent(
-        data=StreamMessageUpdateData(delta=d)
+    "thinking": lambda d: StreamThinkingEvent(
+        data=StreamTextData(delta=d)
     ),
     "tool_calls": _make_tool_calls_event,
-    "tool_execution_start": _make_tool_execution_start_event,
-    "tool_execution_end": _make_tool_execution_end_event,
+    "tool_use": _make_tool_use_event,
+    "tool_result": _make_tool_result_event,
     "done": lambda _: AssistantDoneEvent(),
     "error": lambda d: StreamErrorEvent(data=StreamErrorData(message=str(d))),
 }
@@ -136,7 +136,7 @@ class StreamEventDispatcher:
 
     @staticmethod
     def dispatch(kind: str, data: str | dict | list) -> str:
-        """已注册的 kind 映射到对应 SSE 行；未注册 kind 降级为 ``message_update``（避免静默丢事件）。"""
-        factory = _EVENT_REGISTRY.get(kind, _EVENT_REGISTRY["content"])
+        """已注册的 kind 映射到对应 SSE 行；未注册 kind 降级为 ``text``。"""
+        factory = _EVENT_REGISTRY.get(kind, _EVENT_REGISTRY["text"])
         event = factory(data)
         return f"data: {event.model_dump_json()}\n\n"

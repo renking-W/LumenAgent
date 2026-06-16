@@ -94,7 +94,7 @@ const emit = defineEmits<{
 const msgRef = ref<HTMLElement | null>(null)
 
 const isCollapsible = (kind: string) =>
-  ['reasoning', 'error'].includes(kind)
+  ['thinking', 'error'].includes(kind)
 
 // ── 合并 tool_use + tool_result 分组 ─────────────────
 interface ToolRenderItem {

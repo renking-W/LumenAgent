@@ -47,7 +47,7 @@ class LLMClientPort(Protocol):
     ) -> AsyncIterator[tuple[str, str]]:
         """流式对话：逐段 yield ``(kind, delta)``。
 
-        ``kind`` 取值：``"content"``（正文）/ ``"reasoning_content"``（思维链）。
+        ``kind`` 取值：``"text"``（正文）/ ``"thinking"``（思维链）。
         """
         ...
 
