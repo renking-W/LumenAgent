@@ -198,6 +198,7 @@ async def reply_with_agent(
     session_id: str,
     user_message: str,
     settings: Settings,
+    approval_mode : str | None = None,
     on_connect: StreamHandleCallback | None = None,
     mcp_servers: list[Any] | None = None,
     mcp_server_ids: list[str] | None = None,
@@ -301,10 +302,16 @@ async def reply_with_agent(
         )
 
         # 4) 创建 AgentStreamExecutor
+        from lumen_agent.infrastructure.approval_registry import get_approval_registry
+
         executor = AgentStreamExecutor(
             adapter=llm,
             tools=all_tools,
             settings=settings,
+            session_id=session_id,
+            approval_registry=get_approval_registry(),
+            approval_mode=  approval_mode if approval_mode else  settings.get("TOOL_APPROVAL_MODE", "none"),
+            approval_timeout=settings.get("TOOL_APPROVAL_TIMEOUT", 300),
         )
 
         # 5) 运行工具循环，处理事件流

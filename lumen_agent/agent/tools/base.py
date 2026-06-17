@@ -40,6 +40,7 @@ class BaseTool(ABC):
         "properties": {},
         "required": [],
     }
+    requires_approval: bool = False
 
     @abstractmethod
     async def execute(self, params: dict) -> ToolResult:

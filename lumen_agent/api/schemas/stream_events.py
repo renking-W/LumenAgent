@@ -87,6 +87,19 @@ class StreamErrorEvent(BaseModel):
     data: StreamErrorData
 
 
+# ── 工具调用审批 ───────────────────────────────────────────────────────────────
+
+class AwaitingApprovalData(BaseModel):
+    """通知前端：本轮有工具等待人工审批。"""
+
+    tool_calls: list[dict]  # [{"id", "name", "input"}, ...]
+
+
+class AwaitingApprovalEvent(BaseModel):
+    type: Literal["awaiting_approval"] = "awaiting_approval"
+    data: AwaitingApprovalData
+
+
 # ── 派发器 ────────────────────────────────────────────────────────────────────
 
 def _make_tool_calls_event(data: Any) -> BaseModel:
@@ -124,6 +137,9 @@ _EVENT_REGISTRY: dict[str, Callable[[Any], BaseModel]] = {
         data=StreamTextData(delta=d)
     ),
     "tool_calls": _make_tool_calls_event,
+    "awaiting_approval": lambda d: AwaitingApprovalEvent(
+        data=AwaitingApprovalData(tool_calls=d)
+    ),
     "tool_use": _make_tool_use_event,
     "tool_result": _make_tool_result_event,
     "done": lambda _: AssistantDoneEvent(),

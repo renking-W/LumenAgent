@@ -168,6 +168,8 @@
           @new-session="resetConversation"
           @load-more="loadMoreMessages"
           @retry="handleRetry"
+          @approve-tool="(blockId, toolId) => handleToolApproval(blockId, toolId, true)"
+          @reject-tool="(blockId, toolId) => handleToolApproval(blockId, toolId, false)"
         />
         <ToolView    v-else-if="activeView === 'tools'"     :tools="tools" :connected="connected" />
         <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
@@ -192,10 +194,12 @@
           :prompt="prompt"
           :sending="sending"
           :use-agent-mode="useAgentMode"
+          :approval-mode="approvalMode"
           :status-text="statusText"
           @update:prompt="prompt = $event"
           @send="sendMessage"
           @interrupt="interruptChat"
+          @update:approval-mode="approvalMode = $event"
         />
       </el-footer>
     </el-container>
@@ -229,6 +233,7 @@ const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'confi
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)
+const approvalMode = ref<'none' | 'all' | 'dangerous'>('dangerous')
 const prompt = ref('')
 const lastUserPrompt = ref('')
 const activeSessionId = ref('')
@@ -400,6 +405,36 @@ const refreshCapabilities = async () => {
   connected.value = ok
 }
 
+/** 提交工具调用审批决策（放行/拒绝），并更新对应块的状态 */
+const handleToolApproval = async (blockId: string, toolCallId: string, approved: boolean) => {
+  if (!activeSessionId.value) return
+  // 更新对应块中该工具调用的状态
+  for (const msg of messages) {
+    const block = msg.blocks.find((b) => b.id === blockId)
+    if (!block || block.kind !== 'awaiting_approval') continue
+    try {
+      const toolCalls: Array<{ id: string; name: string; input: unknown; _resolved?: boolean }> = JSON.parse(block.content)
+      const target = toolCalls.find((tc) => tc.id === toolCallId)
+      if (!target || target._resolved !== undefined) return // 已处理过，忽略
+      target._resolved = approved
+      block.content = JSON.stringify(toolCalls)
+      // 更新标题反映进度
+      const total = toolCalls.length
+      const done = toolCalls.filter((tc) => tc._resolved !== undefined).length
+      block.title = done < total ? `🔒 等待审批 (${done}/${total})` : approved ? '✅ 已放行' : '❌ 已拒绝'
+    } catch { /* ignore */ }
+    break
+  }
+  // 调用后端审批接口
+  try {
+    await fetch('/v1/chat/stream/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: activeSessionId.value, approvals: { [toolCallId]: approved } }),
+    })
+  } catch { /* ignore */ }
+}
+
 const resetConversation = async () => {
   await interruptStreamIfActive()
   messages.splice(0)
@@ -525,6 +560,17 @@ const consumeEvent = (event: { type: string; data?: any }) => {
       break
     case 'tool_calls': {
       // tool_calls 仅用于通知，实际的 tool_use 块由 tool_use 事件按序创建
+      break
+    }
+    case 'awaiting_approval': {
+      // 工具调用等待人工审批
+      const toolCalls: Array<{ id: string; name: string; input: unknown }> = event.data?.tool_calls ?? []
+      if (toolCalls.length > 0) {
+        // content 存储工具调用列表，每项含 id/name/input 和 _resolved 状态
+        const payload = toolCalls.map((tc) => ({ ...tc, _resolved: undefined as boolean | undefined }))
+        pushBlock('awaiting_approval', `🔒 等待审批`, JSON.stringify(payload), true)
+        statusText.value = `等待审批: ${toolCalls.map((t) => t.name).join(', ')}`
+      }
       break
     }
     case 'tool_use': {
@@ -705,6 +751,7 @@ const sendMessage = async () => {
         message: content,
         session_id: activeSessionId.value || undefined,
         mode: useAgentMode.value ? 'agent' : 'simple',
+        approval_mode: useAgentMode.value ? approvalMode.value : undefined,
         mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
           ? selectedMcpServerIds.value
           : undefined,

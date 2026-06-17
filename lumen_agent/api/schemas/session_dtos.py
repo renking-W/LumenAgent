@@ -40,6 +40,7 @@ class ChatRequest(BaseModel):
         default=None,
         description="系统提示语，可选，缺省由系统生成",
     )
+    approval_mode: Literal["none", "all", "dangerous"] = "dangerous"
 
 
 class ChatResponse(BaseModel):

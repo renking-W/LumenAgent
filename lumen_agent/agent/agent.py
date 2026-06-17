@@ -13,6 +13,7 @@ from lumen_agent.agent.context import ToolExecutionGuard
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 from lumen_agent.config import Settings
+from lumen_agent.infrastructure.approval_registry import ApprovalRegistry
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
 logger = logging.getLogger(__name__)
@@ -41,12 +42,20 @@ class AgentStreamExecutor:
         settings: Settings,
         *,
         max_turns: int | None = None,
+        session_id: str = "",
+        approval_registry: ApprovalRegistry | None = None,
+        approval_mode: str = "none",
+        approval_timeout: int = 300,
     ) -> None:
         self.adapter = adapter
         self.tools: dict[str, BaseTool] = {t.name: t for t in tools}
         self.tool_schemas: list[dict] = [t.to_internal_schema() for t in tools]
         self.max_turns = max_turns or settings.get("AGENT_MAX_TURNS", 20)
         self.guard = ToolExecutionGuard()
+        self.session_id = session_id
+        self._approval_registry = approval_registry
+        self._approval_mode = approval_mode
+        self._approval_timeout = approval_timeout
 
     async def run_stream(
         self,
@@ -135,6 +144,33 @@ class AgentStreamExecutor:
                 [{"name": tc["name"], "id": tc["id"]} for tc in tool_calls_this_turn],
             )
 
+            # ── 4.5 审批等待 ────────────────────────────────────
+            rejected_ids: set[str] = set()
+            if self._approval_registry and self._approval_mode != "none":
+                need_approval = [
+                    tc for tc in tool_calls_this_turn
+                    if self._approval_mode == "all"
+                    or (tc["name"] in self.tools and self.tools[tc["name"]].requires_approval)
+                ]
+                if need_approval:
+                    await self._approval_registry.register(self.session_id, need_approval)
+                    yield ("awaiting_approval", [
+                        {"id": t["id"], "name": t["name"], "input": t.get("input", {})}
+                        for t in need_approval
+                    ])
+                    approvals = await self._approval_registry.wait_for_all(
+                        self.session_id, timeout=self._approval_timeout
+                    )
+                    rejected_ids = {
+                        t["id"] for t in need_approval
+                        if not approvals.get(t["id"], False)
+                    }
+                    if rejected_ids:
+                        logger.info(
+                            "[Agent] 用户拒绝了 %d 个工具调用: %s",
+                            len(rejected_ids), rejected_ids,
+                        )
+
             # ── 5. 逐个执行工具 ──────────────────────────────────
             tool_result_blocks: list[dict] = []
 
@@ -142,6 +178,32 @@ class AgentStreamExecutor:
                 tool_name = tc["name"]
                 tool_input = tc.get("input", {})
                 tool_id = tc["id"]
+
+                # 审批拒绝 → 注入拒绝结果，跳过执行
+                if tool_id in rejected_ids:
+                    yield (
+                        "tool_use",
+                        {"tool_call_id": tool_id, "name": tool_name, "arguments": tool_input},
+                    )
+                    yield (
+                        "tool_result",
+                        {
+                            "tool_call_id": tool_id,
+                            "name": tool_name,
+                            "status": "rejected",
+                            "execution_time": 0.0,
+                            "result_preview": "用户已拒绝该工具调用",
+                        },
+                    )
+                    tool_result_blocks.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": "用户已拒绝该工具调用",
+                            "is_error": True,
+                        }
+                    )
+                    continue
 
                 # 防循环检查
                 guard_result = self.guard.check(tool_name, tool_input)

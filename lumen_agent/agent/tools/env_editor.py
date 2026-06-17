@@ -22,6 +22,7 @@ class EnvEditor(BaseTool):
 
     name = "env_editor"
     description = "读取或编辑系统配置项。读取时展示合并结果（含来源）；设置时写入 .env（高优先级层）。修改后自动热生效。"
+    requires_approval = True
     parameters = {
         "type": "object",
         "properties": {

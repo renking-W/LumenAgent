@@ -64,6 +64,72 @@
             </template>
           </div>
         </details>
+
+        <!-- 审批等待卡片（待审批 / 已全部完成） -->
+        <div v-else-if="item.kind === 'approval'" class="approval-container">
+          <!-- ── 待审批：完整卡片 ── -->
+          <div v-if="!item.allResolved" class="block block--approval">
+            <div class="approval-header">
+              <span class="approval-header-icon">🔒</span>
+              <span class="approval-header-title">等待审批</span>
+              <span class="approval-header-count">{{ item.toolCalls.length }} 个工具</span>
+            </div>
+            <div
+              v-for="tc in item.toolCalls"
+              :key="tc.id"
+              class="approval-tool-card"
+              :class="{
+                'approval-tool-card--approved': tc._resolved === true,
+                'approval-tool-card--rejected': tc._resolved === false,
+              }"
+            >
+              <div class="approval-tool-header">
+                <span class="approval-tool-name">🛠 {{ tc.name }}</span>
+                <el-tag
+                  v-if="tc._resolved === true"
+                  size="small"
+                  type="success"
+                  effect="light"
+                >✅ 已放行</el-tag>
+                <el-tag
+                  v-else-if="tc._resolved === false"
+                  size="small"
+                  type="danger"
+                  effect="light"
+                >❌ 已拒绝</el-tag>
+              </div>
+              <pre class="approval-tool-params">{{ pretty(tc.input) }}</pre>
+              <div v-if="tc._resolved === undefined" class="approval-tool-actions">
+                <el-button size="small" type="primary" plain @click="emit('approve-tool', item.id, tc.id)">
+                  ✅ 放行
+                </el-button>
+                <el-button size="small" plain @click="emit('reject-tool', item.id, tc.id)">
+                  ❌ 拒绝
+                </el-button>
+              </div>
+            </div>
+          </div>
+          <!-- ── 已全部审批：可折叠摘要 ── -->
+          <details v-else class="block block--collapsible approval-resolved" :open="false">
+            <summary class="block-summary">
+              <span class="block-summary-title">{{ item.summaryLabel }}</span>
+              <span class="block-summary-kind">{{ item.toolCalls.length }} 个</span>
+            </summary>
+            <div class="block-body">
+              <div v-for="tc in item.toolCalls" :key="tc.id" class="approval-tool-card approval-tool-card--compact">
+                <div class="approval-tool-header">
+                  <span class="approval-tool-name">🛠 {{ tc.name }}</span>
+                  <el-tag
+                    :type="tc._resolved ? 'success' : 'danger'"
+                    size="small"
+                    effect="light"
+                  >{{ tc._resolved ? '已放行' : '已拒绝' }}</el-tag>
+                </div>
+                <pre class="approval-tool-params">{{ pretty(tc.input) }}</pre>
+              </div>
+            </div>
+          </details>
+        </div>
       </template>
 
       <!-- 流式光标 -->
@@ -89,14 +155,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retry: []
+  'approve-tool': [blockId: string, toolId: string]
+  'reject-tool': [blockId: string, toolId: string]
 }>()
 
 const msgRef = ref<HTMLElement | null>(null)
 
+const pretty = (value: unknown) => JSON.stringify(value, null, 2)
+
 const isCollapsible = (kind: string) =>
   ['thinking', 'error'].includes(kind)
 
-// ── 合并 tool_use + tool_result 分组 ─────────────────
+// ── 合并 tool_use + tool_result + awaiting_approval 分组 ──
 interface ToolRenderItem {
   kind: 'tool'
   id: string
@@ -104,12 +174,20 @@ interface ToolRenderItem {
   useContent: string
   resultContents: string[]
 }
+interface ApprovalRenderItem {
+  kind: 'approval'
+  id: string
+  toolCalls: Array<{ id: string; name: string; input: unknown; _resolved?: boolean }>
+  allResolved: boolean
+  allApproved: boolean
+  summaryLabel: string
+}
 interface SingleRenderItem {
   kind: 'single'
   id: string
   block: ChatBlock
 }
-type RenderItem = ToolRenderItem | SingleRenderItem
+type RenderItem = ToolRenderItem | ApprovalRenderItem | SingleRenderItem
 
 const groupedBlocks = computed<RenderItem[]>(() => {
   const items: RenderItem[] = []
@@ -117,6 +195,26 @@ const groupedBlocks = computed<RenderItem[]>(() => {
   let i = 0
   while (i < blocks.length) {
     const block = blocks[i]
+    if (block.kind === 'awaiting_approval') {
+      // 解析工具调用列表
+      let toolCalls: Array<{ id: string; name: string; input: unknown; _resolved?: boolean }> = []
+      try { toolCalls = JSON.parse(block.content) } catch { toolCalls = [] }
+      const allResolved = toolCalls.length > 0 && toolCalls.every((tc) => tc._resolved !== undefined)
+      const allApproved = allResolved && toolCalls.every((tc) => tc._resolved === true)
+      const approvedCount = toolCalls.filter((tc) => tc._resolved === true).length
+      const rejectedCount = toolCalls.filter((tc) => tc._resolved === false).length
+      let summaryLabel = `🔒 等待审批 (${toolCalls.length})`
+      if (allResolved) {
+        summaryLabel = allApproved
+          ? `✅ 已全部放行`
+          : rejectedCount === 0 ? `✅ 已全部放行`
+          : approvedCount === 0 ? `❌ 已全部拒绝`
+          : `✅ ${approvedCount}放行 / ${rejectedCount}拒绝`
+      }
+      items.push({ kind: 'approval', id: block.id, toolCalls, allResolved, allApproved, summaryLabel })
+      i++
+      continue
+    }
     if (block.kind === 'tool_use') {
       // 收集后面连续的所有 tool_result
       const resultBlocks: ChatBlock[] = []
@@ -406,5 +504,117 @@ watch(
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* ── 审批等待卡片 ── */
+.block--approval {
+  border: 1px solid var(--color-gold-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-gold-50);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.approval-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-gold-200);
+}
+.approval-header-icon {
+  font-size: 1.1rem;
+}
+.approval-header-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-navy-800);
+  flex: 1;
+}
+.approval-header-count {
+  font-size: 0.72rem;
+  color: var(--color-slate-400);
+  background: var(--color-white);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-slate-200);
+}
+.approval-tool-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  transition: all var(--transition-fast);
+}
+.approval-tool-card--approved {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+.approval-tool-card--rejected {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+  opacity: 0.7;
+}
+.approval-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.approval-tool-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--color-navy-800);
+  font-family: var(--font-mono);
+}
+.approval-tool-params {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-slate-50);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--color-navy-700);
+}
+.approval-tool-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── 审批已全部完成：折叠摘要 ── */
+.approval-resolved {
+  border-color: var(--color-slate-200);
+  background: var(--color-white);
+}
+.approval-resolved .block-summary {
+  background: transparent;
+  font-weight: 500;
+  font-size: 0.82rem;
+  padding: var(--space-2) var(--space-3);
+}
+.approval-resolved .block-summary:hover {
+  background: var(--color-slate-50);
+}
+.approval-resolved .block-body {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.approval-tool-card--compact {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.approval-tool-card--compact .approval-tool-params {
+  margin-bottom: 0;
+  max-height: 120px;
+  font-size: 0.75rem;
 }
 </style>

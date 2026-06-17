@@ -31,6 +31,7 @@ class Bash(BaseTool):
         "不要用此工具运行需要交互式输入的命令。"
         "在使用该工具时：如果是 项目需要/临时 等则不需要指定 working_directory，如果是全局需要则需要指定 working_directory"
     )
+    requires_approval = True
     parameters = {
         "type": "object",
         "properties": {

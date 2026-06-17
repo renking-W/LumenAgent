@@ -58,6 +58,8 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "AGENT_MAX_TOOL_RESULT_CHARS": 20000,
     "AGENT_WORKSPACE_DIR": "work_space",
     "AGENT_TOOL_CHOICE": "auto",
+    "TOOL_APPROVAL_MODE": "none",
+    "TOOL_APPROVAL_TIMEOUT": 300,
     # ── 记忆检索 ──
     "MEMORY_SEARCH_TOP_K": 5,
     "MEMORY_SEARCH_SIMILARITY_THRESHOLD": 0.25,

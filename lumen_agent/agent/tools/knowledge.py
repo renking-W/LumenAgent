@@ -71,6 +71,7 @@ class KnowledgeInsert(BaseTool):
 
     name = "knowledge_insert"
     description = "将文本或文件入库到知识库，自动切分、embedding 并写入 Chroma。"
+    requires_approval = True
     parameters = {
         "type": "object",
         "properties": {

@@ -35,6 +35,8 @@
         :message="msg"
         :is-streaming="streamingMessageId === msg.id"
         @retry="emit('retry')"
+        @approve-tool="(blockId, toolId) => emit('approve-tool', blockId, toolId)"
+        @reject-tool="(blockId, toolId) => emit('reject-tool', blockId, toolId)"
       />
     </div>
 
@@ -74,6 +76,8 @@ const emit = defineEmits<{
   'new-session': []
   'load-more': []
   retry: []
+  'approve-tool': [blockId: string, toolId: string]
+  'reject-tool': [blockId: string, toolId: string]
 }>()
 
 const SCROLL_TOP_THRESHOLD = 80

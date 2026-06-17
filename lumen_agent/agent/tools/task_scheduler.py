@@ -26,6 +26,7 @@ class TaskScheduler(BaseTool):
         "task_name（任务名称）, prompt（触发时执行的指令也就是提示词）。"
         "在需要创建定时任务时需要向用户确认任务执行的步骤以及最终需要的产物"
     )
+    requires_approval = True
     parameters = {
         "type": "object",
         "properties": {

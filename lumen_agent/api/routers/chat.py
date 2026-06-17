@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from lumen_agent.api.dependency import get_conversation_repo, get_llm_client, verify_api_key
+from lumen_agent.api.schemas.approval_dtos import ApproveRequest, ApproveResponse
 from lumen_agent.api.schemas.session_dtos import ChatRequest, ChatResponse, InterruptRequest
 from lumen_agent.api.schemas.stream_events import (
     StreamErrorData,
@@ -23,6 +24,7 @@ from lumen_agent.application.uitls.llm_error_policy import (
 from lumen_agent.config import Settings, get_settings
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
+from lumen_agent.infrastructure.approval_registry import get_approval_registry
 from lumen_agent.infrastructure.http_pool import StreamHandle
 from lumen_agent.infrastructure.sse_registry import get_sse_registry
 from lumen_agent.model_adapters.base import ModelAdapter
@@ -114,7 +116,7 @@ async def post_chat_stream(
 
     if body.mode == "agent":
         stream_it = reply_with_agent(
-            repo, llm, session_id, body.message, settings,
+            repo, llm, session_id, body.message, settings,body.approval_mode,
             on_connect=on_connect,
             mcp_servers=body.mcp_servers,
             mcp_server_ids=body.mcp_server_ids,
@@ -164,6 +166,7 @@ async def post_chat_stream(
                 yield "data: [DONE]\n\n"
         finally:
             await registry.unregister(session_id)
+            await get_approval_registry().unregister(session_id)
 
     return StreamingResponse(
         event_stream(),
@@ -188,3 +191,21 @@ async def interrupt_stream(body: InterruptRequest) -> dict:
         )
     logging.info(f"会话 {body.session_id} 流式连接已中断")
     return {"status": "interrupted", "session_id": body.session_id}
+
+
+@router.post("/chat/stream/approve", response_model=ApproveResponse)
+async def approve_tool_call(body: ApproveRequest) -> ApproveResponse:
+    """提交工具调用审批决策。批量提交 tool_call_id → 批准/拒绝。"""
+    registry = get_approval_registry()
+    updated = 0
+    logging.info(
+        "审批提交请求: session=%s approvals=%s pending_keys=%s",
+        body.session_id, body.approvals,
+        list(registry._pending.keys()) if hasattr(registry, '_pending') else '?',
+    )
+    for tool_call_id, decision in body.approvals.items():
+        ok = await registry.approve(body.session_id, tool_call_id, decision)
+        if ok:
+            updated += 1
+    logging.info("审批提交: session=%s updated=%d", body.session_id, updated)
+    return ApproveResponse(status="ok", updated=updated)

@@ -47,6 +47,7 @@ class Write(BaseTool):
         "相对路径相对于 workspace；缺父目录会自动创建。"
         "单次 content / old_string / new_string 均最多 2000 行、50KB（UTF-8），超出请分块写入。"
     )
+    requires_approval = True
     parameters = {
         "type": "object",
         "properties": {
