@@ -39,3 +39,6 @@ questionary>=2.1.0
 
 # Web 框架（前端静态文件代理）
 flask>=3.0.0
+
+# SSH 连接管理（虚拟机远程命令执行）
+paramiko>=3.4.0

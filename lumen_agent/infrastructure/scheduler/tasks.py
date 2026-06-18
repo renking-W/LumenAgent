@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Any
 
@@ -253,3 +253,67 @@ async def cleanup_old_memory_files(**kwargs: Any) -> None:
 
     except Exception:
         logger.exception("清理过期记忆文件失败")
+
+async def clean_old_logs(**kwargs: Any) -> None:
+    """系统任务：清理 ``log/``、``log/machine_log/`` 中 N 天前的日志文件（每周一 00:00 触发）。
+
+    保留天数由配置 ``SCHEDULER_RETAIN_LOG_DAYS`` 控制，默认 7 天。
+    系统日志文件名格式: ``agent.log.YYYY-MM-DD``
+    虚拟机日志文件名格式: ``{host}.MM-DD_HH-MM-SS.log``（归档文件），活跃 ``{host}.log`` 不清理。
+    """
+    from lumen_agent.application.service.log_service import log_directory
+    from lumen_agent.application.uitls.dir_guide import DirGuide
+
+    retain_days = int(
+        _get_settings_value(
+            "SCHEDULER_RETAIN_LOG_DAYS",
+            kwargs.get("retain_days", 7),
+        )
+    )
+    now = datetime.now(timezone.utc).astimezone()
+    from datetime import timedelta
+
+    cutoff = now - timedelta(days=retain_days)
+
+    # ── 清理虚拟机日志（归档文件） ──
+    _MACHINE_LOG_PATTERN = re.compile(r"\.\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$")
+    machine_log_dir = DirGuide.machine_log_dir()
+    if machine_log_dir.is_dir():
+        deleted_vm = 0
+        for fpath in machine_log_dir.iterdir():
+            if not fpath.is_file():
+                continue
+            # 只匹配归档文件 {host}.MM-DD_HH-MM-SS.log，跳过当前活跃的 {host}.log
+            if not _MACHINE_LOG_PATTERN.search(fpath.name):
+                continue
+            try:
+                mtime = datetime.fromtimestamp(fpath.stat().st_mtime, tz=now.tzinfo)
+                if mtime < cutoff:
+                    fpath.unlink()
+                    deleted_vm += 1
+                    logger.debug("已删除过期虚拟机日志: %s", fpath.name)
+            except OSError:
+                continue
+        if deleted_vm:
+            logger.info("清理了 %d 个过期虚拟机日志文件（保留 %s 天）", deleted_vm, retain_days)
+
+    # ── 清理系统日志 ──
+    log_dir = Path(log_directory())
+    _LOG_FILE_PATTERN = re.compile(r"^agent\.log\.(\d{4}-\d{2}-\d{2})$")
+    deleted_sys = 0
+    for fpath in log_dir.glob("agent.log.*"):
+        if not fpath.is_file():
+            continue
+        m = _LOG_FILE_PATTERN.match(fpath.name)
+        if not m:
+            continue
+        try:
+            file_date = date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        if (now.date() - file_date).days > retain_days:
+            fpath.unlink()
+            deleted_sys += 1
+            logger.info("已删除过期系统日志文件: %s", fpath.name)
+    if deleted_sys:
+        logger.info("清理了 %d 个过期系统日志文件（保留 %s 天）", deleted_sys, retain_days)

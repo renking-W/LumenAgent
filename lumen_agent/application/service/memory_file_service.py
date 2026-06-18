@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import chromadb
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.api.schemas.memory_dtos import MemoryFileItem
 from lumen_agent.application.service.memory_rag_service import MemoryRagService
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings, resolve_chroma_path
 
 logger = logging.getLogger(__name__)
 
 # 定位 work_space/memory 目录（与 builder.py 保持一致）
-_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "work_space"
+_WORKSPACE_DIR = DirGuide.workspace_dir()
 _MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_WORKSPACE_DIR)
 
 

@@ -67,9 +67,9 @@
           </span>
         </button>
 
-        <!-- ── 扩展管理 ── -->
+        <!-- ── 功能管理 ── -->
         <div v-if="!sidebarCollapsed" class="nav-section-separator"></div>
-        <div v-if="!sidebarCollapsed" class="nav-section-label">扩展</div>
+        <div v-if="!sidebarCollapsed" class="nav-section-label">功能</div>
         <button
           class="nav-item"
           :class="{ active: activeView === 'mcp' }"
@@ -83,13 +83,13 @@
         </button>
         <button
           class="nav-item"
-          :class="{ active: activeView === 'config' }"
-          @click="activeView = 'config'"
+          :class="{ active: activeView === 'vm' }"
+          @click="activeView = 'vm'"
         >
-          <span class="nav-icon">⚙️</span>
+          <span class="nav-icon">🖥️</span>
           <span v-if="!sidebarCollapsed" class="nav-text">
-            <span class="nav-title">系统配置</span>
-            <span class="nav-desc">编辑系统运行参数</span>
+            <span class="nav-title">虚拟机</span>
+            <span class="nav-desc">管理远程 SSH 虚拟机</span>
           </span>
         </button>
         <button
@@ -112,6 +112,21 @@
           <span v-if="!sidebarCollapsed" class="nav-text">
             <span class="nav-title">定时任务</span>
             <span class="nav-desc">管理 AI 定时调度任务</span>
+          </span>
+        </button>
+
+        <!-- ── 其它 ── -->
+        <div v-if="!sidebarCollapsed" class="nav-section-separator"></div>
+        <div v-if="!sidebarCollapsed" class="nav-section-label">其它</div>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'config' }"
+          @click="activeView = 'config'"
+        >
+          <span class="nav-icon">⚙️</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">系统配置</span>
+            <span class="nav-desc">编辑系统运行参数</span>
           </span>
         </button>
         <button
@@ -175,6 +190,7 @@
         <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
         <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
         <MCPServerView v-else-if="activeView === 'mcp'" />
+        <VMView v-else-if="activeView === 'vm'" />
         <ConfigView v-else-if="activeView === 'config'" />
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
@@ -218,6 +234,7 @@ import ToolView from './components/ToolView.vue'
 import SkillView from './components/SkillView.vue'
 import MemoryView from './components/MemoryView.vue'
 import MCPServerView from './components/MCPServerView.vue'
+import VMView from './components/VMView.vue'
 import MCPServerSelector from './components/MCPServerSelector.vue'
 import KnowledgeView from './components/KnowledgeView.vue'
 import SchedulerView from './components/SchedulerView.vue'
@@ -229,7 +246,7 @@ import ApiKeyManager from './components/ApiKeyManager.vue'
 // ── state ──────────────────────────────────────────
 const sidebarVisible = ref(false)
 const sidebarCollapsed = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
 const connected = ref(false)
 const sending = ref(false)
 const useAgentMode = ref(true)
@@ -839,15 +856,15 @@ watch(activeView, async () => {
   background: var(--color-slate-50);
 }
 
-/* ── 左侧栏 ── */
+/* ── 左侧栏 — 浅薄荷青柠绿 ── */
 .sidebar {
   padding: var(--space-5) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   overflow: hidden;
-  border-right: 1px solid var(--color-navy-800);
-  background: var(--color-navy-900);
+  border-right: 1px solid #D5E3CC;
+  background: #EEF5E6;
   transition: width var(--transition-slow), padding var(--transition-slow);
 }
 .sidebar--collapsed {
@@ -861,7 +878,7 @@ watch(activeView, async () => {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-1) var(--space-3);
-  border-bottom: 1px solid var(--color-navy-700);
+  border-bottom: 1px solid #D5E3CC;
   margin-bottom: var(--space-2);
 }
 .brand-text {
@@ -876,7 +893,7 @@ watch(activeView, async () => {
   cursor: pointer; user-select: none;
   transition: all var(--transition-normal); flex-shrink: 0;
   position: relative;
-  color: var(--color-navy-900);
+  color: #2C4A28;
 }
 .brand-mark-img {
   width: 22px;
@@ -913,12 +930,12 @@ watch(activeView, async () => {
 .brand-title {
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--color-white);
+  color: #2C4A28;
   letter-spacing: -0.01em;
 }
 .brand-subtitle {
   font-size: 0.78rem;
-  color: var(--color-slate-400);
+  color: #6B8C5C;
   margin-top: 2px;
 }
 
@@ -936,13 +953,13 @@ watch(activeView, async () => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--color-navy-500);
+  color: #8AAC7A;
   padding: var(--space-3) var(--space-3) var(--space-1);
   user-select: none;
 }
 .nav-section-separator {
   height: 1px;
-  background: var(--color-navy-700);
+  background: #D5E3CC;
   margin: var(--space-2) var(--space-3);
 }
 .nav-item {
@@ -956,17 +973,17 @@ watch(activeView, async () => {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  color: var(--color-slate-400);
+  color: #4A6B42;
   position: relative;
 }
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--color-slate-200);
+  background: rgba(44, 74, 40, 0.06);
+  color: #1A3A1A;
 }
 .nav-item.active {
-  background: rgba(234, 179, 8, 0.08);
-  color: var(--color-gold-500);
-  border-color: rgba(234, 179, 8, 0.15);
+  background: rgba(234, 179, 8, 0.12);
+  color: #8A6D00;
+  border-color: rgba(234, 179, 8, 0.2);
 }
 /* 激活指示条 */
 .nav-item.active::before {
@@ -991,16 +1008,16 @@ watch(activeView, async () => {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   display: grid; place-items: center;
   font-size: 1.1rem; flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(44, 74, 40, 0.04);
+  border: 1px solid rgba(44, 74, 40, 0.08);
   transition: all var(--transition-fast);
 }
 .active .nav-icon {
-  background: rgba(234, 179, 8, 0.12);
-  border-color: rgba(234, 179, 8, 0.2);
+  background: rgba(234, 179, 8, 0.15);
+  border-color: rgba(234, 179, 8, 0.25);
 }
 .nav-item:hover .nav-icon {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(44, 74, 40, 0.08);
 }
 .nav-text {
   display: flex;
@@ -1017,11 +1034,11 @@ watch(activeView, async () => {
 }
 .nav-desc {
   font-size: 0.75rem;
-  color: var(--color-navy-500);
+  color: #7A9C6A;
   transition: color var(--transition-fast);
 }
 .nav-item.active .nav-desc {
-  color: var(--color-gold-600);
+  color: #A07D00;
 }
 
 /* ── 右侧区域 ── */
@@ -1087,11 +1104,11 @@ watch(activeView, async () => {
 .sidebar-footer {
   margin-top: auto;
   padding: var(--space-3) var(--space-3) 0;
-  border-top: 1px solid var(--color-navy-700);
+  border-top: 1px solid #D5E3CC;
 }
 .sidebar-footer-version {
   font-size: 0.72rem;
-  color: var(--color-navy-500);
+  color: #8AAC7A;
   user-select: none;
 }
 

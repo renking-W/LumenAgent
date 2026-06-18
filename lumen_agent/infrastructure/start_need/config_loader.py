@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
+
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
 logger = logging.getLogger(__name__)
 
 # ── 路径定位 ───────────────────────────────────────────────────
-_PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent  # lumen_agent/
-_CONFIG_JSON_PATH = _PACKAGE_DIR / "config.json"
-_ENV_PATH = _PACKAGE_DIR / ".env"
+_CONFIG_JSON_PATH = DirGuide.config_json_path()
+_ENV_PATH = DirGuide.env_path()
 
 # ── 默认配置 ─────────────────────────────────────────────────────
 _DEFAULT_CONFIG: dict[str, Any] = {
@@ -82,8 +82,16 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "SCHEDULER_RETAIN_SESSION_DAYS": 30,
     "SCHEDULER_RETAIN_MEMORY_DAYS": 30,
     "SCHEDULER_RETAIN_EXECUTION_DAYS": 30,
+    "SCHEDULER_RETAIN_LOG_DAYS" : 7,
     # ── 白名单IP ────
     "ALLOW_IP_ADDRESS": "127.0.0.1",
+    # ── VM / SSH ──
+    "VM_SSH_TIMEOUT": 60,
+    "VM_SSH_BANNER_TIMEOUT": 60,
+    "VM_SSH_KEEPALIVE": 40,
+    "VM_EXECUTE_TIMEOUT": 30,
+    "VM_DANGEROUS_COMMANDS": "rm -rf,shutdown,reboot,poweroff,init 0,init 6,dd if=,mkfs,fdisk,> /dev/sd,chmod 777 /",
+    "VM_APPROVAL_MODE": "dangerous",
 }
 
 

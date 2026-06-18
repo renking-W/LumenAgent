@@ -202,3 +202,48 @@ export type UpdateConfigResponse = {
   source: string
   note: string
 }
+
+// ── 虚拟机管理 ──────────────────────────────────────
+export type VMStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+export type VMListResponseItem = {
+  vm_id: string
+  host: string
+  port: number
+  username: string
+  description: string
+  status: VMStatus
+  last_connected_at: string | null
+  error_message: string | null
+}
+
+export type VMRegisterRequest = {
+  vm_id: string
+  host: string
+  port: number
+  username: string
+  password: string
+  description?: string
+}
+
+export type VMUpdateRequest = {
+  host?: string
+  port?: number
+  username?: string
+  password?: string
+  description?: string
+}
+
+export type VMExecuteRequest = {
+  command: string
+  session_id?: string
+  timeout?: number
+}
+
+export type VMLogResponse = {
+  vm_id: string
+  host: string
+  connected: boolean
+  total_lines: number
+  lines: string[]
+}

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from pathlib import Path
 
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter
 
 # prompt 模板路径
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "title.md"
+_PROMPT_PATH = DirGuide.title_prompt_path()
 
 
 @lru_cache(maxsize=1)

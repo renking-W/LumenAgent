@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
-_PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent
-_CONFIG_JSON_PATH = _PACKAGE_DIR / "config.json"
-_ENV_PATH = _PACKAGE_DIR / ".env"
+_CONFIG_JSON_PATH = DirGuide.config_json_path()
+_ENV_PATH = DirGuide.env_path()
 
 
 @ToolRegistry.register

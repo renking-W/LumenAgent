@@ -7,17 +7,17 @@ import json
 import logging
 from datetime import datetime
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from lumen_agent.agent.context import extract_complete_turns, turns_to_messages
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 
 # prompt 模板路径：与代码同包根，方便随包发布
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "summary.md"
-_LONG_MEMORY_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs" / "memory_refine.md"
+_PROMPT_PATH = DirGuide.summary_prompt_path()
+_LONG_MEMORY_PROMPT_PATH = DirGuide.memory_refine_prompt_path()
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
@@ -127,9 +127,7 @@ def _load_and_refine_memory(prompt_template: str, memory_text: str) -> str:
     return prompt
 
 
-_MEMORY_UTILS = MemoryFileUtils(
-    memory_dir=Path(__file__).resolve().parent.parent.parent.parent / "work_space" / "memory",
-)
+_MEMORY_UTILS = MemoryFileUtils(memory_dir=DirGuide.memory_dir())
 
 
 def _load_text_if_exists(path: Path) -> str:

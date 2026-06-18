@@ -28,8 +28,8 @@ def _resolve_db_path_for_scheduler(db_path_str: str) -> str:
     from pathlib import Path
     p = Path(db_path_str)
     if not p.is_absolute():
-        from lumen_agent.config import _PACKAGE_DIR
-        p = _PACKAGE_DIR / p
+        from lumen_agent.application.uitls.dir_guide import DirGuide
+        p = DirGuide.package_dir() / p
     p.parent.mkdir(parents=True, exist_ok=True)
     return str(p)
 
@@ -206,6 +206,19 @@ class SchedulerService:
             registered += 1
         except Exception:
             logger.exception("注册系统任务失败: cleanup_memory_files")
+
+        #4. 删除过期的日志文件
+        try:
+            cls.add_job(
+                func="lumen_agent.infrastructure.scheduler.tasks:clean_old_logs",
+                trigger=CronTrigger.from_crontab("0 0 * * 1", timezone=tz),
+                job_id="__system_cleanup_logs",
+                name="清理过期日志文件",
+                replace_existing=True,
+            )
+            registered += 1
+        except Exception:
+            logger.exception("注册系统任务失败: cleanup_logs")
 
         if registered:
             logger.info("已注册 %d 个系统内置任务", registered)

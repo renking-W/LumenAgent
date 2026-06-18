@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +21,9 @@ from lumen_agent.api.routers import (
     sessions as sessions_router,
     skills as skills_router,
     tools as tools_router,
+    vm as vm_router,
 )
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import get_settings, resolve_cors_origins, resolve_db_path
 from lumen_agent.infrastructure.start_need.workspace import init_workspace
 
@@ -105,6 +106,15 @@ async def lifespan(_app: FastAPI):
 
     await _close_rag_service()
 
+    # ── 断开所有 VM SSH 连接 ─────────────────────────────────
+    try:
+        from lumen_agent.application.service.vm_connection_service import (
+            get_vm_connection_service,
+        )
+        await get_vm_connection_service().disconnect_all()
+    except Exception:
+        logging.exception("VM 连接断开异常")
+
 
 async def _index_memory_on_startup() -> None:
     """后台任务：全量扫描每日记忆文件，向量化后写入 ChromaDB。"""
@@ -113,7 +123,7 @@ async def _index_memory_on_startup() -> None:
         from lumen_agent.application.service.memory_rag_service import MemoryRagService
 
         settings = get_settings()
-        workspace_path = Path(__file__).resolve().parent.parent.parent / "work_space"
+        workspace_path = DirGuide.workspace_dir()
         memory_utils = MemoryFileUtils.from_workspace_path(workspace_path)
         service = MemoryRagService(settings)
         logging.info("启动后台任务：全量索引历史记忆文件...")
@@ -178,4 +188,5 @@ def create_app() -> FastAPI:
     application.include_router(api_keys_router.router)
     application.include_router(configs_router.router)
     application.include_router(logs_router.router)
+    application.include_router(vm_router.router)
     return application

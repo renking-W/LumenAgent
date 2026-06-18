@@ -15,15 +15,7 @@ class MCPServerConfig(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """``POST /v1/chat`` / ``POST /v1/chat/stream``。
-
-    ``session_id`` 可选，缺省由服务端生成。
-    ``mode`` 控制处理路径：
-      - ``"simple"``（默认）：单轮流式对话，无工具调用
-      - ``"agent"``：多轮 Agent 工具循环
-    ``mcp_servers`` 可选，仅 ``agent`` 模式下生效，用于动态加载 MCP 远程工具。
-    ``mcp_server_ids`` 可选，引用 DB 中已配置的 MCP Server ID 列表。
-    """
+    """``POST /v1/chat`` / ``POST /v1/chat/stream``。"""
 
     message: str = Field(..., min_length=1)
     session_id: str | None = Field(default=None, min_length=1)
@@ -38,7 +30,7 @@ class ChatRequest(BaseModel):
     )
     self_system: str | None = Field(
         default=None,
-        description="系统提示语，可选，缺省由系统生成",
+        description="用户自定义系统提示语",
     )
     approval_mode: Literal["none", "all", "dangerous"] = "dangerous"
 

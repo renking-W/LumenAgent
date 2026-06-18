@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import logging
 import shutil
-from pathlib import Path
 
-from lumen_agent.config import _PROJECT_ROOT
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
 logger = logging.getLogger(__name__)
 
 # ── 模板文档目录 ─────────────────────────────────────────────
-_DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "agent" / "prompts" / "docs"
+_DOCS_DIR = DirGuide.docs_dir()
 # ── 需要拷贝到工作区的文件 ────────────────────────────────────
 _WORKSPACE_SEED_FILES = ["ME.md", "MEMORY.md", "RULE.md", "USER.md"]
 
 
 def init_workspace() -> None:
     """初始化工作区：work_space 不存在时自动创建目录结构并拷贝模板文件。"""
-    workspace = _PROJECT_ROOT / "work_space"
+    workspace = DirGuide.workspace_dir()
     if workspace.exists():
         return
 

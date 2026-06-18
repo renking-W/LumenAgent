@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 from lumen_agent.agent.skills.meta import SkillMeta, SkillRequires
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
 logger = logging.getLogger(__name__)
 
-SKILLS_DIR = Path(__file__).resolve().parents[3] / "work_space" / "skills"
+SKILLS_DIR = DirGuide.skills_dir()
 
 # 缓存：(max_mtime, file_count, list[SkillMeta])
 # 任一 SKILL.md 的修改时间或文件数量变化都会触发重新加载
@@ -65,7 +65,7 @@ def _build_env_view() -> dict[str, str]:
 
     优先级：os.environ > .env 文件（与 pydantic-settings 保持一致）。
     """
-    env_file = Path(__file__).resolve().parents[3] / "lumen_agent" / ".env"
+    env_file = DirGuide.env_path()
     merged: dict[str, str] = {}
 
     if env_file.exists():

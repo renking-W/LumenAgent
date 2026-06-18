@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 from typing import Any
+
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
 _logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ _LOG_PATTERN = re.compile(
     r"\s+-\s+(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+-\s+(.*)$",
 )
 
-_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "log" / "agent.log"
+_LOG_PATH = DirGuide.agent_log_path()
 
 
 def _read_lines() -> list[str]:
@@ -108,3 +109,7 @@ def count_logs(
         total += 1
 
     return total
+
+def log_directory() -> str:
+    """返回日志目录。"""
+    return str(_LOG_PATH.parent)

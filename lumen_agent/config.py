@@ -22,10 +22,11 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.infrastructure.start_need.config_loader import load_and_merge
 
-_PACKAGE_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _PACKAGE_DIR.parent
+_PACKAGE_DIR = DirGuide.package_dir()
+_PROJECT_ROOT = DirGuide.project_root()
 
 logger = logging.getLogger(__name__)
 

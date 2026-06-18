@@ -8,7 +8,7 @@ import os
 import httpx
 from flask import Flask, Response, request, send_from_directory, stream_with_context
 
-from lumen_agent.config import _PROJECT_ROOT
+from lumen_agent.application.uitls.dir_guide import DirGuide
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ _PROXY_TARGET = "http://127.0.0.1:21675"
 def run_frontend() -> None:
     """启动 Flask 服务：serve 前端静态文件，/v1/* 代理到 FastAPI。"""
     # static_folder 使用绝对路径，不受模块位置影响
-    static_dir = str(_PROJECT_ROOT / "webChannel" / "dist")
+    static_dir = str(DirGuide.web_channel_dist_dir())
     front = Flask(__name__, static_folder=static_dir, static_url_path="")
     proxy_client = httpx.Client(base_url=_PROXY_TARGET, timeout=None)
 
@@ -50,6 +50,35 @@ def run_frontend() -> None:
                     upstream.close()
 
             # 移除可能导致冲突的头部
+            hop_by_hop = {"transfer-encoding", "content-length", "connection"}
+            headers = {k: v for k, v in upstream.headers.items() if k.lower() not in hop_by_hop}
+            return Response(
+                stream_with_context(generate()),
+                status=upstream.status_code,
+                headers=headers,
+            )
+        except httpx.RequestError as e:
+            return {"error": f"代理请求失败: {e}"}, 502
+
+    # VM 命令执行 SSE 流式端点
+    @front.route("/v1/vm/<vm_id>/execute", methods=["POST", "OPTIONS"])
+    def proxy_vm_execute(vm_id):
+        try:
+            req = proxy_client.build_request(
+                "POST", f"/v1/vm/{vm_id}/execute",
+                params=request.args,
+                content=request.get_data(),
+                headers=_forward_headers(),
+            )
+            upstream = proxy_client.send(req, stream=True)
+
+            def generate():
+                try:
+                    for chunk in upstream.iter_bytes():
+                        yield chunk
+                finally:
+                    upstream.close()
+
             hop_by_hop = {"transfer-encoding", "content-length", "connection"}
             headers = {k: v for k, v in upstream.headers.items() if k.lower() not in hop_by_hop}
             return Response(

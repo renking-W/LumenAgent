@@ -5,21 +5,21 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
-from pathlib import Path
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.agent.skills.meta import SkillMeta
 from lumen_agent.agent.tools.base import BaseTool
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.infrastructure.data_base.sqlite_knowledge import SqliteKnowledgeRepository
 
 _SECTION_SEP = "\n\n---\n\n"
-_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "work_space"
+_WORKSPACE_DIR = DirGuide.workspace_dir()
 _MEMORY_UTILS = MemoryFileUtils.from_workspace_path(_WORKSPACE_DIR)
 
 
 def _read_knowledge_index() -> list[dict]:
     """读取知识库索引文件，返回 file_name/source 的映射列表。"""
-    index_path = Path(__file__).resolve().parent.parent.parent / "data" / "chroma" / "knowledge_index.json"
+    index_path = DirGuide.knowledge_index_path()
     if not index_path.exists():
         return []
     raw = index_path.read_text(encoding="utf-8").strip()
@@ -34,7 +34,7 @@ def _read_knowledge_index() -> list[dict]:
 
 def _read_knowledge_documents() -> list[dict]:
     """读取 SQLite 知识库中的所有文档元信息，用于 system prompt 展示。"""
-    repo = SqliteKnowledgeRepository(Path(__file__).resolve().parent.parent.parent / "data" / "knowledge.db")
+    repo = SqliteKnowledgeRepository(DirGuide.knowledge_db_path())
     try:
         return asyncio.run(repo.list_documents())
     except RuntimeError:
