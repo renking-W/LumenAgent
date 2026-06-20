@@ -21,14 +21,24 @@
             :class="{ active: sessionKind === 1 }"
             @click="switchKind(1)"
           >定时任务</button>
+          <button
+            class="session-tab"
+            :class="{ active: sessionKind === 2 }"
+            @click="switchKind(2)"
+          >虚拟机</button>
+          <button
+            class="session-tab"
+            :class="{ active: sessionKind === 3 }"
+            @click="switchKind(3)"
+          >第三方</button>
         </div>
         <div class="session-actions">
           <el-button size="small" circle @click="fetchSessions" :loading="loading">⟳</el-button>
         </div>
       </div>
 
-      <!-- 新建会话按钮（仅历史会话可见） -->
-      <div v-if="sessionKind === 0" class="new-session-area">
+      <!-- 新建会话按钮 -->
+      <div v-if="sessionKind !== 1" class="new-session-area">
         <button class="new-session-btn" @click="emit('new-session')">
           <span class="new-session-icon">＋</span>
           新建会话
@@ -37,7 +47,7 @@
 
       <div v-if="loading" class="session-status">加载中...</div>
       <div v-else-if="sessions.length === 0" class="session-status">
-        {{ sessionKind === 1 ? '暂无定时任务会话' : '暂无历史会话' }}
+        {{ sessionKind === 1 ? '暂无定时任务会话' : sessionKind === 2 ? '暂无虚拟机会话' : sessionKind === 3 ? '暂无第三方会话' : '暂无历史会话' }}
       </div>
       <div v-else class="session-items">
         <div
@@ -47,7 +57,7 @@
           :class="{ active: s.id === activeSessionId }"
         >
           <div class="session-item-main" @click="selectSession(s.id)">
-            <div class="session-name">{{ s.title || (sessionKind === 1 ? '定时任务' : '新会话') }}</div>
+            <div class="session-name">{{ s.title || (sessionKind === 1 ? '定时任务' : sessionKind === 2 ? '虚拟机会话' : sessionKind === 3 ? '第三方会话' : '新会话') }}</div>
             <div class="session-footer">
               <span class="session-footer-time">{{ formatTime(s.created_at) }}</span>
               <span class="session-footer-dot">·</span>
@@ -237,16 +247,33 @@ onMounted(fetchSessions)
   flex-shrink: 0;
 }
 
-/* ── 分类切换标签 ── */
+/* ── 分类切换标签（可左右滑动） ── */
 .session-tabs {
   display: flex;
   gap: 4px;
   background: var(--color-slate-100);
   border-radius: var(--radius-md);
   padding: 3px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+.session-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+.session-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+.session-tabs::-webkit-scrollbar-thumb {
+  background: var(--color-slate-300);
+  border-radius: 2px;
 }
 .session-tab {
-  flex: 1;
+  flex-shrink: 0;
   text-align: center;
   border: none;
   background: transparent;

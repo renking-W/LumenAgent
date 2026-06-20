@@ -24,6 +24,7 @@ from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.infrastructure.virtual_machine.virtual_machine_registry import (
     SshClient,
 )
+from lumen_agent.infrastructure.vm_event_bus import get_vm_event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,25 @@ class VmConnectionService:
         sync_queue: queue.Queue = queue.Queue()
         loop = asyncio.get_event_loop()
 
+        # 先发出 command_start 事件（含命令与主机信息，供前端渲染提示符）
+        cmd_start_event = {
+            "type": "vm_event",
+            "subtype": "command_start",
+            "vm_id": vm_id,
+            "data": {
+                "command": command,
+                "username": client.username,
+                "host": client.host,
+            },
+            "source": "system",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            await get_vm_event_bus().publish(vm_id, cmd_start_event)
+        except Exception:
+            pass
+        yield ("command_start", cmd_start_event["data"])
+
         # 在线程池中启动流式执行
         future = loop.run_in_executor(
             self._thread_pool,
@@ -166,6 +186,20 @@ class VmConnectionService:
         try:
             while True:
                 kind, data = await loop.run_in_executor(None, sync_queue.get)
+                # 广播到事件总线（供 WebSocket 消费）
+                if kind in ("output", "exit_code", "done", "error"):
+                    try:
+                        await get_vm_event_bus().publish(vm_id, {
+                            "type": "vm_event",
+                            "subtype": kind,
+                            "vm_id": vm_id,
+                            "data": data,
+                            "source": "system",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                    except Exception:
+                        pass  # 事件总线异常不影响命令执行
+
                 yield (kind, data)
                 if kind in ("done", "error"):
                     break

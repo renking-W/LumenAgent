@@ -77,7 +77,7 @@ async def async_main() -> None:
         _has_prefix = False    # 是否已输出过"Assistant: "
         try:
             async for kind, data in reply_with_agent(
-                repo, llm, session_id, msg, settings
+                repo, llm, session_id, 0, msg, settings
             ):
                 match kind:
                     case "thinking":

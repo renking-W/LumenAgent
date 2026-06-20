@@ -22,6 +22,7 @@ from lumen_agent.api.routers import (
     skills as skills_router,
     tools as tools_router,
     vm as vm_router,
+    vm_ws as vm_ws_router,
 )
 from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import get_settings, resolve_cors_origins, resolve_db_path
@@ -115,6 +116,14 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logging.exception("VM 连接断开异常")
 
+    # ── 关闭所有 WebSocket 连接 ────────────────────────────────
+    try:
+        from lumen_agent.infrastructure.websocket_manager import get_ws_manager
+
+        await get_ws_manager().close_all()
+    except Exception:
+        logging.exception("WebSocket 连接关闭异常")
+
 
 async def _index_memory_on_startup() -> None:
     """后台任务：全量扫描每日记忆文件，向量化后写入 ChromaDB。"""
@@ -189,4 +198,5 @@ def create_app() -> FastAPI:
     application.include_router(configs_router.router)
     application.include_router(logs_router.router)
     application.include_router(vm_router.router)
+    application.include_router(vm_ws_router.router)
     return application

@@ -247,3 +247,13 @@ export type VMLogResponse = {
   total_lines: number
   lines: string[]
 }
+
+// ── VM WebSocket 事件 ──────────────────────────────────────────
+export type VMWebSocketEvent = {
+  type: 'vm_event'
+  subtype: 'command_start' | 'output' | 'exit_code' | 'error' | 'done' | 'connect' | 'disconnect' | 'connecting'
+  vm_id: string
+  data: unknown
+  source?: string
+  timestamp: string
+}

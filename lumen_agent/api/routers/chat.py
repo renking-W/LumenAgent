@@ -59,9 +59,14 @@ def _require_api_key(settings: Settings) -> None:
         )
 
 
-def _resolve_session_id(body_session_id: str | None) -> str:
-    """缺省时生成 UUID，作为本次（及后续）会话主键。"""
-    return body_session_id or str(uuid4())
+def _resolve_session(body: ChatRequest | None) -> ChatRequest:
+    """预处理session字段"""
+    if body.session_id is None:
+        body.session_id = str(uuid4())
+        body.session_kind = 3       # 没有携带session_id字段的请求，一律视为外部请求
+    if body.session_kind is None:
+        body.session_kind = 0       # 没有携带 session_kind 时，默认为0
+    return body
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -72,14 +77,14 @@ async def post_chat(
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> ChatResponse:
     """整段对话：落库 user/assistant，返回 ``ChatResponse``（含 ``session_id``）。"""
-    session_id = _resolve_session_id(body.session_id)
-    logging.info(f"接受到整体对话请求：{body.message}，session_id:{session_id}")
+    body = _resolve_session(body)
+    logging.info(f"接受到整体对话请求：{body.message}，session_id:{body.session_id}")
     _require_api_key(settings)
     try:
         content = await reply_single_turn(
             repo,
             llm,
-            session_id,
+            body.session_id,
             body.message,
             settings,
         )
@@ -90,7 +95,7 @@ async def post_chat(
         ) from e
     logging.info(f"大模型返回结果：{content}")
     assistant_blocks = text_message("assistant", content)["content"]
-    return ChatResponse(content=assistant_blocks, session_id=session_id)
+    return ChatResponse(content=assistant_blocks, session_id=body.session_id)
 
 
 @router.post("/chat/stream")
@@ -102,21 +107,21 @@ async def post_chat_stream(
 ) -> StreamingResponse:
     """SSE 流式对话：首包前失败走 HTTP；流中失败发 ``error`` 事件；``X-Session-Id`` 在响应头回传。"""
     _require_api_key(settings)
-    session_id = _resolve_session_id(body.session_id)
-    logging.info(f"接受到流式对话请求：{body.message}，session_id:{session_id}")
+    body = _resolve_session(body)
+    logging.info(f"接受到流式对话请求：{body.message}，session_id:{body.session_id}")
 
-    response_headers = {**_SSE_HEADERS, "X-Session-Id": session_id}
+    response_headers = {**_SSE_HEADERS, "X-Session-Id": body.session_id}
 
     # ── 中断注册表 ───────────────────────────────────────────────
     registry = get_sse_registry()
 
     async def on_connect(handle: StreamHandle) -> None:
         """LLM 连接建立后注册到中断注册表。"""
-        await registry.register(session_id, handle)
+        await registry.register(body.session_id, handle)
 
     if body.mode == "agent":
         stream_it = reply_with_agent(
-            repo, llm, session_id, body.message, settings,body.approval_mode,
+            repo, llm, body.session_id, body.session_kind ,body.message, settings,body.approval_mode,
             on_connect=on_connect,
             mcp_servers=body.mcp_servers,
             mcp_server_ids=body.mcp_server_ids,
@@ -124,7 +129,7 @@ async def post_chat_stream(
         )
     else:
         stream_it = reply_single_turn_stream(
-            repo, llm, session_id, body.message, settings,
+            repo, llm, body.session_id, body.message, settings,
             on_connect=on_connect,
         )
     agen = stream_it.__aiter__()
@@ -132,7 +137,7 @@ async def post_chat_stream(
         first_kind, first_delta = await agen.__anext__()
     except StopAsyncIteration:
         logging.warning("大模型无增量返回")
-        await registry.unregister(session_id)
+        await registry.unregister(body.session_id)
 
         async def empty_stream() -> AsyncIterator[str]:
             """无增量时仅结束标记。"""
@@ -144,7 +149,7 @@ async def post_chat_stream(
             headers=response_headers,
         )
     except _LLM_STREAM_FAILURES as e:
-        await registry.unregister(session_id)
+        await registry.unregister(body.session_id)
         raise HTTPException(
             status_code=llm_chain_failure_http_status(e),
             detail=llm_chain_failure_detail(e),
@@ -165,8 +170,8 @@ async def post_chat_stream(
                 # 客户端断开 SSE 连接，静默终止，不打印错误堆栈
                 yield "data: [DONE]\n\n"
         finally:
-            await registry.unregister(session_id)
-            await get_approval_registry().unregister(session_id)
+            await registry.unregister(body.session_id)
+            await get_approval_registry().unregister(body.session_id)
 
     return StreamingResponse(
         event_stream(),

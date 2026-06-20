@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1)
     session_id: str | None = Field(default=None, min_length=1)
+    session_kind: int | None = None
     mode: Literal["simple", "agent"] = "agent"
     mcp_servers: list[MCPServerConfig] | None = Field(
         default=None,

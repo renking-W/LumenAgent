@@ -226,8 +226,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
+import { onMounted, ref, watch, nextTick } from 'vue'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage } from './types'
+import { useChatStream } from './composables/useChatStream'
 import AppTopbar from './components/AppTopbar.vue'
 import ChatView from './components/ChatView.vue'
 import ToolView from './components/ToolView.vue'
@@ -243,62 +244,37 @@ import ConfigView from './components/ConfigView.vue'
 import AppComposer from './components/AppComposer.vue'
 import ApiKeyManager from './components/ApiKeyManager.vue'
 
-// ── state ──────────────────────────────────────────
+// ── 聊天流 ─────────────────────────────────────────
+const chat = useChatStream()
+const messages = chat.messages
+const sending = chat.sending
+const activeSessionId = chat.sessionId
+const streamingMessageId = chat.streamingMessageId
+const statusText = chat.statusText
+const lastUserPrompt = chat.lastUserPrompt
+
+// ── 视图切换（默认为聊天界面）──────────────────
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
+
+// ── UI 状态 ───────────────────────────────────────
 const sidebarVisible = ref(false)
 const sidebarCollapsed = ref(false)
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
-const connected = ref(false)
-const sending = ref(false)
 const useAgentMode = ref(true)
 const approvalMode = ref<'none' | 'all' | 'dangerous'>('dangerous')
 const prompt = ref('')
-const lastUserPrompt = ref('')
-const activeSessionId = ref('')
-const statusText = ref('等待输入')
+const selectedMcpServerIds = ref<string[]>([])
+const apiKeyDialogVisible = ref(false)
+const mainContent = ref<HTMLElement | null>(null)
+const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
+const connected = ref(false)
 const tools = ref<ToolInfo[]>([])
 const skills = ref<SkillInfo[]>([])
 const memories = ref<MemoryFileItem[]>([])
-const mainContent = ref<HTMLElement | null>(null)
-const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
-const abortController = ref<AbortController | null>(null)
-
-const selectedMcpServerIds = ref<string[]>([])
-const apiKeyDialogVisible = ref(false)
-
-const messages = reactive<ChatMessage[]>([])
 
 // ── 游标分页 ──────────────────────────────────────
 const beforeSeq = ref<number | undefined>(undefined)
 const loadingMore = ref(false)
 const hasMore = ref(true)
-
-// ── 流式过程中独立维护的分组列表（中断时从此读取，不依赖 messages 的 blocks） ──
-const pendingTexts = ref<ChatBlock[]>([])
-const pendingThinkings = ref<ChatBlock[]>([])
-const pendingToolUses = ref<ChatBlock[]>([])
-const pendingToolResults = ref<ChatBlock[]>([])
-const pendingErrors = ref<ChatBlock[]>([])
-
-const clearPendingBlocks = () => {
-  pendingTexts.value = []
-  pendingThinkings.value = []
-  pendingToolUses.value = []
-  pendingToolResults.value = []
-  pendingErrors.value = []
-}
-
-const pushPendingBlock = (block: ChatBlock) => {
-  switch (block.kind) {
-    case 'text': pendingTexts.value.push(block); break
-    case 'thinking': pendingThinkings.value.push(block); break
-    case 'tool_use': pendingToolUses.value.push(block); break
-    case 'tool_result': pendingToolResults.value.push(block); break
-    case 'error': pendingErrors.value.push(block); break
-  }
-}
-
-// ── 预置消息：刚打开时的空状态引导 ──
-// 故意留空，由 ChatView 的空状态组件展示
 
 // ── 智能滚动 ──────────────────────────────────────
 const SCROLL_THRESHOLD = 180
@@ -330,142 +306,27 @@ watch(
   }
 )
 
-// ── 流式状态（用于光标） ───────────────────────────
-const streamingMessageId = computed(() => {
-  if (!sending.value || messages.length === 0) return ''
-  const last = messages[messages.length - 1]
-  return last.role === 'assistant' ? last.id : ''
-})
-
-// ── helpers ────────────────────────────────────────
-const pretty = (value: unknown) => JSON.stringify(value, null, 2)
-const nowStamp = () => new Date().toLocaleTimeString('zh-CN', { hour12: false })
-
-/** 总是创建新块（不做内容合并），适用于 tool_use / tool_result 等独立块 */
-const pushBlock = (kind: string, title: string, content: string, expanded = true) => {
-  const msg = getOrCreateAssistant()
-  const block: ChatBlock = { id: crypto.randomUUID(), kind, title, content, expanded }
-  msg.blocks.push(block)
-  return block
-}
-
-const addMessage = (role: 'user' | 'assistant') => {
-  const msg: ChatMessage = {
-    id: crypto.randomUUID(),
-    role,
-    roleLabel: role === 'user' ? 'User' : 'Assistant',
-    time: nowStamp(),
-    blocks: [],
-  }
-  messages.push(msg)
-  return msg
-}
-
-const getOrCreateAssistant = () => {
-  let msg = messages[messages.length - 1]
-  if (!msg || msg.role !== 'assistant') msg = addMessage('assistant')
-  return msg
-}
-
-const appendBlock = (kind: string, title: string, content: string, expanded = true) => {
-  const msg = getOrCreateAssistant()
-  const existing = msg.blocks[msg.blocks.length - 1]
-  if (existing && existing.kind === kind) {
-    existing.content += content
-    return existing
-  }
-  const block: ChatBlock = { id: crypto.randomUUID(), kind, title, content, expanded }
-  msg.blocks.push(block)
-  return block
-}
-
-// ── actions ────────────────────────────────────────
-/** 如果当前正在流式输出，中断连接并通知后端 */
-const interruptStreamIfActive = async () => {
-  if (!sending.value || !activeSessionId.value) return
-  abortController.value?.abort()
-  try {
-    await fetch('/v1/chat/stream/interrupt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: activeSessionId.value }),
-    })
-  } catch { /* ignore */ }
-  sending.value = false
-  abortController.value = null
-  clearPendingBlocks()
-}
-
-const refreshCapabilities = async () => {
-  let ok = true
-
-  try {
-    const toolRes = await fetch('/v1/tools')
-    if (toolRes.ok) tools.value = await toolRes.json()
-    else ok = false
-  } catch { ok = false }
-
-  try {
-    const skillRes = await fetch('/v1/skills')
-    if (skillRes.ok) skills.value = await skillRes.json()
-    else ok = false
-  } catch { ok = false }
-
-  try {
-    const memRes = await fetch('/v1/memories')
-    if (memRes.ok) {
-      const data = await memRes.json()
-      if (Array.isArray(data)) memories.value = data
-    } else ok = false
-  } catch { ok = false }
-
-  connected.value = ok
-}
-
-/** 提交工具调用审批决策（放行/拒绝），并更新对应块的状态 */
-const handleToolApproval = async (blockId: string, toolCallId: string, approved: boolean) => {
-  if (!activeSessionId.value) return
-  // 更新对应块中该工具调用的状态
-  for (const msg of messages) {
-    const block = msg.blocks.find((b) => b.id === blockId)
-    if (!block || block.kind !== 'awaiting_approval') continue
-    try {
-      const toolCalls: Array<{ id: string; name: string; input: unknown; _resolved?: boolean }> = JSON.parse(block.content)
-      const target = toolCalls.find((tc) => tc.id === toolCallId)
-      if (!target || target._resolved !== undefined) return // 已处理过，忽略
-      target._resolved = approved
-      block.content = JSON.stringify(toolCalls)
-      // 更新标题反映进度
-      const total = toolCalls.length
-      const done = toolCalls.filter((tc) => tc._resolved !== undefined).length
-      block.title = done < total ? `🔒 等待审批 (${done}/${total})` : approved ? '✅ 已放行' : '❌ 已拒绝'
-    } catch { /* ignore */ }
-    break
-  }
-  // 调用后端审批接口
-  try {
-    await fetch('/v1/chat/stream/approve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: activeSessionId.value, approvals: { [toolCallId]: approved } }),
-    })
-  } catch { /* ignore */ }
-}
+// ── actions（委托给 composable） ──────────────────
+const handleToolApproval = (blockId: string, toolCallId: string, approved: boolean) =>
+  chat.approve(blockId, toolCallId, approved)
 
 const resetConversation = async () => {
-  await interruptStreamIfActive()
-  messages.splice(0)
-  activeSessionId.value = ''
+  await chat.reset()
   beforeSeq.value = undefined
   hasMore.value = true
-  statusText.value = '已重置为新会话'
+}
+
+const interruptChat = () => chat.interrupt()
+const handleRetry = () => {
+  if (lastUserPrompt.value && !sending.value) {
+    prompt.value = lastUserPrompt.value
+    sendMessage()
+  }
 }
 
 const onDeleteSession = async (sessionId: string) => {
   if (activeSessionId.value === sessionId) {
-    await interruptStreamIfActive()
-    messages.splice(0)
-    activeSessionId.value = ''
+    await chat.reset()
     beforeSeq.value = undefined
     hasMore.value = true
     statusText.value = '会话已删除'
@@ -509,40 +370,6 @@ function parseStoredMessages(stored: StoredMsg[]): ChatMessage[] {
   return result
 }
 
-const loadSessionMessages = async (sessionId: string) => {
-  // 如果正在流式输出当前会话，先中断
-  await interruptStreamIfActive()
-
-  try {
-    const res = await fetch(`/v1/sessions/${sessionId}/messages?limit=20`)
-    if (!res.ok) return
-    let stored: StoredMsg[] = await res.json()
-    activeSessionId.value = sessionId
-    beforeSeq.value = undefined
-    hasMore.value = stored.length === 20
-    loadingMore.value = false
-
-    // 定时任务会话：隐藏第一条用户消息（seq=0，调度器自动注入的 prompt）
-    const isScheduled = sessionId.startsWith('__scheduled__')
-    if (isScheduled && stored.length > 0) {
-      stored = stored.filter((s) => s.seq !== 0)
-    }
-
-    const parsed = parseStoredMessages(stored)
-    if (parsed.length > 0) {
-      // min seq 作为下次分页的 before 游标
-      beforeSeq.value = Math.min(...stored.map((s) => s.seq))
-    }
-
-    messages.splice(0, messages.length, ...parsed)
-    statusText.value = `已加载会话 (${parsed.length} 条消息)`
-    await nextTick()
-    chatViewRef.value?.scrollPaneToBottom()
-  } catch {
-    statusText.value = '加载会话失败'
-  }
-}
-
 const loadMoreMessages = async () => {
   if (loadingMore.value || !beforeSeq.value || !activeSessionId.value) return
   loadingMore.value = true
@@ -567,248 +394,56 @@ const loadMoreMessages = async () => {
   }
 }
 
-const consumeEvent = (event: { type: string; data?: any }) => {
-  switch (event.type) {
-    case 'text':
-      appendBlock('text', '正文', event.data?.delta ?? '')
-      break
-    case 'thinking':
-      appendBlock('thinking', '💭 思考', event.data?.delta ?? '', false)
-      break
-    case 'tool_calls': {
-      // tool_calls 仅用于通知，实际的 tool_use 块由 tool_use 事件按序创建
-      break
-    }
-    case 'awaiting_approval': {
-      // 工具调用等待人工审批
-      const toolCalls: Array<{ id: string; name: string; input: unknown }> = event.data?.tool_calls ?? []
-      if (toolCalls.length > 0) {
-        // content 存储工具调用列表，每项含 id/name/input 和 _resolved 状态
-        const payload = toolCalls.map((tc) => ({ ...tc, _resolved: undefined as boolean | undefined }))
-        pushBlock('awaiting_approval', `🔒 等待审批`, JSON.stringify(payload), true)
-        statusText.value = `等待审批: ${toolCalls.map((t) => t.name).join(', ')}`
-      }
-      break
-    }
-    case 'tool_use': {
-      // 创建独立的 tool_use 块，存储完整工具调用信息供中断时使用
-      const data = event.data ?? {}
-      const toolCallId: string = data.tool_call_id ?? ''
-      const toolName: string = data.name ?? '工具'
-      const args: Record<string, unknown> = data.arguments ?? {}
-      // content 格式为 {id, name, input}，与历史消息的 tool_use 格式一致，
-      // 这样 interruptChat 也能正确解析回 tool_use 条目
-      const toolCall = { id: toolCallId, name: toolName, input: args }
-      pushBlock('tool_use', `⏳ ${toolName}`, pretty(toolCall), false)
-      break
-    }
-    case 'tool_result': {
-      // 清除上一个 tool_use 块的 ⏳ 标记
-      const lastMsg = messages[messages.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant') {
-        for (let bi = lastMsg.blocks.length - 1; bi >= 0; bi--) {
-          const block = lastMsg.blocks[bi]
-          if (block.kind === 'tool_use') {
-            block.title = block.title.replace(/^⏳\s*/, '')
-            break
-          }
-        }
-      }
-      // 创建独立的 tool_result 块（与历史消息的 cb.content 格式一致）
-      const data = event.data ?? {}
-      pushBlock('tool_result', `工具结果: ${data.name ?? '工具'}`, data.result_preview ?? '', false)
-      break
-    }
-    case 'assistant_done':
-      statusText.value = '本轮完成'
-      break
-    case 'error':
-      appendBlock('error', '错误', event.data?.message ?? '未知错误')
-      break
-  }
-}
+const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
-const interruptChat = async () => {
-  if (!activeSessionId.value) return
-  // 1. 中断本地 fetch
-  abortController.value?.abort()
-
-  // 2. 通知后端中断流式连接
-  try {
-    await fetch('/v1/chat/stream/interrupt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: activeSessionId.value }),
-    })
-  } catch {
-    // 忽略
-  }
-
-  // 3. 保存已收到的部分 assistant 消息（标记 status=0 表示中断）
-  const lastMsg = messages[messages.length - 1]
-  if (lastMsg && lastMsg.role === 'assistant') {
-    const contentBlocks: Record<string, unknown>[] = []
-    const pendingToolUseIds = new Set<string>()
-
-    for (const block of lastMsg.blocks) {
-      switch (block.kind) {
-        case 'text':
-          contentBlocks.push({ type: 'text', text: block.content })
-          break
-        case 'thinking':
-          contentBlocks.push({ type: 'thinking', thinking: block.content })
-          break
-        case 'tool_use': {
-          try {
-            const parsed = JSON.parse(block.content)
-            if (Array.isArray(parsed)) {
-              // 历史消息格式：数组包含多个工具调用
-              for (const tc of parsed) {
-                contentBlocks.push({
-                  type: 'tool_use',
-                  id: tc.id,
-                  name: tc.name,
-                  input: tc.input || tc.arguments || {},
-                })
-                pendingToolUseIds.add(tc.id)
-              }
-            } else if (parsed && typeof parsed === 'object' && parsed.id) {
-              // 流式实时格式：单个 {id, name, input} 对象（来自 tool_execution_start）
-              contentBlocks.push({
-                type: 'tool_use',
-                id: parsed.id,
-                name: parsed.name || 'tool',
-                input: parsed.input || {},
-              })
-              pendingToolUseIds.add(parsed.id)
-            }
-          } catch {
-            contentBlocks.push({ type: 'tool_use', text: block.content })
-          }
-          break
-        }
-        case 'tool_result': {
-          try {
-            const data = JSON.parse(block.content)
-            const tid = data.tool_call_id || ''
-            contentBlocks.push({
-              type: 'tool_result',
-              tool_use_id: tid,
-              content: data.result_preview || block.content,
-            })
-            pendingToolUseIds.delete(tid)
-          } catch {
-            contentBlocks.push({ type: 'tool_result', content: block.content })
-          }
-          break
-        }
-        case 'error':
-          contentBlocks.push({ type: 'text', text: block.content, is_error: true })
-          break
-      }
-    }
-
-    // 为所有已发出但未收到结果（无 tool_result 块）的工具调用补一条中断标记
-    for (const tid of pendingToolUseIds) {
-      contentBlocks.push({
-        type: 'tool_result',
-        tool_use_id: tid,
-        content: '(interrupted)',
-      })
-    }
-
-    try {
-      await fetch(`/v1/sessions/${activeSessionId.value}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: 'assistant',
-          content: contentBlocks,
-          status: 0,
-        }),
-      })
-    } catch {
-      // 保存请求失败不影响主流程
-    }
-  }
-
-  statusText.value = '已中断'
-}
-
-const handleRetry = () => {
-  if (lastUserPrompt.value && !sending.value) {
-    prompt.value = lastUserPrompt.value
-    sendMessage()
-  }
+const loadSessionMessages = async (sessionId: string) => {
+  await chat.interrupt()
+  await chat.loadSession(sessionId)
+  beforeSeq.value = undefined
+  hasMore.value = true
+  await nextTick()
+  chatViewRef.value?.scrollPaneToBottom()
 }
 
 const sendMessage = async () => {
   const content = prompt.value.trim()
   if (!content || sending.value) return
-  lastUserPrompt.value = content
-  sending.value = true
-  abortController.value = new AbortController()
-  statusText.value = '发送中...'
-  addMessage('user').blocks.push({
-    id: crypto.randomUUID(), kind: 'text', title: '用户输入', content, expanded: true,
-  })
   prompt.value = ''
+  // 用 composable 发送
+  chat.send(content, {
+    mode: useAgentMode.value ? 'agent' : 'simple',
+    approval_mode: useAgentMode.value ? approvalMode.value : undefined,
+    mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
+      ? selectedMcpServerIds.value
+      : undefined,
+  })
   await nextTick()
   chatViewRef.value?.scrollPaneToBottom()
   isNearBottom.value = true
-  addMessage('assistant')
-  await nextTick()
-  chatViewRef.value?.scrollPaneToBottom()
-  isNearBottom.value = true
-  try {
-    const res = await fetch('/v1/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: content,
-        session_id: activeSessionId.value || undefined,
-        mode: useAgentMode.value ? 'agent' : 'simple',
-        approval_mode: useAgentMode.value ? approvalMode.value : undefined,
-        mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
-          ? selectedMcpServerIds.value
-          : undefined,
-      }),
-      signal: abortController.value.signal,
-    })
-    if (!res.ok || !res.body) throw new Error(await res.text())
-    const sessionId = res.headers.get('x-session-id')
-    if (sessionId) activeSessionId.value = sessionId
+}
 
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const parts = buffer.split('\n\n')
-      buffer = parts.pop() ?? ''
-      for (const part of parts) {
-        const line = part.split('\n').find((l) => l.startsWith('data: '))
-        if (!line) continue
-        const raw = line.slice(6)
-        if (raw === '[DONE]') continue
-        consumeEvent(JSON.parse(raw))
-      }
-    }
-    statusText.value = '响应完成'
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      statusText.value = '已中断'
-    } else {
-      statusText.value = '请求失败'
-      appendBlock('error', '请求失败', error instanceof Error ? error.message : String(error))
-    }
-  } finally {
-    sending.value = false
-    abortController.value = null
-    chatViewRef.value?.refreshSessions()
-  }
+// ── 功能刷新 ────────────────────────────────────────
+
+const refreshCapabilities = async () => {
+  let ok = true
+  try {
+    const toolRes = await fetch('/v1/tools')
+    if (toolRes.ok) tools.value = await toolRes.json()
+    else ok = false
+  } catch { ok = false }
+  try {
+    const skillRes = await fetch('/v1/skills')
+    if (skillRes.ok) skills.value = await skillRes.json()
+    else ok = false
+  } catch { ok = false }
+  try {
+    const memRes = await fetch('/v1/memories')
+    if (memRes.ok) {
+      const data = await memRes.json()
+      if (Array.isArray(data)) memories.value = data
+    } else ok = false
+  } catch { ok = false }
+  connected.value = ok
 }
 
 // ── lifecycle ──────────────────────────────────────

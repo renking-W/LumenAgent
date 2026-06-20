@@ -248,10 +248,18 @@
       </template>
     </el-dialog>
 
+    <MiniChatPanel
+      :vm-id="activeVM?.vm_id"
+      :vm-host="activeVM?.host"
+      :vm-port="activeVM?.port"
+      :vm-username="activeVM?.username"
+      :vm-description="activeVM?.description"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import MiniChatPanel from './MiniChatPanel.vue'
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import type { VMListResponseItem, VMRegisterRequest } from '../types'
 import { ElMessage } from 'element-plus'
@@ -286,6 +294,77 @@ const hasOutput = ref(false)
 const pendingCommand = ref('')
 const pendingSessionId = ref('')
 const pendingToolCallId = ref('')
+
+// ── VM WebSocket（Agent 操作实时推送） ────────────
+import { useVMWebSocket } from '../composables/useVMWebSocket'
+const vmWS = useVMWebSocket()
+
+// ── 当前命令执行上下文（用于渲染提示符 + 保存日志） ──
+const currentCommand = ref('')
+const currentOutput = ref('')
+const currentExitCode = ref<number | null>(null)
+
+/** 保存日志到后端 */
+async function saveCurrentLog(vmId: string) {
+  if (!currentCommand.value) return
+  try {
+    await fetch(`/v1/vm/${vmId}/log/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        command: currentCommand.value,
+        output: currentOutput.value,
+        exit_code: currentExitCode.value ?? -1,
+      }),
+    })
+  } catch { /* ignore */ }
+  // 重置上下文
+  currentCommand.value = ''
+  currentOutput.value = ''
+  currentExitCode.value = null
+}
+
+vmWS.onEvent((event) => {
+  // 手动命令走 SSE 路径，SSE 已负责写终端 + 保存日志，
+  // WebSocket 重复事件在此跳过，避免输出渲染两次
+  const isManualCommand = execState.value === 'running'
+
+  if (event.subtype === 'command_start') {
+    if (isManualCommand) return  // SSE 路径不依赖 command_start
+    const data = event.data as { command: string; username: string; host: string }
+    console.log('[VM] command_start:', data)
+    currentCommand.value = data.command
+    currentOutput.value = ''
+    currentExitCode.value = null
+    // 写入提示符：userName@host:~$ command
+    if (term) {
+      term.writeln(`\r\n\x1b[32m${data.username}@${data.host}\x1b[0m:\x1b[34m~\x1b[0m$ \x1b[33m${data.command}\x1b[0m`)
+      hasOutput.value = true
+    }
+  } else if (event.subtype === 'output' && term) {
+    if (isManualCommand) return  // SSE 已写终端
+    term.write(event.data as string)
+    currentOutput.value += (event.data as string)
+    hasOutput.value = true
+  } else if (event.subtype === 'exit_code') {
+    if (isManualCommand) return  // SSE 已记录退出码
+    currentExitCode.value = event.data as number
+  } else if (event.subtype === 'error') {
+    if (isManualCommand) return  // SSE 已处理错误
+    if (term) term.writeln(`\x1b[31m[Agent 操作错误] ${event.data as string}\x1b[0m`)
+    currentOutput.value += `\n[错误] ${event.data as string}`
+    saveCurrentLog(event.vm_id)
+  } else if (event.subtype === 'done') {
+    if (isManualCommand) return  // SSE 已完成 + 保存日志
+    if (term) term.writeln('')
+    saveCurrentLog(event.vm_id)
+  }
+})
+
+watch(activeVM, (newVM, oldVM) => {
+  if (oldVM) vmWS.disconnect()
+  if (newVM) vmWS.connect(newVM.vm_id)
+})
 
 // ── xterm.js ──
 const xtermRef = ref<HTMLElement | null>(null)

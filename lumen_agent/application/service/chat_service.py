@@ -196,6 +196,7 @@ async def reply_with_agent(
     repo: ConversationRepositoryPort,
     llm: ModelAdapter,
     session_id: str,
+    session_kind: int,
     user_message: str,
     settings: Settings,
     approval_mode : str | None = None,
@@ -225,7 +226,7 @@ async def reply_with_agent(
     init_tools()
 
     # 1) 会话准备 + 用户消息落库
-    await repo.ensure_session(session_id)
+    await repo.ensure_session(session_id,session_kind)
     user_blocks = text_message("user", user_message)["content"]
     await repo.append_message(session_id, "user", user_blocks)
 
