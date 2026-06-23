@@ -170,7 +170,17 @@ export function useChatStream() {
   // ── 中断 ──
   const interrupt = async () => {
     if (!sessionId.value) return
-    abortController.value?.abort()
+
+    // 没有活跃流（stream 已正常完成）→ 无需保存 partial 内容，只清理状态
+    if (!abortController.value) {
+      sending.value = false
+      abortController.value = null
+      clearPendingBlocks()
+      statusText.value = '已中断'
+      return
+    }
+
+    abortController.value.abort()
 
     try {
       await fetch('/v1/chat/stream/interrupt', {

@@ -168,7 +168,7 @@ const vmSelfSystem = computed(() => {
   if (props.vmDescription) {
     text += `- Description: ${props.vmDescription}\n`
   }
-  text += `\n你可以利用这些信息直接找到并操作这台虚拟机。`
+  text += `\n你可以利用这些信息直接找到并操作这台虚拟机。\n注意：当需要使用sudo指令/管理员权限时需要向用户确认管理员密码以保能够正常执行`
   return text
 })
 

@@ -61,11 +61,16 @@ def _require_api_key(settings: Settings) -> None:
 
 def _resolve_session(body: ChatRequest | None) -> ChatRequest:
     """预处理session字段"""
+    # 没有携带session_id字段的请求，一律视为普通内部会话 kind=0
     if body.session_id is None:
         body.session_id = str(uuid4())
-        body.session_kind = 3       # 没有携带session_id字段的请求，一律视为外部请求
+        body.session_kind = 0
+    # 没有携带 session_kind 时，默认为0（内部会话）
     if body.session_kind is None:
-        body.session_kind = 0       # 没有携带 session_kind 时，默认为0
+        body.session_kind = 0
+    # kind=1 定时任务下无脑放行命令
+    if body.session_kind == 1:
+        body.approval_mode = "none"
     return body
 
 

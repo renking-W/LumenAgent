@@ -69,7 +69,7 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         await repo.update_session_title(session_id, task_name)
 
         final_text = ""
-        async for kind, data in reply_with_agent(repo, llm, session_id, 1, prompt, settings):
+        async for kind, data in reply_with_agent(repo, llm, session_id, 1, prompt, settings, approval_mode="none"):
             if kind == "done":
                 final_text = data
 

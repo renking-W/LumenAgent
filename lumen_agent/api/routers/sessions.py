@@ -95,7 +95,9 @@ async def append_session_message(
     - 中断后保存 partial 内容 → ``status=0``
     - 恢复上下文时插入系统消息 → ``status=1``
     """
-    await repo.ensure_session(session_id)
+    session = await repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
     content = normalize_and_prepare_content(body.role, body.content)
     await repo.append_message(session_id, body.role, content, status=body.status)
     return {"status": "ok", "session_id": session_id}

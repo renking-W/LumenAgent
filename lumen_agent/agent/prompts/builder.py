@@ -247,13 +247,29 @@ class SystemPromptBuilder:
         return _SECTION_SEP.join(self._sections)
     def add_self_system(self, text: str | None) -> "SystemPromptBuilder":
         if text:
-            self._sections.append("\n\n一下为用户自定义系统提示词：\n"+text)
+            self._sections.append("\n\n-------------以下为用户自定义系统提示词----------------\n"+text)
+        return self
+
+    # ------------------------------------------------------------------ #
+    # 9. 适应不同类型的session
+    # ------------------------------------------------------------------ #
+    def adapt_session_kind(self,session_kind) -> "SystemPromptBuilder" :
+        self._sections.append("\n\n--------------以下为会话环境说明-------------")
+        if session_kind == 0:
+            self._sections.append("\n\n当前处于正常会话环境")
+        if session_kind == 1:
+            self._sections.append("\n\n当前处于定时任务环境，按照既定的要求执行即可不需要征求用户同意。但是**禁止操作破坏性行为**，除非显式提到")
+        if session_kind == 2:
+            self._sections.append("\n\n当前处于虚拟机会话环境，所有问答都要和当前虚拟机挂钩")
+        if session_kind == 3:
+            self._sections.append("\n\n当前处于第三方会话环境，不能暴露任何本机相关的信息。如有需要明确告知用户无法提供对应的内容")
         return self
 
 def build_system_prompt(
     tools: list[BaseTool],
     skills: list[SkillMeta] | None = None,
     self_system : str | None = None,
+    session_kind: int | None = None,
 ) -> str:
     """工厂函数：按规范顺序组装系统提示词，返回完整 system 字符串。"""
     return (
@@ -267,5 +283,6 @@ def build_system_prompt(
         .add_project_context()
         .add_runtime_info()
         .add_self_system(self_system)
+        .adapt_session_kind(session_kind)
         .build()
     )

@@ -281,7 +281,7 @@ async def reply_with_agent(
 
     all_tools = tools + mcp_tools
     skills = load_skills()
-    system_content = build_system_prompt(all_tools, skills,self_system) or None
+    system_content = build_system_prompt(all_tools, skills,self_system,session_kind) or None
 
     try:
         # 3) 组装上下文（含 token 预算检查 / 强制压缩）

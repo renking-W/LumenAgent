@@ -226,6 +226,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessageBox } from 'element-plus'
 import { onMounted, ref, watch, nextTick } from 'vue'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage } from './types'
 import { useChatStream } from './composables/useChatStream'
@@ -314,6 +315,30 @@ const resetConversation = async () => {
   await chat.reset()
   beforeSeq.value = undefined
   hasMore.value = true
+
+  // 提示用户手动输入 session_id（可选，留空则由后端自动生成）
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '输入会话 ID（留空则自动生成）',
+      '新建会话',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消（自动生成）',
+        inputPlaceholder: '自定义 session_id（可选）',
+        inputValidator: (val: string) => {
+          if (val && val.trim().length > 0 && !/^[a-zA-Z0-9_-]+$/.test(val.trim())) {
+            return '仅允许字母、数字、下划线和连字符'
+          }
+          return true
+        },
+      }
+    )
+    if (value && value.trim()) {
+      chat.setSessionId(value.trim())
+    }
+  } catch {
+    // 用户取消 → 沿用空 session_id（后端自动生成）
+  }
 }
 
 const interruptChat = () => chat.interrupt()
@@ -397,7 +422,6 @@ const loadMoreMessages = async () => {
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
 const loadSessionMessages = async (sessionId: string) => {
-  await chat.interrupt()
   await chat.loadSession(sessionId)
   beforeSeq.value = undefined
   hasMore.value = true
