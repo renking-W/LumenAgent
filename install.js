@@ -7,13 +7,12 @@ const BACKEND_DIR = path.join(ROOT, "lumen_agent");
 const FRONTEND_DIR = path.join(ROOT, "webChannel");
 
 // ── Node.js 版本校验 ────────────────────────────────
-const NODE_MIN = 20;
-const NODE_MIN_PATCH = 19;
+const NODE_MIN = 18;
 
-const nodeVer = process.version; // "v20.19.0"
+const nodeVer = process.version; // e.g. "v20.19.0"
 const parts = nodeVer.slice(1).split(".").map(Number);
-if (parts[0] < NODE_MIN || (parts[0] === NODE_MIN && parts[1] < NODE_MIN_PATCH)) {
-  console.error(`❌ Node.js 版本过低：当前 ${nodeVer}，需要 v${NODE_MIN}.${NODE_MIN_PATCH}+`);
+if (parts[0] < NODE_MIN) {
+  console.error(`❌ Node.js 版本过低：当前 ${nodeVer}，需要 v${NODE_MIN}+`);
   process.exit(1);
 }
 console.log(`✅ Node.js ${nodeVer}`);

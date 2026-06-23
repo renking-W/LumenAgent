@@ -1,14 +1,36 @@
 {
   "name": "lumen-agent",
   "version": "1.0.0",
+  "description": "基于大模型的 AI Agent 系统 — 远程VM操控、MCP扩展、AI定时任务、RAG知识库、双模记忆、工具审批流",
   "bin": {
     "lumen-start": "./start.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node install.js",
+    "start": "node start.js"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": ">=18"
   },
-  "license": "MIT"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/renking-W/LumenAgent.git"
+  },
+  "keywords": [
+    "ai-agent",
+    "llm",
+    "deepseek",
+    "rag",
+    "mcp",
+    "knowledge-base",
+    "agent-framework",
+    "ssh",
+    "virtual-machine",
+    "task-scheduler"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/renking-W/LumenAgent/issues"
+  },
+  "homepage": "https://github.com/renking-W/LumenAgent#readme"
 }

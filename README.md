@@ -173,6 +173,27 @@ LumenAgent/
 
 ## 🚀 快速启动
 
+### 0️⃣ 一行命令启动（推荐）
+
+确保已安装 [Node.js ≥ 18](https://nodejs.org/) 和 [Python ≥ 3.13](https://www.python.org/) 后：
+
+```bash
+# 一键安装 + 启动（自动装 Python/Node 依赖、构建前端、启动服务）
+npx lumen-start
+```
+
+首次运行会自动完成：Python 依赖安装 → 前端依赖安装 → 前端构建 → 服务启动。
+
+然后只需配置 `lumen_agent/.env` 中的 `LLM_API_KEY`，重启即可。
+
+> **国内用户**：npm 和 pip 下载慢时可配置镜像加速：
+> ```bash
+> npm config set registry https://registry.npmmirror.com
+> pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+> ```
+
+---
+
 ### 1️⃣ 环境要求
 
 - Python ≥ 3.13
@@ -182,25 +203,41 @@ LumenAgent/
 
 ### 2️⃣ 配置环境变量
 
-```bash
-# 编辑 lumen_agent/.env
+编辑 `lumen_agent/.env`：
+
+```env
+# ── LLM 配置 ──
 LLM_API_KEY=sk-your-deepseek-api-key
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 
-# 阿里云 Embedding（可选，RAG/记忆需要）
+# ── 阿里云 Embedding（可选，RAG/记忆需要）──
 EMBEDDING_API_KEY=sk-your-dashscope-api-key
 EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings
 EMBEDDING_MODEL=text-embedding-v4
 
-# 服务端口
+# ── 服务端口 ──
 HOST=127.0.0.1
 PORT=21675
 ```
 
 全部可配置项详见 `config.json`（同名 `.env` 变量覆盖）。
 
-### 3️⃣ 启动后端
+### 3️⃣ 全局安装后启动（或手动分步）
+
+```bash
+# 方式一：全局安装
+npm install -g lumen-agent
+lumen-start
+
+# 方式二：克隆仓库手动分步
+git clone https://github.com/renking-W/LumenAgent.git
+cd LumenAgent
+npm install     # 自动安装 Python + Node 依赖
+npm start       # 构建前端 + 启动服务
+```
+
+### 4️⃣ 传统方式：纯 Python 启动后端
 
 ```bash
 pip install -r lumen_agent/requirements.txt

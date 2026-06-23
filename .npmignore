@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Virtualenv
+.venv/
+
+# IDE
+.idea/
+
+# Environment
+lumen_agent/.env
+lumen_agent/config.json
+
+# Local data
+*.db
+lumen_agent/data/
+lumen_agent/workspace/
+
+# Workspace
+work_space/
+
+# Logs
+log/
+lumen_agent/log/
+
+# Frontend
+node_modules/
+webChannel/node_modules/
+webChannel/.vite/
+webChannel/dist/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Claude
+.claude/
+.codegraph/
+
+# Project-specific
+/会话摘要开发指南.md
+uv.lock
+target.md
