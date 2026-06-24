@@ -1,6 +1,6 @@
 {
   "name": "lumen-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "基于大模型的 AI Agent 系统 — 远程VM操控、MCP扩展、AI定时任务、RAG知识库、双模记忆、工具审批流",
   "bin": {
     "lumen-start": "./start.js"
