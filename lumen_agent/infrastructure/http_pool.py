@@ -69,6 +69,7 @@ class StreamHandle:
             raise
 
         if self._response.status_code >= 400:
+            status_code = self._response.status_code
             body = await self._response.aread()
             try:
                 detail = body.decode("utf-8", errors="replace")[:4000]
@@ -77,7 +78,7 @@ class StreamHandle:
             self._state = "ERROR"
             await self._close_resources()
             raise RuntimeError(
-                f"upstream HTTP {self._response.status_code}: {detail}"
+                f"upstream HTTP {status_code}: {detail}"
             )
 
         self._state = "STREAMING"
@@ -133,7 +134,7 @@ class StreamHandle:
             choice = choices[0] or {}
             delta: dict[str, Any] = choice.get("delta") or {}
 
-            for field in ("reasoning_content", "content"):
+            for field in ("reasoning", "reasoning_content", "content"):
                 piece = delta.get(field)
                 if isinstance(piece, str) and piece:
                     yield (field, piece)

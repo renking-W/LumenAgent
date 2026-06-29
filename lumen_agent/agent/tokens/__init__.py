@@ -41,6 +41,13 @@ def _build_counter(model_name: str) -> TokenCounter:
         ("deepseek", "cl100k_base"),
         ("gpt-4", "cl100k_base"),
         ("gpt-3.5", "cl100k_base"),
+        # Ollama / 常见开源模型
+        ("llama", "cl100k_base"),
+        ("mistral", "cl100k_base"),
+        ("qwen", "cl100k_base"),
+        ("phi", "cl100k_base"),
+        ("gemma", "cl100k_base"),
+        ("deepseek-r1", "cl100k_base"),
     ]
 
     encoding_name = "cl100k_base"  # 默认

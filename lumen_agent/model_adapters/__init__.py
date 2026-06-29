@@ -9,5 +9,16 @@ from lumen_agent.model_adapters.deepseek import DeepSeekAdapter
 
 
 def get_model_adapter(settings: Settings) -> ModelAdapter:
-    """当前先固定返回 DeepSeek 适配器，后续再扩展多模型分支。"""
+    """根据 ``LLM_PROVIDER`` 配置返回对应的适配器。"""
+    provider = settings.get("LLM_PROVIDER", "deepseek")
+    if provider == "ollama":
+        from lumen_agent.model_adapters.client.ollama_client import OllamaHttpClient
+        from lumen_agent.model_adapters.ollama import OllamaAdapter
+
+        return OllamaAdapter(OllamaHttpClient(settings))
+    if provider == "openrouter":
+        from lumen_agent.model_adapters.client.open_router_client import OpenRouterHttpClient
+        from lumen_agent.model_adapters.open_router import OpenRouterAdapter
+
+        return OpenRouterAdapter(OpenRouterHttpClient(settings))
     return DeepSeekAdapter(DeepSeekHttpClient(settings))

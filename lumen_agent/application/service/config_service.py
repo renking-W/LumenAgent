@@ -40,6 +40,7 @@ _BASIC_CONFIG_KEYS: frozenset[str] = frozenset({
     "EMBEDDING_BASE_URL",
     "EMBEDDING_MODEL",
     "AGENT_MAX_TURNS",
+    "LLM_PROVIDER",
 })
 
 

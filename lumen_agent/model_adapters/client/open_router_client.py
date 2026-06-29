@@ -1,4 +1,10 @@
-"""DeepSeek OpenAI 兼容 `POST /v1/chat/completions`；HTTP 错误映射在路由层。"""
+"""OpenRouter OpenAI 兼容 `POST /v1/chat/completions` 客户端。
+
+OpenRouter 提供统一的 API 网关，兼容 OpenAI Chat Completions 格式。
+与 DeepSeekHttpClient 的区别：
+  - 支持可选的 HTTP-Referer / X-Title 请求头（用于排行榜统计）
+  - 不支持 enable_thinking 参数，改为 reasoning map
+"""
 
 from __future__ import annotations
 
@@ -13,20 +19,27 @@ from lumen_agent.model_adapters.client.openai_format import to_openai_messages, 
 StreamHandleCallback = Callable[[StreamHandle], Awaitable[None]]
 
 
-
-class DeepSeekHttpClient:
-    """DeepSeek OpenAI 兼容 Chat Completions 客户端。"""
+class OpenRouterHttpClient:
+    """OpenRouter OpenAI 兼容 Chat Completions 客户端。"""
 
     def __init__(self, settings: Settings) -> None:
         """保存 ``Settings``，请求时再读其中的 base_url、key、模型等。"""
         self._settings = settings
 
     def _chat_headers(self) -> dict[str, str]:
-        """构造 Chat Completions 请求头（Bearer + JSON）。"""
-        return {
+        """构造 Chat Completions 请求头（Bearer + JSON + 可选站点标识）。"""
+        headers: dict[str, str] = {
             "Authorization": f"Bearer {self._settings.get('LLM_API_KEY', '')}",
             "Content-Type": "application/json",
         }
+        # OpenRouter 可选头：用于排行榜统计
+        site_url = self._settings.get("LLM_OPENROUTER_SITE_URL")
+        if site_url:
+            headers["HTTP-Referer"] = site_url
+        site_name = self._settings.get("LLM_OPENROUTER_SITE_NAME")
+        if site_name:
+            headers["X-Title"] = site_name
+        return headers
 
     def _build_chat_payload(
         self,
@@ -36,9 +49,13 @@ class DeepSeekHttpClient:
         stream: bool = False,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
-        """组装请求 JSON：模型、messages、可选 stream / 采样参数 / 工具定义。"""
+        """组装请求 JSON：模型、messages、可选 stream / 采样参数 / 工具定义。
+
+        注意：不包含 enable_thinking（DeepSeek 私有参数），
+        改为 OpenRouter 的 reasoning map 参数。
+        """
         payload: dict[str, Any] = {
-            "model": self._settings.get("LLM_MODEL", "deepseek-v4-flash"),
+            "model": self._settings.get("LLM_MODEL", "openai/gpt-4o"),
             "messages": messages,
         }
         if stream:
@@ -52,8 +69,9 @@ class DeepSeekHttpClient:
             payload["max_tokens"] = self._settings.get("LLM_MAX_TOKENS")
         if self._settings.get("LLM_TOP_P") is not None:
             payload["top_p"] = self._settings.get("LLM_TOP_P")
-        if self._settings.get("LLM_ENABLE_THINKING") is not None:
-            payload["enable_thinking"] = self._settings.get("LLM_ENABLE_THINKING")
+        # OpenRouter 的 reasoning 参数（map）
+        if self._settings.get("LLM_ENABLE_THINKING"):
+            payload["reasoning"] = {"effort": "medium"}
         if tools:
             payload["tools"] = to_openai_tools(tools)
             tool_choice = self._settings.get("AGENT_TOOL_CHOICE")
@@ -68,7 +86,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> str:
         """同步调用上游，解析 ``choices[0].message.content`` 为完整字符串。"""
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://openrouter.ai/api")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -97,7 +115,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> list[dict[str, Any]]:
         """非流式调用上游，返回 content blocks 列表（含 text + thinking）。"""
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://openrouter.ai/api")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -113,6 +131,7 @@ class DeepSeekHttpClient:
 
         message = (choices[0] or {}).get("message") or {}
         content_text = (message.get("content") or "").strip()
+        # OpenRouter 使用 reasoning_content 字段（与 DeepSeek 一致）
         reasoning_text = (message.get("reasoning_content") or "").strip()
 
         blocks: list[dict[str, Any]] = []
@@ -142,7 +161,7 @@ class DeepSeekHttpClient:
         参数:
             on_connect: 连接建立后的回调，接收 ``StreamHandle`` 供注册到中断注册表。
         """
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "https://openrouter.ai/api")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(
@@ -155,6 +174,7 @@ class DeepSeekHttpClient:
         if on_connect is not None:
             await on_connect(handle)
         # 将 OpenAI 协议的字段名映射为内部统一命名
+        # OpenRouter 使用 reasoning_content（与 DeepSeek 一致）
         _KIND_MAP = {"content": "text", "reasoning_content": "thinking"}
         async for kind, data in handle.receive():
             yield (_KIND_MAP.get(kind, kind), data)

@@ -1,7 +1,7 @@
 [project]
 name = "lumenagent"
 version = "0.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "aiosqlite>=0.22.1",
     "apscheduler>=3.10.0",

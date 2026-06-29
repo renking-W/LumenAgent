@@ -1,4 +1,10 @@
-"""DeepSeek OpenAI 兼容 `POST /v1/chat/completions`；HTTP 错误映射在路由层。"""
+"""Ollama OpenAI 兼容 `POST /v1/chat/completions` 客户端。
+
+Ollama 从 0.14+ 提供 OpenAI 兼容端点，0.5+ 支持 reasoning_content。
+与 DeepSeekHttpClient 的区别：
+  - 不强制要求 Bearer Token 认证
+  - 不支持 enable_thinking 参数
+"""
 
 from __future__ import annotations
 
@@ -13,20 +19,24 @@ from lumen_agent.model_adapters.client.openai_format import to_openai_messages, 
 StreamHandleCallback = Callable[[StreamHandle], Awaitable[None]]
 
 
-
-class DeepSeekHttpClient:
-    """DeepSeek OpenAI 兼容 Chat Completions 客户端。"""
+class OllamaHttpClient:
+    """Ollama OpenAI 兼容 Chat Completions 客户端。"""
 
     def __init__(self, settings: Settings) -> None:
         """保存 ``Settings``，请求时再读其中的 base_url、key、模型等。"""
         self._settings = settings
 
     def _chat_headers(self) -> dict[str, str]:
-        """构造 Chat Completions 请求头（Bearer + JSON）。"""
-        return {
-            "Authorization": f"Bearer {self._settings.get('LLM_API_KEY', '')}",
-            "Content-Type": "application/json",
-        }
+        """构造 Chat Completions 请求头。
+
+        仅当显式配置了 LLM_API_KEY 时才添加 Bearer 认证头，
+        本地 Ollama 通常不需要认证。
+        """
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        api_key = self._settings.get("LLM_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        return headers
 
     def _build_chat_payload(
         self,
@@ -36,9 +46,12 @@ class DeepSeekHttpClient:
         stream: bool = False,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
-        """组装请求 JSON：模型、messages、可选 stream / 采样参数 / 工具定义。"""
+        """组装请求 JSON：模型、messages、可选 stream / 采样参数 / 工具定义。
+
+        注意：不包含 enable_thinking（Ollama 不支持此 DeepSeek 私有参数）。
+        """
         payload: dict[str, Any] = {
-            "model": self._settings.get("LLM_MODEL", "deepseek-v4-flash"),
+            "model": self._settings.get("LLM_MODEL", "llama3"),
             "messages": messages,
         }
         if stream:
@@ -52,8 +65,6 @@ class DeepSeekHttpClient:
             payload["max_tokens"] = self._settings.get("LLM_MAX_TOKENS")
         if self._settings.get("LLM_TOP_P") is not None:
             payload["top_p"] = self._settings.get("LLM_TOP_P")
-        if self._settings.get("LLM_ENABLE_THINKING") is not None:
-            payload["enable_thinking"] = self._settings.get("LLM_ENABLE_THINKING")
         if tools:
             payload["tools"] = to_openai_tools(tools)
             tool_choice = self._settings.get("AGENT_TOOL_CHOICE")
@@ -68,7 +79,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> str:
         """同步调用上游，解析 ``choices[0].message.content`` 为完整字符串。"""
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "http://localhost:11434")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -97,7 +108,7 @@ class DeepSeekHttpClient:
         temperature: float | None = None,
     ) -> list[dict[str, Any]]:
         """非流式调用上游，返回 content blocks 列表（含 text + thinking）。"""
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "http://localhost:11434")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(api_messages, temperature=temperature, stream=False)
@@ -113,7 +124,8 @@ class DeepSeekHttpClient:
 
         message = (choices[0] or {}).get("message") or {}
         content_text = (message.get("content") or "").strip()
-        reasoning_text = (message.get("reasoning_content") or "").strip()
+        # Ollama 用 "reasoning"，DeepSeek 用 "reasoning_content"
+        reasoning_text = (message.get("reasoning") or message.get("reasoning_content") or "").strip()
 
         blocks: list[dict[str, Any]] = []
         if reasoning_text:
@@ -142,7 +154,7 @@ class DeepSeekHttpClient:
         参数:
             on_connect: 连接建立后的回调，接收 ``StreamHandle`` 供注册到中断注册表。
         """
-        url = f'{self._settings.get("LLM_BASE_URL", "https://api.deepseek.com")}/v1/chat/completions'
+        url = f'{self._settings.get("LLM_BASE_URL", "http://localhost:11434")}/v1/chat/completions'
         headers = self._chat_headers()
         api_messages = to_openai_messages(messages)
         payload = self._build_chat_payload(
@@ -155,6 +167,7 @@ class DeepSeekHttpClient:
         if on_connect is not None:
             await on_connect(handle)
         # 将 OpenAI 协议的字段名映射为内部统一命名
-        _KIND_MAP = {"content": "text", "reasoning_content": "thinking"}
+        # Ollama 使用 "reasoning"，DeepSeek 使用 "reasoning_content"
+        _KIND_MAP = {"content": "text", "reasoning_content": "thinking", "reasoning": "thinking"}
         async for kind, data in handle.receive():
             yield (_KIND_MAP.get(kind, kind), data)

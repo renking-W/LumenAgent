@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from lumen_agent.application.uitls.dir_guide import DirGuide
@@ -22,6 +23,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "_note": "LumenAgent 配置文件。同名 .env 变量会覆盖此文件的值。修改后重启生效。",
     "_version": "1.0",
     # ── LLM ──
+    "LLM_PROVIDER": "deepseek",
     "LLM_API_KEY": "",
     "LLM_BASE_URL": "https://api.deepseek.com",
     "LLM_MODEL": "deepseek-v4-flash",
@@ -72,6 +74,20 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "deepseek-v4-flash": 1_000_000,
         "deepseek-chat": 65_536,
         "deepseek-reasoner": 131_072,
+        # ── Ollama / 常见开源模型 ──
+        "llama3": 8_192,
+        "llama3.1": 131_072,
+        "llama3.2": 131_072,
+        "mistral": 32_768,
+        "qwen2": 131_072,
+        "qwen2.5": 131_072,
+        "deepseek-r1": 131_072,
+        # ── OpenRouter / 常见云端模型 ──
+        "gpt-4o": 128_000,
+        "gpt-4o-mini": 128_000,
+        "claude-sonnet-4-6": 200_000,
+        "gemini-2.0-flash": 1_000_000,
+        "llama-3.3-70b": 128_000,
     },
     # ── 调度器 ──
     "SCHEDULER_ENABLED": True,
