@@ -16,11 +16,13 @@ from lumen_agent.api.routers import (
     knowledge as knowledge_router,
     logs_router,
     mcp_servers as mcp_servers_router,
+    mcp_stdio as mcp_stdio_router,
     memories as memories_router,
     scheduler_router,
     sessions as sessions_router,
     skills as skills_router,
     tools as tools_router,
+    upload as upload_router,
     vm as vm_router,
     vm_ws as vm_ws_router,
 )
@@ -37,19 +39,28 @@ async def lifespan(_app: FastAPI):
     # ── 初始化工作区（幂等） ─────────────────────────────────
     init_workspace()
 
-    # ── 启动 MCP 全局管理器（全量连接 enabled 的 MCP Server） ──
+    # ── 启动 MCP 全局管理器（全量连接 enabled 的 HTTP + stdio MCP Server） ──
     try:
         from lumen_agent.model_adapters.client import get_mcp_manager
         from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
+        from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import SqliteMCPStdioServerRepository
 
         settings = get_settings()
-        repo = SqliteMCPServerRepository(resolve_db_path(settings))
-        enabled_servers = await repo.list_enabled()
-        await get_mcp_manager().start_all(enabled_servers)
+        db_path = resolve_db_path(settings)
+
+        http_repo = SqliteMCPServerRepository(db_path)
+        enabled_http = await http_repo.list_enabled()
+        await get_mcp_manager().start_all(enabled_http)
+
+        stdio_repo = SqliteMCPStdioServerRepository(db_path)
+        enabled_stdio = await stdio_repo.list_enabled()
+        await get_mcp_manager().start_all_stdio(enabled_stdio)
+
         logging.info(
-            "MCP 管理器启动，已连接 %s / %s 个服务器",
+            "MCP 管理器启动，已连接 %s 个服务器（http=%s stdio=%s）",
             len(get_mcp_manager().list_connection_ids()),
-            len(enabled_servers),
+            len(enabled_http),
+            len(enabled_stdio),
         )
     except Exception:
         logging.exception("MCP 管理器启动失败")
@@ -193,10 +204,12 @@ def create_app() -> FastAPI:
     application.include_router(knowledge_router.router)
     application.include_router(memories_router.router)
     application.include_router(mcp_servers_router.router)
+    application.include_router(mcp_stdio_router.router)
     application.include_router(scheduler_router.router)
     application.include_router(api_keys_router.router)
     application.include_router(configs_router.router)
     application.include_router(logs_router.router)
+    application.include_router(upload_router.router)
     application.include_router(vm_router.router)
     application.include_router(vm_ws_router.router)
     return application

@@ -159,8 +159,6 @@
         </button>
         <AppTopbar
           :active-view="activeView"
-          :use-agent-mode="useAgentMode"
-          @update:use-agent-mode="useAgentMode = $event"
           @scroll-to-bottom="scrollToBottom"
           @refresh="refreshCapabilities"
           @open-api-keys="apiKeyDialogVisible = true"
@@ -213,6 +211,7 @@
           :approval-mode="approvalMode"
           :status-text="statusText"
           @update:prompt="prompt = $event"
+          @update:use-agent-mode="useAgentMode = $event"
           @send="sendMessage"
           @interrupt="interruptChat"
           @update:approval-mode="approvalMode = $event"
@@ -359,7 +358,7 @@ const onDeleteSession = async (sessionId: string) => {
 }
 
 // ── 分页辅助 ──────────────────────────────────────
-type CB = { type: string; text?: string; thinking?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; id?: string; tool_use_id?: string }
+type CB = { type: string; text?: string; thinking?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; id?: string; tool_use_id?: string; image_url?: { url: string } }
 interface StoredMsg { seq: number; role: string; content: CB[]; created_at: string; updated_at: string; status: number }
 
 const formatStoredTime = (iso: string) => {
@@ -372,6 +371,7 @@ const cbToBlock = (cb: CB): ChatBlock => {
   if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
   if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
   if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
+  if (cb.type === 'image_url') return { id: crypto.randomUUID(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
   return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
 }
 
@@ -429,7 +429,7 @@ const loadSessionMessages = async (sessionId: string) => {
   chatViewRef.value?.scrollPaneToBottom()
 }
 
-const sendMessage = async () => {
+const sendMessage = async (imageUrls: string[] = []) => {
   const content = prompt.value.trim()
   if (!content || sending.value) return
   prompt.value = ''
@@ -440,6 +440,7 @@ const sendMessage = async () => {
     mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
       ? selectedMcpServerIds.value
       : undefined,
+    image_urls: useAgentMode.value && imageUrls.length ? imageUrls : undefined,
   })
   await nextTick()
   chatViewRef.value?.scrollPaneToBottom()
@@ -604,6 +605,10 @@ watch(activeView, async () => {
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #C8DFC0 transparent;
 }
 
 /* ── 导航分组标签 ── */

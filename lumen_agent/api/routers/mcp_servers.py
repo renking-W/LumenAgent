@@ -41,7 +41,10 @@ async def create_mcp_server(
     body: MCPServerCreate,
     repo: SqliteMCPServerRepository = Depends(_get_repo),
 ) -> MCPServerResponse:
-    return await svc_create(repo, body)
+    try:
+        return await svc_create(repo, body)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/{server_id}", response_model=MCPServerResponse)

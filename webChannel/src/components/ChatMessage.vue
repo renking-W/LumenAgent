@@ -1,4 +1,12 @@
 <template>
+  <!-- 图片灯箱 -->
+  <teleport to="body">
+    <div v-if="lightboxUrl" class="lightbox" @click.self="lightboxUrl = ''" @keydown.esc="lightboxUrl = ''" tabindex="-1">
+      <button class="lightbox-close" @click="lightboxUrl = ''">×</button>
+      <img :src="lightboxUrl" class="lightbox-img" alt="图片预览" />
+    </div>
+  </teleport>
+
   <div class="message-row" :class="message.role">
     <img v-if="message.role === 'assistant'" class="msg-avatar" src="/logo.svg" alt="AI" />
     <article
@@ -34,6 +42,16 @@
             </button>
           </div>
         </details>
+
+        <!-- 图片块 -->
+        <div v-else-if="item.kind === 'single' && item.block.kind === 'image'" class="block block--image">
+          <img
+            :src="item.block.content"
+            class="msg-image"
+            alt="图片"
+            @click="openImagePreview(item.block.content)"
+          />
+        </div>
 
         <!-- 文本块 → 用户消息纯文本，AI 消息 markdown 渲染 -->
         <div v-else-if="item.kind === 'single'" class="block block--text">
@@ -165,6 +183,11 @@ const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
 const isCollapsible = (kind: string) =>
   ['thinking', 'error'].includes(kind)
+
+const lightboxUrl = ref('')
+const openImagePreview = (url: string) => {
+  lightboxUrl.value = url
+}
 
 // ── 合并 tool_use + tool_result + awaiting_approval 分组 ──
 interface ToolRenderItem {
@@ -616,5 +639,84 @@ watch(
   margin-bottom: 0;
   max-height: 120px;
   font-size: 0.75rem;
+}
+
+/* ── 图片块 ── */
+.block--image {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-block;
+  max-width: 100%;
+}
+.msg-image {
+  display: block;
+  max-width: 200px;
+  max-height: 150px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-slate-200);
+  box-shadow: var(--shadow-sm);
+  cursor: zoom-in;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+  object-fit: contain;
+}
+.msg-image:hover {
+  box-shadow: var(--shadow-md);
+  transform: scale(1.02);
+}
+
+/* ── 灯箱 ── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: lightbox-in 0.18s ease;
+}
+@keyframes lightbox-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  cursor: default;
+  animation: lightbox-scale-in 0.18s ease;
+}
+@keyframes lightbox-scale-in {
+  from { transform: scale(0.88); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.lightbox-close {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+  z-index: 10000;
+}
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.22);
 }
 </style>

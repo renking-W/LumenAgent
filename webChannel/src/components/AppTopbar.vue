@@ -4,12 +4,6 @@
       <h1>{{ pageTitle }}</h1>
     </div>
     <div class="topbar-actions">
-      <el-switch
-        :model-value="useAgentMode"
-        @update:model-value="$emit('update:useAgentMode', $event)"
-        active-text="Agent"
-        inactive-text="Simple"
-      />
       <el-button
         v-if="activeView === 'chat'"
         type="primary"
@@ -32,11 +26,9 @@ import { computed } from 'vue'
 
 const props = defineProps<{
   activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'
-  useAgentMode: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:useAgentMode': [value: boolean]
   'scroll-to-bottom': []
   refresh: []
   'open-api-keys': []

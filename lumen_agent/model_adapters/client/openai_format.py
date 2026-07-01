@@ -11,6 +11,15 @@ from typing import Any
 from lumen_agent.domain.messages import ensure_blocks
 
 
+def _is_sendable_image_url(url: str) -> bool:
+    """判断图像 URL 是否可以直接发给外部 LLM。
+
+    本地文件引用（以 "/" 开头的相对路径，如 /v1/files/xxx）仅用于 DB 存储，
+    不能发给外部 LLM。data URI 和 http(s):// 可以发送。
+    """
+    return url.startswith(("http://", "https://", "data:"))
+
+
 def to_openai_tools(internal_tools: list[dict]) -> list[dict]:
     """将统一内部格式工具定义转为 OpenAI Chat Completions 格式。
 
@@ -134,7 +143,28 @@ def to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if plain:
                     result.append({"role": "user", "content": plain})
             else:
-                result.append({"role": "user", "content": "".join(text_parts)})
+                # 收集图像块，过滤掉本地文件引用（以 "/" 开头的相对路径）
+                # 这类引用是 DB 存储格式，不能直接发给外部 LLM
+                # 真正要送给 LLM 的图像（data URI 或 https://）来自 user_extra_blocks
+                image_blocks = [
+                    b for b in content
+                    if b.get("type") == "image_url"
+                    and _is_sendable_image_url(b.get("image_url", {}).get("url", ""))
+                ]
+                if image_blocks:
+                    # 有可发送图像时输出多模态数组
+                    multimodal: list[dict] = []
+                    combined_text = "".join(text_parts)
+                    if combined_text:
+                        multimodal.append({"type": "text", "text": combined_text})
+                    for ib in image_blocks:
+                        multimodal.append({
+                            "type": "image_url",
+                            "image_url": ib.get("image_url", {}),
+                        })
+                    result.append({"role": "user", "content": multimodal})
+                else:
+                    result.append({"role": "user", "content": "".join(text_parts)})
 
         else:
             # system 等其他角色

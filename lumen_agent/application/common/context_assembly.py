@@ -56,6 +56,7 @@ async def assemble_for_llm(
     user_message: str,
     counter: TokenCounter,
     context_window: int,
+    user_extra_blocks: list[dict] | None = None,
 ) -> AssembledContext:
     """组装本轮 LLM 输入消息，含 token 预算检查与强制压缩。
 
@@ -113,9 +114,10 @@ async def assemble_for_llm(
             )
 
         messages.extend(history_msgs)
-        messages.append(
-            {"role": "user", "content": [{"type": "text", "text": user_message}]}
-        )
+        user_content: list[dict] = [{"type": "text", "text": user_message}]
+        if user_extra_blocks:
+            user_content.extend(user_extra_blocks)
+        messages.append({"role": "user", "content": user_content})
 
         total_tokens = counter.count_messages(messages)
 

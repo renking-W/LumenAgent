@@ -106,6 +106,11 @@ class DirGuide:
         """返回 ``<项目根>/work_space/skills/``。"""
         return cls.workspace_dir() / "skills"
 
+    @classmethod
+    def tmp_dir(cls) -> Path:
+        """返回 ``<项目根>/work_space/tmp/``（临时上传文件）。"""
+        return cls.workspace_dir() / "tmp"
+
     # ── 前端路径 ───────────────────────────────────────────────────
 
     @classmethod

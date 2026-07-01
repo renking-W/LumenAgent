@@ -21,4 +21,9 @@ def get_model_adapter(settings: Settings) -> ModelAdapter:
         from lumen_agent.model_adapters.open_router import OpenRouterAdapter
 
         return OpenRouterAdapter(OpenRouterHttpClient(settings))
+    if provider == "agnes":
+        from lumen_agent.model_adapters.client.agnes_client import AgnesHttpClient
+        from lumen_agent.model_adapters.agnes import AgnesAdapter
+
+        return AgnesAdapter(AgnesHttpClient(settings))
     return DeepSeekAdapter(DeepSeekHttpClient(settings))

@@ -30,6 +30,7 @@ class MCPServerResponse(BaseModel):
     name: str
     url: str
     api_key: str | None
+    transport: str = ""
     enabled: bool
     created_at: str
     updated_at: str

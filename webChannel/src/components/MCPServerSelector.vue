@@ -45,10 +45,13 @@
             :key="svr.id"
             class="mcp-tag"
             :class="{ 'mcp-tag--active': selectedIdsSet.has(svr.id) }"
-            :title="svr.url"
+            :title="svr.kind === 'http' ? svr.url : svr.command + ' ' + svr.args.join(' ')"
             @click="toggleServer(svr.id)"
           >
             <span class="mcp-tag-dot"></span>
+            <span class="mcp-kind-badge" :class="svr.kind === 'http' ? 'kind-http' : 'kind-stdio'">
+              {{ svr.kind === 'http' ? 'H' : 'S' }}
+            </span>
             <span class="mcp-tag-name">{{ svr.name }}</span>
             <span v-if="selectedIdsSet.has(svr.id)" class="mcp-tag-check">✓</span>
           </div>
@@ -60,7 +63,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { MCPServerInfo } from '../types'
+import type { MCPUnifiedServer, MCPServerInfo, MCPStdioServerInfo } from '../types'
 
 const props = defineProps<{
   selectedIds: string[]
@@ -71,11 +74,10 @@ const emit = defineEmits<{
   'update:selectedIds': [ids: string[]]
 }>()
 
-const servers = ref<MCPServerInfo[]>([])
+const servers = ref<MCPUnifiedServer[]>([])
 const loading = ref(false)
-const collapsed = ref(true) // 默认收缩
+const collapsed = ref(true)
 
-// 只展示已启用的 MCP 服务器
 const filteredServers = computed(() =>
   servers.value.filter((s) => s.enabled)
 )
@@ -83,7 +85,6 @@ const filteredServers = computed(() =>
 const selectedIdsSet = computed(() => new Set(props.selectedIds))
 const selectedCount = computed(() => props.selectedIds.length)
 
-/** 选中的 MCP 名称摘要（逗号分隔，过长截断） */
 const selectedSummary = computed(() => {
   const names = servers.value
     .filter((s) => props.selectedIds.includes(s.id))
@@ -105,10 +106,16 @@ const toggleServer = (id: string) => {
 const fetchServers = async () => {
   loading.value = true
   try {
-    const res = await fetch('/v1/mcp/servers')
-    if (res.ok) {
-      servers.value = await res.json()
-    }
+    const [httpRes, stdioRes] = await Promise.all([
+      fetch('/v1/mcp/servers'),
+      fetch('/v1/mcp/servers/stdio'),
+    ])
+    const httpList: MCPServerInfo[] = httpRes.ok ? await httpRes.json() : []
+    const stdioList: MCPStdioServerInfo[] = stdioRes.ok ? await stdioRes.json() : []
+    servers.value = [
+      ...httpList.map((s) => ({ ...s, kind: 'http' as const })),
+      ...stdioList.map((s) => ({ ...s, kind: 'stdio' as const })),
+    ]
   } catch {
     // 静默失败
   } finally {
@@ -116,7 +123,6 @@ const fetchServers = async () => {
   }
 }
 
-// 当列表刷新时，清除已经不存在的选择
 watch(servers, () => {
   const validIds = new Set(filteredServers.value.map((s) => s.id))
   const newSelected = props.selectedIds.filter((id) => validIds.has(id))
@@ -126,7 +132,6 @@ watch(servers, () => {
 })
 
 defineExpose({ fetchServers })
-
 onMounted(fetchServers)
 </script>
 
@@ -292,5 +297,21 @@ onMounted(fetchServers)
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--color-gold-600);
+}
+.mcp-kind-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.kind-http {
+  background: #fef3c7;
+  color: #92400e;
+}
+.kind-stdio {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 </style>

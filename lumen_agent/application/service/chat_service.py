@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import mimetypes
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -12,7 +14,7 @@ from lumen_agent.application.common.context_assembly import assemble_for_llm
 from lumen_agent.application.service.summary_service import maybe_trigger_summary
 from lumen_agent.application.service.title_service import maybe_generate_title
 from lumen_agent.config import Settings, get_context_window
-from lumen_agent.domain.messages import text_message
+from lumen_agent.domain.messages import image_block, text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
@@ -192,6 +194,43 @@ async def reply_single_turn_stream(
         asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))
 
 
+def _build_data_uri_blocks(image_urls: list[str]) -> list[dict]:
+    """将图片 URL（/v1/files/{name}）解析为 base64 data URI 图像块列表。
+
+    URL 若不是本地文件引用（/v1/files/...），则直接当作远端 URL 传递给 LLM。
+    读取失败时记录警告并跳过，不中断请求。
+    """
+    from lumen_agent.application.uitls.dir_guide import DirGuide
+
+    blocks: list[dict] = []
+    tmp_dir = DirGuide.tmp_dir()
+
+    for url in image_urls:
+        try:
+            if url.startswith("/v1/files/"):
+                filename = url.removeprefix("/v1/files/")
+                # 防路径穿越
+                if "/" in filename or "\\" in filename or ".." in filename:
+                    logging.warning("跳过非法图片路径：%s", url)
+                    continue
+                file_path = tmp_dir / filename
+                if not file_path.is_file():
+                    logging.warning("图片文件不存在，已跳过：%s", file_path)
+                    continue
+                data = file_path.read_bytes()
+                mime = mimetypes.guess_type(str(file_path))[0] or "image/jpeg"
+                b64 = base64.b64encode(data).decode()
+                data_uri = f"data:{mime};base64,{b64}"
+                blocks.append({"type": "image_url", "image_url": {"url": data_uri}})
+            else:
+                # 外部 URL 直接传给 LLM
+                blocks.append({"type": "image_url", "image_url": {"url": url}})
+        except Exception:
+            logging.warning("构建图片 data URI 失败，已跳过：%s", url, exc_info=True)
+
+    return blocks
+
+
 async def reply_with_agent(
     repo: ConversationRepositoryPort,
     llm: ModelAdapter,
@@ -199,11 +238,12 @@ async def reply_with_agent(
     session_kind: int,
     user_message: str,
     settings: Settings,
-    approval_mode : str | None = None,
+    approval_mode: str | None = None,
     on_connect: StreamHandleCallback | None = None,
     mcp_servers: list[Any] | None = None,
     mcp_server_ids: list[str] | None = None,
-    self_system : str | None = None,
+    self_system: str | None = None,
+    image_urls: list[str] | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
 
@@ -226,8 +266,12 @@ async def reply_with_agent(
     init_tools()
 
     # 1) 会话准备 + 用户消息落库
-    await repo.ensure_session(session_id,session_kind)
+    await repo.ensure_session(session_id, session_kind)
     user_blocks = text_message("user", user_message)["content"]
+    # 持久化时附带轻量图像引用（存 URL 路径，不存 data URI）
+    if image_urls:
+        for img_url in image_urls:
+            user_blocks.append(image_block(img_url))  # type: ignore[arg-type]
     await repo.append_message(session_id, "user", user_blocks)
 
     # 异步生成会话标题（仅首次消息触发）
@@ -287,6 +331,12 @@ async def reply_with_agent(
         # 3) 组装上下文（含 token 预算检查 / 强制压缩）
         counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))
         context_window = get_context_window(settings, settings.get("LLM_MODEL", "deepseek-v4-flash"))
+
+        # 将图片即时转为 base64 data URI，随请求体内联发给 LLM（不入库）
+        image_extra_blocks: list[dict] | None = None
+        if image_urls:
+            image_extra_blocks = _build_data_uri_blocks(image_urls)
+
         ctx = await assemble_for_llm(
             repo, llm, settings,
             session_id=session_id,
@@ -294,6 +344,7 @@ async def reply_with_agent(
             user_message=user_message,
             counter=counter,
             context_window=context_window,
+            user_extra_blocks=image_extra_blocks,
         )
         messages = ctx.messages
         logging.info(

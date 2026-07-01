@@ -34,6 +34,10 @@ class ChatRequest(BaseModel):
         description="用户自定义系统提示语",
     )
     approval_mode: Literal["none", "all", "dangerous"] = "dangerous"
+    image_urls: list[str] | None = Field(
+        default=None,
+        description="本轮附带的图片 URL 列表（来自 /v1/upload 返回的 url），仅 agent 模式下生效",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -65,6 +69,7 @@ class ContentBlock(BaseModel):
     tool_use_id: str | None = None
     content: str | None = None
     is_error: bool | None = None
+    image_url: dict[str, str] | None = None
 
 
 class StoredMessage(BaseModel):

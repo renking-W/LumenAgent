@@ -40,10 +40,27 @@ export type MCPServerInfo = {
   name: string
   url: string
   api_key: string | null
+  transport?: string
   enabled: boolean
   created_at: string
   updated_at: string
 }
+
+export type MCPStdioServerInfo = {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  cwd: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type MCPUnifiedServer =
+  | (MCPServerInfo & { kind: 'http' })
+  | (MCPStdioServerInfo & { kind: 'stdio' })
 
 export type MCPServerTestResult = {
   status: 'ok' | 'error'

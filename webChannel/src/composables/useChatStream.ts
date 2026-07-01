@@ -13,6 +13,7 @@ interface CB {
   type: string; text?: string; thinking?: string
   name?: string; input?: unknown; content?: string
   is_error?: boolean; id?: string; tool_use_id?: string
+  image_url?: { url: string }
 }
 
 interface StoredMsg {
@@ -26,6 +27,7 @@ interface SendOptions {
   approval_mode?: string
   self_system?: string
   session_kind?: number
+  image_urls?: string[]
 }
 
 export function useChatStream() {
@@ -310,6 +312,7 @@ export function useChatStream() {
           mcp_server_ids: options?.mcp_server_ids,
           self_system: options?.self_system,
           session_kind: options?.session_kind,
+          image_urls: options?.image_urls?.length ? options.image_urls : undefined,
         }),
         signal: abortController.value.signal,
       })
@@ -380,6 +383,7 @@ export function useChatStream() {
             if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
             if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
             if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
+            if (cb.type === 'image_url') return { id: crypto.randomUUID(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
             return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
           }),
           seq: sm.seq,

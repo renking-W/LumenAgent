@@ -126,11 +126,12 @@ async def post_chat_stream(
 
     if body.mode == "agent":
         stream_it = reply_with_agent(
-            repo, llm, body.session_id, body.session_kind ,body.message, settings,body.approval_mode,
+            repo, llm, body.session_id, body.session_kind, body.message, settings, body.approval_mode,
             on_connect=on_connect,
             mcp_servers=body.mcp_servers,
             mcp_server_ids=body.mcp_server_ids,
             self_system=body.self_system,
+            image_urls=body.image_urls,
         )
     else:
         stream_it = reply_single_turn_stream(

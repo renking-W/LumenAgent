@@ -24,6 +24,7 @@ def _to_response(server: dict) -> MCPServerResponse:
         name=server["name"],
         url=server["url"],
         api_key=server.get("api_key") or None,
+        transport=server.get("transport") or "",
         enabled=bool(server["enabled"]),
         created_at=server["created_at"],
         updated_at=server["updated_at"],
@@ -40,14 +41,42 @@ async def create_mcp_server(
     repo: SqliteMCPServerRepository,
     body: MCPServerCreate,
 ) -> MCPServerResponse:
-    """新增 MCP Server 配置，enabled 时自动连接。"""
-    server = await repo.create(body.model_dump())
+    """新增 MCP Server 配置。
+
+    若 enabled=True，先用临时连接验证可达性（探测 transport）；
+    连接失败直接抛 ValueError，**不写入 DB**。
+    验证通过后写 DB，再以已知 transport 直接注册到 manager（无需二次探测）。
+    """
+    resolved_transport = ""
+
+    if body.enabled:
+        probe = MCPConnection(body.url, body.api_key or None, "")
+        try:
+            await probe.connect()
+            resolved_transport = probe.resolved_transport
+            await probe.close()
+            logger.info(
+                "MCP Server %s 预连接成功，transport=%s", body.name, resolved_transport
+            )
+        except Exception as e:
+            logger.warning("MCP Server %s 连接验证失败: %s", body.url, e)
+            raise ValueError(f"无法连接到 MCP Server：{e}") from e
+
+    data = body.model_dump()
+    data["transport"] = resolved_transport
+    server = await repo.create(data)
     logger.info("MCP Server 已创建：%s（%s）", server["name"], server["url"])
 
     if server["enabled"]:
         mgr = get_mcp_manager()
-        ok = await mgr.connect_one(server["id"], server["url"], server.get("api_key") or None)
-        logger.info("MCP Server %s 连接%s", server["name"], "成功" if ok else "失败")
+        ok, _ = await mgr.connect_one(
+            server["id"],
+            server["url"],
+            server.get("api_key") or None,
+            resolved_transport,
+        )
+        if not ok:
+            logger.warning("MCP Server %s 注册到 manager 失败（已保存配置）", server["name"])
 
     return _to_response(server)
 
@@ -66,7 +95,10 @@ async def update_mcp_server(
     server_id: str,
     body: MCPServerUpdate,
 ) -> MCPServerResponse | None:
-    """更新 MCP Server 配置，变更 URL/api_key/enabled 时自动重连。未找到返回 None。
+    """更新 MCP Server 配置，变更 URL/api_key/enabled 时自动重连。
+
+    - 若变更了 url 或 api_key，清空 transport 让下次连接重新探测。
+    - 未找到返回 None。
 
     Raises:
         ValueError: 没有需要更新的字段。
@@ -74,6 +106,10 @@ async def update_mcp_server(
     update_data = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update_data:
         raise ValueError("没有需要更新的字段")
+
+    # url 或 api_key 变更则清空 transport，触发重新探测
+    if "url" in update_data or "api_key" in update_data:
+        update_data["transport"] = ""
 
     server = await repo.update(server_id, update_data)
     if server is None:
@@ -83,8 +119,21 @@ async def update_mcp_server(
 
     mgr = get_mcp_manager()
     if server["enabled"]:
-        ok = await mgr.reconnect(server_id, server["url"], server.get("api_key") or None)
-        logger.info("MCP Server %s 重连%s", server["name"], "成功" if ok else "失败")
+        ok, resolved = await mgr.reconnect(
+            server_id,
+            server["url"],
+            server.get("api_key") or None,
+            server.get("transport") or "",
+        )
+        logger.info(
+            "MCP Server %s 重连%s transport=%s",
+            server["name"],
+            "成功" if ok else "失败",
+            resolved,
+        )
+        if ok and resolved and resolved != server.get("transport", ""):
+            await repo.update_transport(server_id, resolved)
+            server["transport"] = resolved
     else:
         await mgr.disconnect(server_id)
         logger.info("MCP Server %s 已断开", server["name"])
@@ -112,12 +161,16 @@ async def test_mcp_server(
     repo: SqliteMCPServerRepository,
     server_id: str,
 ) -> MCPServerTestResult | None:
-    """测试 MCP Server 连接是否正常（临时连接，不保持）。未找到返回 None。"""
+    """测试 MCP Server 连接（临时连接，使用 DB 中已有 transport 加速）。未找到返回 None。"""
     server = await repo.get(server_id)
     if server is None:
         return None
 
-    conn = MCPConnection(server["url"], server.get("api_key") or None)
+    conn = MCPConnection(
+        server["url"],
+        server.get("api_key") or None,
+        server.get("transport") or "",
+    )
     try:
         await conn.connect()
         tools = await conn.list_tools()

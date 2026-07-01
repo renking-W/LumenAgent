@@ -88,6 +88,8 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "claude-sonnet-4-6": 200_000,
         "gemini-2.0-flash": 1_000_000,
         "llama-3.3-70b": 128_000,
+        # ── Agnes ──
+        "agnes-2.0-flash": 524_288,
     },
     # ── 调度器 ──
     "SCHEDULER_ENABLED": True,

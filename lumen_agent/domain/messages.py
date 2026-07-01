@@ -7,7 +7,7 @@ from typing import Any, TypedDict
 
 
 class ContentBlock(TypedDict, total=False):
-    """统一内容块：当前先支持 text / thinking / tool_use / tool_result。"""
+    """统一内容块：text / thinking / tool_use / tool_result / image_url。"""
 
     type: str
     text: str
@@ -18,6 +18,8 @@ class ContentBlock(TypedDict, total=False):
     tool_use_id: str
     content: str
     is_error: bool
+    # 图像块：{"url": "https://..." 或 "data:image/...;base64,..."}
+    image_url: dict[str, str]
 
 
 class InternalMessage(TypedDict):
@@ -30,6 +32,11 @@ class InternalMessage(TypedDict):
 def text_message(role: str, text: str) -> InternalMessage:
     """构造单条纯文本内部消息。"""
     return {"role": role, "content": [{"type": "text", "text": text}]}
+
+
+def image_block(url: str) -> ContentBlock:
+    """构造图像内容块（url 可为 https:// 或 data URI）。"""
+    return {"type": "image_url", "image_url": {"url": url}}
 
 
 def ensure_blocks(content: Any) -> list[ContentBlock]:
