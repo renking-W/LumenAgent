@@ -11,6 +11,11 @@ from lumen_agent.api.schemas.mcp_dtos import (
     MCPServerTestResult,
     MCPServerUpdate,
 )
+from lumen_agent.application.service.mcp_lookup import (
+    assert_name_available,
+    assert_name_available_exclude,
+)
+from lumen_agent.config import Settings, get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 from lumen_agent.model_adapters.client import MCPConnection, get_mcp_manager
 
@@ -40,6 +45,7 @@ async def list_mcp_servers(repo: SqliteMCPServerRepository) -> list[MCPServerRes
 async def create_mcp_server(
     repo: SqliteMCPServerRepository,
     body: MCPServerCreate,
+    settings: Settings | None = None,
 ) -> MCPServerResponse:
     """新增 MCP Server 配置。
 
@@ -47,6 +53,10 @@ async def create_mcp_server(
     连接失败直接抛 ValueError，**不写入 DB**。
     验证通过后写 DB，再以已知 transport 直接注册到 manager（无需二次探测）。
     """
+    if settings is None:
+        settings = get_settings()
+    await assert_name_available(resolve_db_path(settings), body.name)
+
     resolved_transport = ""
 
     if body.enabled:
@@ -94,6 +104,7 @@ async def update_mcp_server(
     repo: SqliteMCPServerRepository,
     server_id: str,
     body: MCPServerUpdate,
+    settings: Settings | None = None,
 ) -> MCPServerResponse | None:
     """更新 MCP Server 配置，变更 URL/api_key/enabled 时自动重连。
 
@@ -103,9 +114,15 @@ async def update_mcp_server(
     Raises:
         ValueError: 没有需要更新的字段。
     """
+    if settings is None:
+        settings = get_settings()
     update_data = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update_data:
         raise ValueError("没有需要更新的字段")
+    if "name" in update_data:
+        await assert_name_available_exclude(
+            resolve_db_path(settings), update_data["name"], server_id
+        )
 
     # url 或 api_key 变更则清空 transport，触发重新探测
     if "url" in update_data or "api_key" in update_data:

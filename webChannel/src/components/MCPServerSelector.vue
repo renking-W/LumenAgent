@@ -107,8 +107,8 @@ const fetchServers = async () => {
   loading.value = true
   try {
     const [httpRes, stdioRes] = await Promise.all([
-      fetch('/v1/mcp/servers'),
-      fetch('/v1/mcp/servers/stdio'),
+      fetch('/v1/mcp/http-servers'),
+      fetch('/v1/mcp/stdio-servers'),
     ])
     const httpList: MCPServerInfo[] = httpRes.ok ? await httpRes.json() : []
     const stdioList: MCPStdioServerInfo[] = stdioRes.ok ? await stdioRes.json() : []

@@ -262,8 +262,8 @@ const fetchServers = async () => {
   loading.value = true
   try {
     const [httpRes, stdioRes] = await Promise.all([
-      fetch('/v1/mcp/servers'),
-      fetch('/v1/mcp/servers/stdio'),
+      fetch('/v1/mcp/http-servers'),
+      fetch('/v1/mcp/stdio-servers'),
     ])
     const httpList: MCPServerInfo[] = httpRes.ok ? await httpRes.json() : []
     const stdioList: MCPStdioServerInfo[] = stdioRes.ok ? await stdioRes.json() : []
@@ -284,8 +284,8 @@ const testServer = async (svr: MCPUnifiedServer) => {
   testingId.value = svr.id
   testResults.value[svr.id] = undefined as any
   const url = svr.kind === 'stdio'
-    ? `/v1/mcp/servers/stdio/${svr.id}/test`
-    : `/v1/mcp/servers/${svr.id}/test`
+    ? `/v1/mcp/stdio-servers/${svr.id}/test`
+    : `/v1/mcp/http-servers/${svr.id}/test`
   try {
     const res = await fetch(url, { method: 'POST' })
     testResults.value[svr.id] = res.ok ? await res.json() : { status: 'error', message: '请求失败' }
@@ -298,8 +298,8 @@ const testServer = async (svr: MCPUnifiedServer) => {
 
 const deleteServer = async (svr: MCPUnifiedServer) => {
   const url = svr.kind === 'stdio'
-    ? `/v1/mcp/servers/stdio/${svr.id}`
-    : `/v1/mcp/servers/${svr.id}`
+    ? `/v1/mcp/stdio-servers/${svr.id}`
+    : `/v1/mcp/http-servers/${svr.id}`
   try {
     const res = await fetch(url, { method: 'DELETE' })
     if (res.ok) {
@@ -358,7 +358,7 @@ const submitHttpForm = async () => {
     if (isEditing.value && editingId.value) {
       const existing = servers.value.find((s) => s.id === editingId.value)
       if (!httpForm.api_key && existing && existing.kind === 'http' && existing.api_key) payload.api_key = null
-      const res = await fetch(`/v1/mcp/servers/${editingId.value}`, {
+      const res = await fetch(`/v1/mcp/http-servers/${editingId.value}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       if (res.ok) {
@@ -369,7 +369,7 @@ const submitHttpForm = async () => {
         ElMessage.success('已更新'); formDialogVisible.value = false
       } else { ElMessage.error(`更新失败: ${await res.text()}`) }
     } else {
-      const res = await fetch('/v1/mcp/servers', {
+      const res = await fetch('/v1/mcp/http-servers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       if (res.ok) {
@@ -396,7 +396,7 @@ const submitStdioForm = async () => {
     if (stdioForm.cwd.trim()) payload.cwd = stdioForm.cwd.trim()
 
     if (isEditing.value && editingId.value) {
-      const res = await fetch(`/v1/mcp/servers/stdio/${editingId.value}`, {
+      const res = await fetch(`/v1/mcp/stdio-servers/${editingId.value}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       if (res.ok) {
@@ -407,7 +407,7 @@ const submitStdioForm = async () => {
         ElMessage.success('已更新'); formDialogVisible.value = false
       } else { ElMessage.error(`更新失败: ${await res.text()}`) }
     } else {
-      const res = await fetch('/v1/mcp/servers/stdio', {
+      const res = await fetch('/v1/mcp/stdio-servers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       if (res.ok) {

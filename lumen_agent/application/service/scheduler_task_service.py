@@ -16,6 +16,7 @@ from lumen_agent.api.schemas.scheduler_dtos import (
     SchedulerJobList,
     UpdatePromptResponse,
 )
+from lumen_agent.application.service.mcp_lookup import resolve_names_to_ids
 from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_scheduler import (
     SqliteSchedulerRepository,
@@ -66,6 +67,7 @@ async def list_jobs(repo: SqliteSchedulerRepository) -> SchedulerJobList:
             created_at=t["created_at"],
             next_run_time=extra.get("next_run_time"),
             pending=extra.get("pending"),
+            mcp_server_ids=t.get("mcp_server_ids") or [],
         ))
     return SchedulerJobList(total=len(items), jobs=items)
 
@@ -89,6 +91,7 @@ async def get_job(repo: SqliteSchedulerRepository, job_id: str) -> SchedulerJobI
         updated_at=task.get("updated_at"),
         next_run_time=extra.get("next_run_time"),
         pending=extra.get("pending"),
+        mcp_server_ids=task.get("mcp_server_ids") or [],
     )
 
 
@@ -112,6 +115,10 @@ async def create_job(
     if not all([name, prompt, trigger_type, trigger_expr]):
         raise ValueError("name、prompt、trigger_type、trigger_expr 不能为空")
 
+    mcp_server_ids: list[str] = []
+    if body.mcp_names:
+        mcp_server_ids = await resolve_names_to_ids(resolve_db_path(settings), body.mcp_names)
+
     task_id = f"scheduled_{uuid.uuid4().hex[:8]}"
 
     if not SchedulerService.is_running():
@@ -130,6 +137,7 @@ async def create_job(
                 "task_name": name,
                 "prompt": prompt,
                 "trigger_type": trigger_type,
+                "mcp_server_ids": mcp_server_ids,
             },
             replace_existing=False,
         )
@@ -149,6 +157,7 @@ async def create_job(
         "enabled": True,
         "created_by": "api",
         "session_id": f"__scheduled__{task_id}",
+        "mcp_server_ids": mcp_server_ids,
     })
 
     # 创建对应的会话（kind=1 定时任务）
@@ -270,6 +279,7 @@ async def update_job_prompt(
                     "task_name": task["name"],
                     "prompt": prompt,
                     "trigger_type": task["trigger_type"],
+                    "mcp_server_ids": task.get("mcp_server_ids") or [],
                 },
                 replace_existing=True,
             )

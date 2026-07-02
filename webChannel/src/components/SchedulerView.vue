@@ -59,6 +59,9 @@
               <el-tag size="small" effect="plain" type="default">{{ job.trigger_type }}</el-tag>
               <code class="kanban-card-expr">{{ job.trigger_expr }}</code>
             </div>
+            <div v-if="job.mcp_server_ids?.length" class="kanban-card-mcp">
+              <el-tag v-for="id in job.mcp_server_ids" :key="id" size="small" effect="light" type="info">{{ id }}</el-tag>
+            </div>
             <div class="kanban-card-next">
               <template v-if="job.next_run_time">{{ formatTime(job.next_run_time) }}</template>
               <template v-else>等待调度…</template>
@@ -90,6 +93,9 @@
               <el-tag size="small" effect="plain" type="default">{{ job.trigger_type }}</el-tag>
               <code class="kanban-card-expr">{{ job.trigger_expr }}</code>
             </div>
+            <div v-if="job.mcp_server_ids?.length" class="kanban-card-mcp">
+              <el-tag v-for="id in job.mcp_server_ids" :key="id" size="small" effect="light" type="info">{{ id }}</el-tag>
+            </div>
             <div class="kanban-card-next">—</div>
             <div class="kanban-card-actions">
               <el-button size="small" text @click="showJobDetail(job)">详情</el-button>
@@ -117,6 +123,9 @@
             <div class="kanban-card-meta">
               <el-tag size="small" effect="plain" type="default">{{ job.trigger_type }}</el-tag>
               <code class="kanban-card-expr">{{ job.trigger_expr }}</code>
+            </div>
+            <div v-if="job.mcp_server_ids?.length" class="kanban-card-mcp">
+              <el-tag v-for="id in job.mcp_server_ids" :key="id" size="small" effect="light" type="info">{{ id }}</el-tag>
             </div>
             <div class="kanban-card-next">已结束</div>
             <div class="kanban-card-actions">
@@ -214,6 +223,18 @@
           <h4 class="dialog-label">提示词</h4>
           <div class="dialog-content-box">
             <pre class="dialog-pre">{{ selectedJob.prompt }}</pre>
+          </div>
+        </div>
+        <div v-if="selectedJob.mcp_server_ids?.length" class="dialog-section">
+          <h4 class="dialog-label">MCP 服务</h4>
+          <div class="dialog-mcp-tags">
+            <el-tag
+              v-for="id in selectedJob.mcp_server_ids"
+              :key="id"
+              size="small"
+              effect="light"
+              type="info"
+            >{{ id }}</el-tag>
           </div>
         </div>
         <div class="dialog-section">
@@ -382,6 +403,36 @@
             placeholder="默认为 Asia/Shanghai"
           />
         </el-form-item>
+
+        <el-form-item label="MCP 服务（可选）">
+          <el-select
+            v-model="createForm.mcp_names"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="选择要加载的 MCP Server（可多选）"
+            style="width: 100%"
+            :loading="mcpServersLoading"
+          >
+            <el-option-group v-if="httpMcpOptions.length" label="HTTP MCP">
+              <el-option
+                v-for="opt in httpMcpOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-option-group>
+            <el-option-group v-if="stdioMcpOptions.length" label="Stdio MCP">
+              <el-option
+                v-for="opt in stdioMcpOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="form-tip">选中的 MCP 服务将在任务执行时自动加载</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -404,6 +455,39 @@ import type {
 } from '../types'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+
+// ── MCP 选项 ──────────────────────────────────────
+const mcpServersLoading = ref(false)
+const httpMcpOptions = ref<{ label: string; value: string }[]>([])
+const stdioMcpOptions = ref<{ label: string; value: string }[]>([])
+
+const fetchMcpOptions = async () => {
+  mcpServersLoading.value = true
+  try {
+    const [httpRes, stdioRes] = await Promise.all([
+      fetch('/v1/mcp/http-servers'),
+      fetch('/v1/mcp/stdio-servers'),
+    ])
+    if (httpRes.ok) {
+      const data = await httpRes.json()
+      httpMcpOptions.value = (data || []).map((s: { name: string }) => ({
+        label: s.name,
+        value: s.name,
+      }))
+    }
+    if (stdioRes.ok) {
+      const data = await stdioRes.json()
+      stdioMcpOptions.value = (data || []).map((s: { name: string }) => ({
+        label: s.name,
+        value: s.name,
+      }))
+    }
+  } catch {
+    // silently ignore
+  } finally {
+    mcpServersLoading.value = false
+  }
+}
 
 // ── 状态 ──────────────────────────────────────────
 const loading = ref(false)
@@ -539,6 +623,7 @@ const createForm = reactive({
   trigger_type: 'cron',
   trigger_expr: '',
   timezone: '',
+  mcp_names: [] as string[],
 })
 
 const createFormRules: FormRules = {
@@ -554,7 +639,9 @@ const openCreateDialog = () => {
   createForm.trigger_type = 'cron'
   createForm.trigger_expr = ''
   createForm.timezone = ''
+  createForm.mcp_names = []
   createDialogVisible.value = true
+  fetchMcpOptions()
 }
 
 const submitCreate = async () => {
@@ -571,6 +658,7 @@ const submitCreate = async () => {
       trigger_expr: String(createForm.trigger_expr),
     }
     if (createForm.timezone.trim()) payload.timezone = createForm.timezone
+    if (createForm.mcp_names.length) payload.mcp_names = createForm.mcp_names
 
     const res = await fetch('/v1/scheduler/jobs', {
       method: 'POST',
@@ -647,7 +735,9 @@ const jobStatusType = (job: SchedulerJob): string => {
 // ── 生命周期 ──────────────────────────────────────
 defineExpose({ fetchJobs, jobs })
 
-onMounted(fetchJobs)
+onMounted(() => {
+  fetchJobs()
+})
 </script>
 
 <style scoped>
@@ -859,6 +949,20 @@ onMounted(fetchJobs)
   gap: 2px;
   padding-top: var(--space-1);
   border-top: 1px solid var(--color-slate-100);
+}
+
+/* ── 看板卡片 MCP 标签 ── */
+.kanban-card-mcp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* ── Dialog MCP 标签 ── */
+.dialog-mcp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 /* ── 表单 ── */

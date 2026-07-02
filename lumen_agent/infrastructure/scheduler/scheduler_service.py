@@ -140,6 +140,7 @@ class SchedulerService:
                         "task_name": task["name"],
                         "prompt": task["prompt"],
                         "trigger_type": task["trigger_type"],
+                        "mcp_server_ids": task.get("mcp_server_ids") or [],
                     },
                     replace_existing=True,
                 )

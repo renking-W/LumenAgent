@@ -22,7 +22,7 @@ from lumen_agent.application.service.mcp_server_service import (
 from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 
-router = APIRouter(prefix="/v1/mcp/servers", tags=["mcp"])
+router = APIRouter(prefix="/v1/mcp/http-servers", tags=["mcp"])
 
 
 def _get_repo(settings: Settings = Depends(get_settings)) -> SqliteMCPServerRepository:

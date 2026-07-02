@@ -137,6 +137,7 @@ export type SchedulerJob = {
   updated_at?: string
   next_run_time?: string | null
   pending?: boolean
+  mcp_server_ids?: string[]
 }
 
 export type SchedulerJobListResponse = {
@@ -150,6 +151,7 @@ export type SchedulerCreateRequest = {
   trigger_type: string
   trigger_expr: string
   timezone?: string
+  mcp_names?: string[]
 }
 
 export type SchedulerCreateResponse = {

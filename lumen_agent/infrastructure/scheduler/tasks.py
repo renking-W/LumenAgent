@@ -57,11 +57,24 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         from lumen_agent.infrastructure.data_base.sqlite_conversation import (
             SqliteConversationRepository,
         )
+        from lumen_agent.infrastructure.data_base.sqlite_scheduler import (
+            SqliteSchedulerRepository,
+        )
         from lumen_agent.model_adapters import get_model_adapter
 
         settings = get_settings()
         llm = get_model_adapter(settings)
         repo = SqliteConversationRepository(resolve_db_path(settings))
+
+        # 优先用 kwargs 里的 mcp_server_ids，回退到 DB
+        mcp_server_ids: list[str] = kwargs.get("mcp_server_ids") or []
+        if not mcp_server_ids and task_id != "?":
+            try:
+                sched_repo = SqliteSchedulerRepository(resolve_db_path(settings))
+                task_record = await sched_repo.get_task(task_id)
+                mcp_server_ids = (task_record or {}).get("mcp_server_ids") or []
+            except Exception:
+                logger.warning("[ScheduledTask] 从 DB 读取 mcp_server_ids 失败: task_id=%s", task_id)
 
         # 预创建会话（kind=1 定时任务），reply_with_agent 内部
         # ensure_session 使用 INSERT OR IGNORE，不会覆盖已存在的行
@@ -69,7 +82,11 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         await repo.update_session_title(session_id, task_name)
 
         final_text = ""
-        async for kind, data in reply_with_agent(repo, llm, session_id, 1, prompt, settings, approval_mode="none"):
+        async for kind, data in reply_with_agent(
+            repo, llm, session_id, 1, prompt, settings,
+            approval_mode="none",
+            mcp_server_ids=mcp_server_ids or None,
+        ):
             if kind == "done":
                 final_text = data
 

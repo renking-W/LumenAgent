@@ -33,7 +33,7 @@ class SqliteMCPServerRepository:
             """
             CREATE TABLE IF NOT EXISTS mcp_servers (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 url TEXT NOT NULL,
                 api_key TEXT NOT NULL DEFAULT '',
                 transport TEXT NOT NULL DEFAULT '',

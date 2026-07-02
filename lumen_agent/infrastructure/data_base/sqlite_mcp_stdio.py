@@ -34,7 +34,7 @@ class SqliteMCPStdioServerRepository:
             """
             CREATE TABLE IF NOT EXISTS mcp_stdio_servers (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 command TEXT NOT NULL,
                 args_json TEXT NOT NULL DEFAULT '[]',
                 env_json TEXT NOT NULL DEFAULT '{}',

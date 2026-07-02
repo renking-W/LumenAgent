@@ -10,6 +10,11 @@ from lumen_agent.api.schemas.mcp_stdio_dtos import (
     MCPStdioServerResponse,
     MCPStdioServerUpdate,
 )
+from lumen_agent.application.service.mcp_lookup import (
+    assert_name_available,
+    assert_name_available_exclude,
+)
+from lumen_agent.config import Settings, get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import (
     SqliteMCPStdioServerRepository,
 )
@@ -44,6 +49,7 @@ async def list_stdio_servers(
 async def create_stdio_server(
     repo: SqliteMCPStdioServerRepository,
     body: MCPStdioServerCreate,
+    settings: Settings | None = None,
 ) -> MCPStdioServerResponse:
     """新增 stdio MCP Server 配置。
 
@@ -51,6 +57,10 @@ async def create_stdio_server(
     连接失败直接抛 ValueError，**不写入 DB**。
     验证通过后写 DB，再注册到 manager。
     """
+    if settings is None:
+        settings = get_settings()
+    await assert_name_available(resolve_db_path(settings), body.name)
+
     args = body.args or []
     env = body.env or None
     cwd = body.cwd or None
@@ -101,15 +111,22 @@ async def update_stdio_server(
     repo: SqliteMCPStdioServerRepository,
     server_id: str,
     body: MCPStdioServerUpdate,
+    settings: Settings | None = None,
 ) -> MCPStdioServerResponse | None:
     """更新 stdio MCP Server 配置，相关字段变更时自动重连。
 
     Raises:
         ValueError: 没有需要更新的字段。
     """
+    if settings is None:
+        settings = get_settings()
     update_data = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update_data:
         raise ValueError("没有需要更新的字段")
+    if "name" in update_data:
+        await assert_name_available_exclude(
+            resolve_db_path(settings), update_data["name"], server_id
+        )
 
     server = await repo.update(server_id, update_data)
     if server is None:

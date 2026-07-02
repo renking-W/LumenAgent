@@ -24,7 +24,7 @@ from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import (
     SqliteMCPStdioServerRepository,
 )
 
-router = APIRouter(prefix="/v1/mcp/servers/stdio", tags=["mcp-stdio"])
+router = APIRouter(prefix="/v1/mcp/stdio-servers", tags=["mcp-stdio"])
 
 
 def _get_repo(
