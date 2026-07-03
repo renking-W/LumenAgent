@@ -155,6 +155,18 @@ try {
   console.log("\n=== 3/3 安装前端依赖 ===");
   run("npm install", { cwd: FRONTEND_DIR });
 
+  // ── 4. 可选：安装 ACP 编码 agent 适配器 ──────────────────
+  console.log("\n=== 可选：安装 ACP Sub-Agent 适配器 ===");
+  console.log("  若需使用 Lumen 编排本地 Claude Code，可安装 ACP 适配器：");
+  console.log("  npm install -g @agentclientprotocol/claude-agent-acp");
+  // 检测是否已安装
+  const acpVer = runCapture("claude-agent-acp --version") || runCapture("npx -y @agentclientprotocol/claude-agent-acp --version");
+  if (acpVer) {
+    console.log(`  ✅ claude-agent-acp 已就绪 (${acpVer})`);
+  } else {
+    console.log("  ℹ️  claude-agent-acp 未安装（跳过，不影响其他功能）");
+  }
+
   console.log("\n=== ✅ 全部安装完成 ===");
 } catch (err) {
   console.error("\n❌ 安装失败：", err.message);

@@ -103,6 +103,12 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "SCHEDULER_RETAIN_LOG_DAYS" : 7,
     # ── 白名单IP ────
     "ALLOW_IP_ADDRESS": "127.0.0.1",
+    # ── Sub-Agent / ACP ──
+    "SUBAGENT_MAX_DEPTH": 1,
+    "SUBAGENT_RUN_TIMEOUT": 600,
+    "SUBAGENT_PERMISSION_TIMEOUT": 300,
+    "SUBAGENT_APPROVE_EACH_ANSWER": False,
+    "ANTHROPIC_API_KEY": "",
     # ── VM / SSH ──
     "VM_SSH_TIMEOUT": 60,
     "VM_SSH_BANNER_TIMEOUT": 60,

@@ -20,6 +20,7 @@ dependencies = [
     "tiktoken>=0.7.0",
     "uvicorn>=0.47.0",
     "python-multipart>=0.0.9",
+    "agent-client-protocol>=0.10",
 ]
 
 [project.scripts]

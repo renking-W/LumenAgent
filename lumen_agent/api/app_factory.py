@@ -26,6 +26,8 @@ from lumen_agent.api.routers import (
     vm as vm_router,
     vm_ws as vm_ws_router,
 )
+from lumen_agent.api.routers import sub_agents as sub_agents_router
+from lumen_agent.api.routers import sub_agent_ws as sub_agent_ws_router
 from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import get_settings, resolve_cors_origins, resolve_db_path
 from lumen_agent.infrastructure.start_need.workspace import init_workspace
@@ -212,4 +214,6 @@ def create_app() -> FastAPI:
     application.include_router(upload_router.router)
     application.include_router(vm_router.router)
     application.include_router(vm_ws_router.router)
+    application.include_router(sub_agents_router.router)
+    application.include_router(sub_agent_ws_router.router)
     return application

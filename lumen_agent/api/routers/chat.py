@@ -201,6 +201,21 @@ async def interrupt_stream(body: InterruptRequest) -> dict:
             detail=f"No active stream for session {body.session_id}",
         )
     logging.info(f"会话 {body.session_id} 流式连接已中断")
+
+    # 级联终止该会话下所有活跃的 sub-agent run
+    try:
+        from lumen_agent.application.service.sub_agent_service import get_sub_agent_service
+        service = get_sub_agent_service()
+        for run_id, handle in list(service._runs.items()):
+            if (
+                handle.parent_session_id == body.session_id
+                and handle.status in ("running", "asking", "starting")
+            ):
+                logging.info("级联终止 sub-agent run: %s", run_id)
+                await service.stop_run(run_id)
+    except Exception:
+        logging.exception("级联终止 sub-agent 时出错")
+
     return {"status": "interrupted", "session_id": body.session_id}
 
 

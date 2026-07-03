@@ -94,6 +94,17 @@
         </button>
         <button
           class="nav-item"
+          :class="{ active: activeView === 'sub-agents' }"
+          @click="activeView = 'sub-agents'"
+        >
+          <span class="nav-icon">🤖</span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">Agent 编排</span>
+            <span class="nav-desc">调度本地编码 Agent</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
           :class="{ active: activeView === 'knowledge' }"
           @click="activeView = 'knowledge'"
         >
@@ -193,6 +204,7 @@
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
         <LogView v-else-if="activeView === 'logs'" />
+        <SubAgentView v-else-if="activeView === 'sub-agents'" />
       </el-main>
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
@@ -243,6 +255,7 @@ import LogView from './components/LogView.vue'
 import ConfigView from './components/ConfigView.vue'
 import AppComposer from './components/AppComposer.vue'
 import ApiKeyManager from './components/ApiKeyManager.vue'
+import SubAgentView from './components/SubAgentView.vue'
 
 // ── 聊天流 ─────────────────────────────────────────
 const chat = useChatStream()
@@ -254,7 +267,7 @@ const statusText = chat.statusText
 const lastUserPrompt = chat.lastUserPrompt
 
 // ── 视图切换（默认为聊天界面）──────────────────
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs' | 'sub-agents'>('chat')
 
 // ── UI 状态 ───────────────────────────────────────
 const sidebarVisible = ref(false)

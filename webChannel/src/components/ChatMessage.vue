@@ -60,10 +60,20 @@
         </div>
 
         <!-- Tool 分组：tool_use + tool_result 合并展示 -->
-        <details v-else-if="item.kind === 'tool'" class="block block--collapsible">
+        <details v-else-if="item.kind === 'tool'" class="block block--collapsible"
+          :class="{ 'block--subagent': item.toolName === 'local_agent_dispatch' }">
           <summary class="block-summary">
-            <span class="block-summary-title">🛠 {{ item.toolName }}</span>
+            <span class="block-summary-title">
+              {{ item.toolName === 'local_agent_dispatch' ? '🤖' : '🛠' }} {{ item.toolName }}
+            </span>
             <span class="block-summary-kind">{{ item.toolName }}</span>
+            <!-- Sub-agent 专属：查看实时输出快捷链接 -->
+            <span
+              v-if="item.toolName === 'local_agent_dispatch' && extractRunId(item.resultContents)"
+              class="subagent-run-link"
+              @click.stop="$emit('navigate', 'sub-agents')"
+              title="查看 Agent 编排面板"
+            >查看运行 →</span>
           </summary>
           <div class="block-body">
             <div class="tool-detail">
@@ -175,11 +185,22 @@ const emit = defineEmits<{
   retry: []
   'approve-tool': [blockId: string, toolId: string]
   'reject-tool': [blockId: string, toolId: string]
+  navigate: [view: string]
 }>()
 
 const msgRef = ref<HTMLElement | null>(null)
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
+
+function extractRunId(resultContents: string[]): string | null {
+  for (const rc of resultContents || []) {
+    try {
+      const data = JSON.parse(rc)
+      if (data.run_id) return data.run_id
+    } catch { /* ignore */ }
+  }
+  return null
+}
 
 const isCollapsible = (kind: string) =>
   ['thinking', 'error'].includes(kind)
@@ -404,6 +425,18 @@ watch(
 }
 .block--collapsible {
   border-color: var(--color-slate-200);
+}
+.block--subagent {
+  border-color: #91caff;
+  background: #f0f7ff;
+}
+.subagent-run-link {
+  margin-left: auto;
+  font-size: 11px;
+  color: #1890ff;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 8px;
 }
 .block--text {
   border: none;
