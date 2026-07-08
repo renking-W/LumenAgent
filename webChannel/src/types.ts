@@ -41,6 +41,7 @@ export type MCPServerInfo = {
   url: string
   api_key: string | null
   transport?: string
+  description?: string
   enabled: boolean
   created_at: string
   updated_at: string
@@ -53,6 +54,7 @@ export type MCPStdioServerInfo = {
   args: string[]
   env: Record<string, string>
   cwd: string
+  description?: string
   enabled: boolean
   created_at: string
   updated_at: string
@@ -66,6 +68,7 @@ export type MCPServerTestResult = {
   status: 'ok' | 'error'
   message?: string
   tools_count?: number
+  tools_synced?: number
 }
 
 // ── 知识库 ──────────────────────────────────────────

@@ -13,6 +13,7 @@ class MCPStdioServerCreate(BaseModel):
     args: list[str] = Field(default=[], description="命令行参数列表")
     env: dict[str, str] = Field(default={}, description="额外环境变量")
     cwd: str | None = Field(default=None, description="工作目录（空则继承进程目录）")
+    description: str | None = Field(default=None, description="一句话说明，用于 MCP 工具向量检索")
     enabled: bool = Field(default=True, description="是否启用")
 
 
@@ -24,6 +25,7 @@ class MCPStdioServerUpdate(BaseModel):
     args: list[str] | None = None
     env: dict[str, str] | None = None
     cwd: str | None = None
+    description: str | None = None
     enabled: bool | None = None
 
 
@@ -36,6 +38,7 @@ class MCPStdioServerResponse(BaseModel):
     args: list[str]
     env: dict[str, str]
     cwd: str
+    description: str = ""
     enabled: bool
     created_at: str
     updated_at: str

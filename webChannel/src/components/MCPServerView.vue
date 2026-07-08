@@ -60,10 +60,10 @@
           </div>
           <!-- HTTP: show URL -->
           <p v-if="svr.kind === 'http'" class="mcp-panel-url" :title="svr.url">{{ svr.url }}</p>
-          <!-- Stdio: show command + args summary -->
           <p v-else class="mcp-panel-url" :title="svr.command + ' ' + svr.args.join(' ')">
             {{ svr.command }}{{ svr.args.length ? ' ' + svr.args.slice(0, 3).join(' ') + (svr.args.length > 3 ? ' …' : '') : '' }}
           </p>
+          <p v-if="svr.description" class="mcp-panel-desc">{{ svr.description }}</p>
         </div>
 
         <div class="mcp-panel-details">
@@ -90,6 +90,9 @@
           <div v-if="testResults[svr.id]" class="mcp-panel-test" :class="testResults[svr.id].status === 'ok' ? 'test-ok' : 'test-err'">
             <template v-if="testResults[svr.id].status === 'ok'">
               ✅ {{ testResults[svr.id].tools_count }} 个工具
+              <span v-if="testResults[svr.id].tools_synced != null">
+                · 已索引 {{ testResults[svr.id].tools_synced }}
+              </span>
             </template>
             <template v-else>
               ❌ {{ testResults[svr.id].message }}
@@ -154,6 +157,16 @@
         <el-form-item label="API Key（可选）" prop="api_key">
           <el-input v-model="httpForm.api_key" type="password" show-password placeholder="留空则不设置" />
         </el-form-item>
+        <el-form-item label="一句话说明（可选）">
+          <el-input
+            v-model="httpForm.description"
+            type="textarea"
+            :rows="2"
+            maxlength="200"
+            show-word-limit
+            placeholder="例如：飞书多维表格，用来查和改 Base 数据"
+          />
+        </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="httpForm.enabled" active-text="启用" inactive-text="禁用" />
         </el-form-item>
@@ -184,6 +197,16 @@
         </el-form-item>
         <el-form-item label="工作目录（可选）">
           <el-input v-model="stdioForm.cwd" placeholder="留空使用默认" />
+        </el-form-item>
+        <el-form-item label="一句话说明（可选）">
+          <el-input
+            v-model="stdioForm.description"
+            type="textarea"
+            :rows="2"
+            maxlength="200"
+            show-word-limit
+            placeholder="例如：本地文件系统 MCP"
+          />
         </el-form-item>
         <el-form-item label="环境变量">
           <div class="env-editor">
@@ -231,7 +254,7 @@ const formKind = ref<'http' | 'stdio'>('http')
 const httpFormRef = ref<FormInstance | null>(null)
 const stdioFormRef = ref<FormInstance | null>(null)
 
-const httpForm = reactive({ name: '', url: '', api_key: '', enabled: true })
+const httpForm = reactive({ name: '', url: '', api_key: '', description: '', enabled: true })
 const httpFormRules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   url: [{ required: true, message: '请输入 URL', trigger: 'blur' }],
@@ -243,6 +266,7 @@ const stdioForm = reactive({
   command: '',
   argsText: '',
   cwd: '',
+  description: '',
   envRows: [] as EnvRow[],
   enabled: true,
 })
@@ -318,8 +342,8 @@ const openAddDialog = () => {
   isEditing.value = false
   editingId.value = null
   formKind.value = 'http'
-  httpForm.name = ''; httpForm.url = ''; httpForm.api_key = ''; httpForm.enabled = true
-  stdioForm.name = ''; stdioForm.command = ''; stdioForm.argsText = ''; stdioForm.cwd = ''; stdioForm.envRows = []; stdioForm.enabled = true
+  httpForm.name = ''; httpForm.url = ''; httpForm.api_key = ''; httpForm.description = ''; httpForm.enabled = true
+  stdioForm.name = ''; stdioForm.command = ''; stdioForm.argsText = ''; stdioForm.cwd = ''; stdioForm.description = ''; stdioForm.envRows = []; stdioForm.enabled = true
   formDialogVisible.value = true
 }
 
@@ -328,10 +352,10 @@ const openEditDialog = (svr: MCPUnifiedServer) => {
   editingId.value = svr.id
   formKind.value = svr.kind
   if (svr.kind === 'http') {
-    httpForm.name = svr.name; httpForm.url = svr.url; httpForm.api_key = svr.api_key || ''; httpForm.enabled = svr.enabled
+    httpForm.name = svr.name; httpForm.url = svr.url; httpForm.api_key = svr.api_key || ''; httpForm.description = svr.description || ''; httpForm.enabled = svr.enabled
   } else {
     stdioForm.name = svr.name; stdioForm.command = svr.command
-    stdioForm.argsText = svr.args.join('\n'); stdioForm.cwd = svr.cwd || ''
+    stdioForm.argsText = svr.args.join('\n'); stdioForm.cwd = svr.cwd || ''; stdioForm.description = svr.description || ''
     stdioForm.envRows = Object.entries(svr.env).map(([key, value]) => ({ key, value }))
     stdioForm.enabled = svr.enabled
   }
@@ -353,7 +377,12 @@ const submitForm = async () => {
 const submitHttpForm = async () => {
   submitting.value = true
   try {
-    const payload: Record<string, unknown> = { name: httpForm.name, url: httpForm.url, enabled: httpForm.enabled }
+    const payload: Record<string, unknown> = {
+      name: httpForm.name,
+      url: httpForm.url,
+      enabled: httpForm.enabled,
+      description: httpForm.description.trim() || null,
+    }
     if (httpForm.api_key) payload.api_key = httpForm.api_key
     if (isEditing.value && editingId.value) {
       const existing = servers.value.find((s) => s.id === editingId.value)
@@ -392,6 +421,7 @@ const submitStdioForm = async () => {
     const payload: Record<string, unknown> = {
       name: stdioForm.name, command: stdioForm.command,
       args, env, enabled: stdioForm.enabled,
+      description: stdioForm.description.trim() || null,
     }
     if (stdioForm.cwd.trim()) payload.cwd = stdioForm.cwd.trim()
 
@@ -577,6 +607,12 @@ onMounted(fetchServers)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.mcp-panel-desc {
+  margin: var(--space-1) 0 0;
+  font-size: 0.78rem;
+  color: var(--color-slate-500);
+  line-height: 1.4;
 }
 .mcp-panel-details {
   display: flex;

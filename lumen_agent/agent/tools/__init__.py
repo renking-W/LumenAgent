@@ -14,13 +14,16 @@ from lumen_agent.agent.tools.memory_search import MemorySearch  # noqa: F401
 from lumen_agent.agent.tools.env_editor import EnvEditor  # noqa: F401
 from lumen_agent.agent.tools.task_scheduler import TaskScheduler  # noqa: F401
 from lumen_agent.agent.tools.vm_operation import VirtualMachineOperation  # noqa: F401
+# MCP 按需检索：mcp_search 向量发现 + mcp_call 代理执行（替代 MCPBridgeTool 全量注入）
+from lumen_agent.agent.tools.mcp_search import McpSearch  # noqa: F401
+from lumen_agent.agent.tools.mcp_call import McpCall  # noqa: F401
 
 __all__ = [
     "BaseTool", "ToolResult", "ToolRegistry",
     "Read", "Write", "Bash", "WebSearch", "WebFetch",
     "KnowledgeSearch", "KnowledgeInsert",
     "MemorySearch", "EnvEditor", "TaskScheduler",
-    "VirtualMachineOperation",
+    "VirtualMachineOperation", "McpSearch", "McpCall",
 ]
 
 

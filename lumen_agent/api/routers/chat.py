@@ -17,6 +17,7 @@ from lumen_agent.api.schemas.stream_events import (
     StreamEventDispatcher,
 )
 from lumen_agent.application.service.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
+from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
 from lumen_agent.application.uitls.llm_error_policy import (
     llm_chain_failure_detail,
     llm_chain_failure_http_status,
@@ -144,6 +145,8 @@ async def post_chat_stream(
     except StopAsyncIteration:
         logging.warning("大模型无增量返回")
         await registry.unregister(body.session_id)
+        if body.mode == "agent":
+            clear_allowed_server_ids()
 
         async def empty_stream() -> AsyncIterator[str]:
             """无增量时仅结束标记。"""
@@ -156,6 +159,8 @@ async def post_chat_stream(
         )
     except _LLM_STREAM_FAILURES as e:
         await registry.unregister(body.session_id)
+        if body.mode == "agent":
+            clear_allowed_server_ids()
         raise HTTPException(
             status_code=llm_chain_failure_http_status(e),
             detail=llm_chain_failure_detail(e),
@@ -176,6 +181,8 @@ async def post_chat_stream(
                 # 客户端断开 SSE 连接，静默终止，不打印错误堆栈
                 yield "data: [DONE]\n\n"
         finally:
+            if body.mode == "agent":
+                clear_allowed_server_ids()
             await registry.unregister(body.session_id)
             await get_approval_registry().unregister(body.session_id)
 

@@ -105,6 +105,8 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         return await _save_result(task_id, session_id, "failed", str(exc))
 
     finally:
+        from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
+        clear_allowed_server_ids()
         # 一次性任务无论成功/失败，触发后自动停用
         if trigger_type == "date":
             await _disable_one_shot_task(task_id)

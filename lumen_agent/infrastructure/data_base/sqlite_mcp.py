@@ -37,12 +37,20 @@ class SqliteMCPServerRepository:
                 url TEXT NOT NULL,
                 api_key TEXT NOT NULL DEFAULT '',
                 transport TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
             """
         )
+        # 兼容旧库：表已存在时补 description 列（不做历史数据回填）
+        try:
+            await db.execute(
+                "ALTER TABLE mcp_servers ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await db.commit()
 
     # ── 增 ─────────────────────────────────────────────────────
@@ -56,8 +64,11 @@ class SqliteMCPServerRepository:
             await self._prepare(db)
             await db.execute(
                 """
-                INSERT INTO mcp_servers (id, name, url, api_key, transport, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO mcp_servers (
+                    id, name, url, api_key, transport, description, enabled,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     server_id,
@@ -65,6 +76,7 @@ class SqliteMCPServerRepository:
                     data["url"],
                     data.get("api_key", "") or "",
                     transport,
+                    data.get("description", "") or "",
                     1 if data.get("enabled", False) else 0,
                     now,
                     now,
@@ -77,6 +89,7 @@ class SqliteMCPServerRepository:
             "url": data["url"],
             "api_key": data.get("api_key", "") or "",
             "transport": transport,
+            "description": data.get("description", "") or "",
             "enabled": bool(data.get("enabled", True)),
             "created_at": now,
             "updated_at": now,
@@ -89,8 +102,8 @@ class SqliteMCPServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, url, api_key, transport, enabled, created_at, updated_at "
-                "FROM mcp_servers ORDER BY created_at DESC"
+                "SELECT id, name, url, api_key, transport, description, enabled, "
+                "created_at, updated_at FROM mcp_servers ORDER BY created_at DESC"
             )
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -100,8 +113,8 @@ class SqliteMCPServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, url, api_key, transport, enabled, created_at, updated_at "
-                "FROM mcp_servers WHERE enabled = 1 ORDER BY created_at ASC"
+                "SELECT id, name, url, api_key, transport, description, enabled, "
+                "created_at, updated_at FROM mcp_servers WHERE enabled = 1 ORDER BY created_at ASC"
             )
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -111,8 +124,8 @@ class SqliteMCPServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, url, api_key, transport, enabled, created_at, updated_at "
-                "FROM mcp_servers WHERE id = ?",
+                "SELECT id, name, url, api_key, transport, description, enabled, "
+                "created_at, updated_at FROM mcp_servers WHERE id = ?",
                 (server_id,),
             )
             row = await cursor.fetchone()
@@ -128,7 +141,7 @@ class SqliteMCPServerRepository:
         fields: list[str] = ["updated_at = ?"]
         values: list[Any] = [now]
 
-        for key in ("name", "url", "api_key", "transport"):
+        for key in ("name", "url", "api_key", "transport", "description"):
             if key in data:
                 fields.append(f"{key} = ?")
                 values.append(data[key])

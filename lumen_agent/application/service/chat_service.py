@@ -257,10 +257,9 @@ async def reply_with_agent(
     from lumen_agent.agent.agent import AgentStreamExecutor
     from lumen_agent.agent.tools import init_tools
     from lumen_agent.agent.tools.registry import ToolRegistry
-    from lumen_agent.agent.tools.mcp_bridge import MCPBridgeTool
     from lumen_agent.agent.prompts.builder import build_system_prompt
     from lumen_agent.agent.skills import load_skills
-    from lumen_agent.model_adapters.client import get_mcp_manager
+    from lumen_agent.application.service.mcp_request_context import set_allowed_server_ids
 
     # 确保工具已注册（幂等）
     init_tools()
@@ -277,116 +276,68 @@ async def reply_with_agent(
     # 异步生成会话标题（仅首次消息触发）
     asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
 
-    # 2) 构建 system 提示词
-    tools = ToolRegistry.create_all_tools()
-
-    # ── MCP 工具发现与加载 ─────────────────────────────────────
-    mcp_tools: list[Any] = []
-
-    # a) 从全局 MCP 管理器获取已连接的连接
-    # 仅当前端通过 mcp_server_ids 明确指定时，才加载对应 MCP Server 的工具
-    # 不传 mcp_server_ids 或传 None → 不加载任何 MCP 工具
-    global_mgr = get_mcp_manager()
-    if mcp_server_ids:
-        for sid in mcp_server_ids:
-            conn = global_mgr.get_connection(sid)
-            if conn is None:
-                logging.warning("MCP Server %s 未连接或不存在，已跳过", sid)
-                continue
-            try:
-                remote_tool_defs = await conn.list_tools()
-                for td in remote_tool_defs:
-                    mcp_tools.append(MCPBridgeTool(td, conn, sid))
-                logging.info("MCP Server %s 加载了 %d 个工具", sid, len(remote_tool_defs))
-            except Exception:
-                logging.warning("MCP Server %s 获取工具列表失败，已跳过", sid, exc_info=True)
-
-    # b) 动态传入的 mcp_servers（临时连接）
-    temp_connections: list[Any] = []
-    if mcp_servers:
-        for config in mcp_servers:
-            url = config.url if hasattr(config, "url") else config.get("url", "")
-            api_key = (
-                config.api_key
-                if hasattr(config, "api_key")
-                else config.get("api_key")
-            )
-            try:
-                from lumen_agent.model_adapters.client import MCPConnection
-                conn = MCPConnection(url, api_key)
-                await conn.connect()
-                temp_connections.append(conn)
-                remote_tool_defs = await conn.list_tools()
-                for td in remote_tool_defs:
-                    mcp_tools.append(MCPBridgeTool(td, conn, url))
-                logging.info("动态 MCP Server %s 加载了 %d 个工具", url, len(remote_tool_defs))
-            except Exception:
-                logging.warning("动态 MCP Server %s 连接失败，已跳过", url, exc_info=True)
-
-    all_tools = tools + mcp_tools
+    # 2) 构建 system 提示词（MCP 工具通过 mcp_search / mcp_call 按需使用，不再全量注入 MCPBridgeTool）
+    all_tools = ToolRegistry.create_all_tools()
     skills = load_skills()
-    system_content = build_system_prompt(all_tools, skills,self_system,session_kind) or None
+    system_content = build_system_prompt(all_tools, skills, self_system, session_kind) or None
 
-    try:
-        # 3) 组装上下文（含 token 预算检查 / 强制压缩）
-        counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))
-        context_window = get_context_window(settings, settings.get("LLM_MODEL", "deepseek-v4-flash"))
+    # 将前端选中的 MCP Server 写入请求上下文，供 mcp_search / mcp_call 限定范围
+    set_allowed_server_ids(mcp_server_ids)
 
-        # 将图片即时转为 base64 data URI，随请求体内联发给 LLM（不入库）
-        image_extra_blocks: list[dict] | None = None
-        if image_urls:
-            image_extra_blocks = _build_data_uri_blocks(image_urls)
+    # 3) 组装上下文（含 token 预算检查 / 强制压缩）
+    counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))
+    context_window = get_context_window(settings, settings.get("LLM_MODEL", "deepseek-v4-flash"))
 
-        ctx = await assemble_for_llm(
-            repo, llm, settings,
-            session_id=session_id,
-            system_content=system_content,
-            user_message=user_message,
-            counter=counter,
-            context_window=context_window,
-            user_extra_blocks=image_extra_blocks,
-        )
-        messages = ctx.messages
-        logging.info(
-            f"[Agent] session={session_id} 上下文构建完成 "
-            f"summary={bool(ctx.summary_used)} kept_turns={ctx.kept_turns} "
-            f"total_tokens={ctx.total_tokens} force_compressed={ctx.force_compressed}"
-        )
+    # 将图片即时转为 base64 data URI，随请求体内联发给 LLM（不入库）
+    image_extra_blocks: list[dict] | None = None
+    if image_urls:
+        image_extra_blocks = _build_data_uri_blocks(image_urls)
 
-        # 4) 创建 AgentStreamExecutor
-        from lumen_agent.infrastructure.approval_registry import get_approval_registry
+    ctx = await assemble_for_llm(
+        repo, llm, settings,
+        session_id=session_id,
+        system_content=system_content,
+        user_message=user_message,
+        counter=counter,
+        context_window=context_window,
+        user_extra_blocks=image_extra_blocks,
+    )
+    messages = ctx.messages
+    logging.info(
+        f"[Agent] session={session_id} 上下文构建完成 "
+        f"summary={bool(ctx.summary_used)} kept_turns={ctx.kept_turns} "
+        f"total_tokens={ctx.total_tokens} force_compressed={ctx.force_compressed}"
+    )
 
-        executor = AgentStreamExecutor(
-            adapter=llm,
-            tools=all_tools,
-            settings=settings,
-            session_id=session_id,
-            approval_registry=get_approval_registry(),
-            approval_mode=  approval_mode if approval_mode else  settings.get("TOOL_APPROVAL_MODE", "none"),
-            approval_timeout=settings.get("TOOL_APPROVAL_TIMEOUT", 300),
-        )
+    # 4) 创建 AgentStreamExecutor
+    from lumen_agent.infrastructure.approval_registry import get_approval_registry
 
-        # 5) 运行工具循环，处理事件流
-        final_text = ""
-        async for kind, data in executor.run_stream(messages, on_connect=on_connect):
-            if kind == "new_messages":
-                await merge_and_persist_messages(repo, session_id, data)  # type: ignore[arg-type]
-            elif kind == "done":
-                final_text = data  # type: ignore[assignment]
-                yield (kind, data)
-            elif kind == "text":
-                final_text += data  # type: ignore[operator]
-                yield (kind, data)
-            else:
-                yield (kind, data)
+    executor = AgentStreamExecutor(
+        adapter=llm,
+        tools=all_tools,
+        settings=settings,
+        session_id=session_id,
+        approval_registry=get_approval_registry(),
+        approval_mode=  approval_mode if approval_mode else  settings.get("TOOL_APPROVAL_MODE", "none"),
+        approval_timeout=settings.get("TOOL_APPROVAL_TIMEOUT", 300),
+    )
 
-        # 6) 轮次 +1
-        if final_text.strip():
-            new_count = await repo.increment_round_counter(session_id)
-            logging.info(f"[Agent] session={session_id} 工具循环结束 count={new_count}")
-            asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))
+    # 5) 运行工具循环，处理事件流
+    final_text = ""
+    async for kind, data in executor.run_stream(messages, on_connect=on_connect):
+        if kind == "new_messages":
+            await merge_and_persist_messages(repo, session_id, data)  # type: ignore[arg-type]
+        elif kind == "done":
+            final_text = data  # type: ignore[assignment]
+            yield (kind, data)
+        elif kind == "text":
+            final_text += data  # type: ignore[operator]
+            yield (kind, data)
+        else:
+            yield (kind, data)
 
-    finally:
-        # 只清理临时连接的 MCP，全局管理器由 lifespan 管理
-        for conn in temp_connections:
-            await conn.close()
+    # 6) 轮次 +1
+    if final_text.strip():
+        new_count = await repo.increment_round_counter(session_id)
+        logging.info(f"[Agent] session={session_id} 工具循环结束 count={new_count}")
+        asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))

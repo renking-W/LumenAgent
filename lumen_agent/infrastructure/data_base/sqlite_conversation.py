@@ -8,7 +8,7 @@ from typing import Any
 
 import aiosqlite
 
-from lumen_agent.domain.messages import blocks_to_json, ensure_blocks
+from lumen_agent.domain.messages import blocks_to_json, ensure_blocks, link_tool_result_ids
 from lumen_agent.domain.ports import SessionFullRow, SessionRow
 
 
@@ -191,7 +191,8 @@ class SqliteConversationRepository:
         """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
-        content_json = blocks_to_json(ensure_blocks(content))
+        blocks = link_tool_result_ids(ensure_blocks(content))
+        content_json = blocks_to_json(blocks)
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             await db.execute("BEGIN")
@@ -264,7 +265,7 @@ class SqliteConversationRepository:
                 cursor = await db.execute(
                     """
                     SELECT role, content, created_at, updated_at FROM messages
-                    WHERE session_id = ? AND status = 1
+                    WHERE session_id = ?
                     ORDER BY seq DESC
                     LIMIT ?
                     """,

@@ -11,6 +11,7 @@ class MCPServerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="显示名称")
     url: str = Field(..., description="MCP Server SSE 端点 URL")
     api_key: str | None = Field(default=None, description="MCP Server 鉴权密钥")
+    description: str | None = Field(default=None, description="一句话说明，用于 MCP 工具向量检索")
     enabled: bool = Field(default=True, description="是否启用")
 
 
@@ -20,6 +21,7 @@ class MCPServerUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     url: str | None = None
     api_key: str | None = None
+    description: str | None = Field(default=None, description="一句话说明，用于 MCP 工具向量检索")
     enabled: bool | None = None
 
 
@@ -31,6 +33,7 @@ class MCPServerResponse(BaseModel):
     url: str
     api_key: str | None
     transport: str = ""
+    description: str = ""
     enabled: bool
     created_at: str
     updated_at: str
@@ -42,3 +45,4 @@ class MCPServerTestResult(BaseModel):
     status: str  # "ok" | "error"
     message: str | None = None
     tools_count: int | None = None
+    tools_synced: int | None = Field(default=None, description="测试成功后同步写入索引的 tool 数量")

@@ -15,6 +15,38 @@ logger = logging.getLogger(__name__)
 _FRONTEND_PORT = 1675
 _PROXY_TARGET = "http://127.0.0.1:21675"
 
+# SSE 流被客户端中断或 FastAPI 提前关闭时，httpx 可能抛出的异常（预期行为，非故障）
+_STREAM_DISCONNECT_ERRORS = (
+    httpx.RemoteProtocolError,
+    httpx.ReadError,
+    httpx.WriteError,
+    ConnectionError,
+)
+
+
+def _iter_upstream_chunks(upstream: httpx.Response):
+    """转发上游 SSE chunk；对端提前关闭时静默结束，避免 Werkzeug ERROR 堆栈。"""
+    try:
+        for chunk in upstream.iter_bytes():
+            yield chunk
+    except _STREAM_DISCONNECT_ERRORS as exc:
+        logger.debug("SSE 上游连接提前关闭（通常为客户端中断或流结束）: %s", exc)
+    except GeneratorExit:
+        pass
+    finally:
+        upstream.close()
+
+
+def _stream_proxy_response(upstream: httpx.Response) -> Response:
+    """将 httpx 流式响应包装为 Flask SSE Response。"""
+    hop_by_hop = {"transfer-encoding", "content-length", "connection"}
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in hop_by_hop}
+    return Response(
+        stream_with_context(_iter_upstream_chunks(upstream)),
+        status=upstream.status_code,
+        headers=headers,
+    )
+
 
 def run_frontend() -> None:
     """启动 Flask 服务：serve 前端静态文件，/v1/* 代理到 FastAPI。"""
@@ -41,22 +73,7 @@ def run_frontend() -> None:
                 headers=_forward_headers(),
             )
             upstream = proxy_client.send(req, stream=True)
-
-            def generate():
-                try:
-                    for chunk in upstream.iter_bytes():
-                        yield chunk
-                finally:
-                    upstream.close()
-
-            # 移除可能导致冲突的头部
-            hop_by_hop = {"transfer-encoding", "content-length", "connection"}
-            headers = {k: v for k, v in upstream.headers.items() if k.lower() not in hop_by_hop}
-            return Response(
-                stream_with_context(generate()),
-                status=upstream.status_code,
-                headers=headers,
-            )
+            return _stream_proxy_response(upstream)
         except httpx.RequestError as e:
             return {"error": f"代理请求失败: {e}"}, 502
 
@@ -71,21 +88,7 @@ def run_frontend() -> None:
                 headers=_forward_headers(),
             )
             upstream = proxy_client.send(req, stream=True)
-
-            def generate():
-                try:
-                    for chunk in upstream.iter_bytes():
-                        yield chunk
-                finally:
-                    upstream.close()
-
-            hop_by_hop = {"transfer-encoding", "content-length", "connection"}
-            headers = {k: v for k, v in upstream.headers.items() if k.lower() not in hop_by_hop}
-            return Response(
-                stream_with_context(generate()),
-                status=upstream.status_code,
-                headers=headers,
-            )
+            return _stream_proxy_response(upstream)
         except httpx.RequestError as e:
             return {"error": f"代理请求失败: {e}"}, 502
 

@@ -39,12 +39,20 @@ class SqliteMCPStdioServerRepository:
                 args_json TEXT NOT NULL DEFAULT '[]',
                 env_json TEXT NOT NULL DEFAULT '{}',
                 cwd TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
             """
         )
+        # 兼容旧库：表已存在时补 description 列（不做历史数据回填）
+        try:
+            await db.execute(
+                "ALTER TABLE mcp_stdio_servers ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await db.commit()
 
     def _row_to_dict(self, row: aiosqlite.Row) -> dict[str, Any]:
@@ -68,8 +76,9 @@ class SqliteMCPStdioServerRepository:
             await db.execute(
                 """
                 INSERT INTO mcp_stdio_servers
-                    (id, name, command, args_json, env_json, cwd, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, name, command, args_json, env_json, cwd, description,
+                     enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     server_id,
@@ -78,6 +87,7 @@ class SqliteMCPStdioServerRepository:
                     args_json,
                     env_json,
                     cwd,
+                    data.get("description", "") or "",
                     1 if data.get("enabled", True) else 0,
                     now,
                     now,
@@ -91,6 +101,7 @@ class SqliteMCPStdioServerRepository:
             "args": data.get("args", []) or [],
             "env": data.get("env", {}) or {},
             "cwd": cwd,
+            "description": data.get("description", "") or "",
             "enabled": bool(data.get("enabled", True)),
             "created_at": now,
             "updated_at": now,
@@ -103,7 +114,8 @@ class SqliteMCPStdioServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, command, args_json, env_json, cwd, enabled, created_at, updated_at "
+                "SELECT id, name, command, args_json, env_json, cwd, description, "
+                "enabled, created_at, updated_at "
                 "FROM mcp_stdio_servers ORDER BY created_at DESC"
             )
             rows = await cursor.fetchall()
@@ -114,7 +126,8 @@ class SqliteMCPStdioServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, command, args_json, env_json, cwd, enabled, created_at, updated_at "
+                "SELECT id, name, command, args_json, env_json, cwd, description, "
+                "enabled, created_at, updated_at "
                 "FROM mcp_stdio_servers WHERE enabled = 1 ORDER BY created_at ASC"
             )
             rows = await cursor.fetchall()
@@ -125,7 +138,8 @@ class SqliteMCPStdioServerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             cursor = await db.execute(
-                "SELECT id, name, command, args_json, env_json, cwd, enabled, created_at, updated_at "
+                "SELECT id, name, command, args_json, env_json, cwd, description, "
+                "enabled, created_at, updated_at "
                 "FROM mcp_stdio_servers WHERE id = ?",
                 (server_id,),
             )
@@ -142,7 +156,7 @@ class SqliteMCPStdioServerRepository:
         fields: list[str] = ["updated_at = ?"]
         values: list[Any] = [now]
 
-        for key in ("name", "command", "cwd"):
+        for key in ("name", "command", "cwd", "description"):
             if key in data:
                 fields.append(f"{key} = ?")
                 values.append(data[key])

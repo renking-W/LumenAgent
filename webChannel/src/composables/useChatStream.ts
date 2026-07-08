@@ -30,6 +30,13 @@ interface SendOptions {
   image_urls?: string[]
 }
 
+/** 流式请求失败时的最大尝试次数（含首次） */
+const MAX_STREAM_ATTEMPTS = 5
+/** 重试间隔（毫秒） */
+const STREAM_RETRY_DELAY_MS = 800
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
 export function useChatStream() {
   const messages = reactive<ChatMessage[]>([])
   const sending = ref(false)
@@ -288,12 +295,65 @@ export function useChatStream() {
   }
 
   // ── 发送消息 ──
+  /** 移除本轮已产生的 assistant 占位/部分内容，便于重试时不重复堆叠 */
+  const rollbackAssistantResponse = () => {
+    const last = messages[messages.length - 1]
+    if (last?.role === 'assistant') {
+      messages.pop()
+    }
+    clearPendingBlocks()
+  }
+
+  /** 执行一次 SSE 流式请求；HTTP 非 2xx 或读流失败时抛错 */
+  const runStreamOnce = async (content: string, options?: SendOptions) => {
+    const res = await fetch('/v1/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: content,
+        session_id: sessionId.value || undefined,
+        mode: options?.mode || 'agent',
+        approval_mode: options?.approval_mode,
+        mcp_server_ids: options?.mcp_server_ids,
+        self_system: options?.self_system,
+        session_kind: options?.session_kind,
+        image_urls: options?.image_urls?.length ? options.image_urls : undefined,
+      }),
+      signal: abortController.value!.signal,
+    })
+    if (!res.ok) {
+      const detail = (await res.text()).trim()
+      throw new Error(detail || `HTTP ${res.status} ${res.statusText}`)
+    }
+    if (!res.body) throw new Error('响应体为空')
+
+    const sid = res.headers.get('x-session-id')
+    if (sid) sessionId.value = sid
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() ?? ''
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.startsWith('data: '))
+        if (!line) continue
+        const raw = line.slice(6)
+        if (raw === '[DONE]') continue
+        consumeEvent(JSON.parse(raw))
+      }
+    }
+  }
+
   const send = async (text: string, options?: SendOptions) => {
     const content = text.trim()
     if (!content || sending.value) return
     lastUserPrompt.value = content
     sending.value = true
-    abortController.value = new AbortController()
     statusText.value = '发送中...'
 
     addMessage('user').blocks.push({
@@ -301,50 +361,36 @@ export function useChatStream() {
     })
 
     try {
-      const res = await fetch('/v1/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: content,
-          session_id: sessionId.value || undefined,
-          mode: options?.mode || 'agent',
-          approval_mode: options?.approval_mode,
-          mcp_server_ids: options?.mcp_server_ids,
-          self_system: options?.self_system,
-          session_kind: options?.session_kind,
-          image_urls: options?.image_urls?.length ? options.image_urls : undefined,
-        }),
-        signal: abortController.value.signal,
-      })
-      if (!res.ok || !res.body) throw new Error(await res.text())
-
-      const sid = res.headers.get('x-session-id')
-      if (sid) sessionId.value = sid
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          const line = part.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          const raw = line.slice(6)
-          if (raw === '[DONE]') continue
-          consumeEvent(JSON.parse(raw))
+      for (let attempt = 1; attempt <= MAX_STREAM_ATTEMPTS; attempt++) {
+        if (attempt > 1) {
+          rollbackAssistantResponse()
+          statusText.value = `重试中 (${attempt}/${MAX_STREAM_ATTEMPTS})...`
+          await sleep(STREAM_RETRY_DELAY_MS)
         }
-      }
-      statusText.value = '响应完成'
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        statusText.value = '已中断'
-      } else {
-        statusText.value = '请求失败'
-        appendBlock('error', '请求失败', error instanceof Error ? error.message : String(error))
+
+        abortController.value = new AbortController()
+
+        try {
+          await runStreamOnce(content, options)
+          statusText.value = '响应完成'
+          return
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            statusText.value = '已中断'
+            return
+          }
+          if (attempt < MAX_STREAM_ATTEMPTS) continue
+
+          rollbackAssistantResponse()
+          sessionId.value = ''
+          const detail = error instanceof Error ? error.message : String(error)
+          appendBlock(
+            'error',
+            '会话异常',
+            `请求失败，已重试 ${MAX_STREAM_ATTEMPTS} 次仍无法完成。会话已断开。\n${detail}`,
+          )
+          statusText.value = '会话已断开（请求异常）'
+        }
       }
     } finally {
       sending.value = false

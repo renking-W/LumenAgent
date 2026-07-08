@@ -17,6 +17,7 @@ from lumen_agent.api.routers import (
     logs_router,
     mcp_servers as mcp_servers_router,
     mcp_stdio as mcp_stdio_router,
+    mcp_tools as mcp_tools_router,
     memories as memories_router,
     scheduler_router,
     sessions as sessions_router,
@@ -62,6 +63,8 @@ async def lifespan(_app: FastAPI):
             len(enabled_http),
             len(enabled_stdio),
         )
+        # ── 启动后后台同步 enabled MCP 的工具索引（SQLite + Chroma） ──
+        asyncio.create_task(_sync_mcp_tools_on_startup())
     except Exception:
         logging.exception("MCP 管理器启动失败")
 
@@ -136,6 +139,18 @@ async def lifespan(_app: FastAPI):
         logging.exception("WebSocket 连接关闭异常")
 
 
+async def _sync_mcp_tools_on_startup() -> None:
+    """后台任务：同步所有 enabled MCP Server 的工具索引。"""
+    try:
+        from lumen_agent.application.service.mcp_tool_sync_service import McpToolSyncService
+
+        service = McpToolSyncService()
+        count = await service.sync_all_enabled()
+        logging.info("启动后台任务：MCP 工具索引同步完成，共 %s 个 tool", count)
+    except Exception:
+        logging.exception("MCP 工具索引同步失败，将在下次触发时重试")
+
+
 async def _index_memory_on_startup() -> None:
     """后台任务：全量扫描每日记忆文件，向量化后写入 ChromaDB。"""
     try:
@@ -205,6 +220,7 @@ def create_app() -> FastAPI:
     application.include_router(memories_router.router)
     application.include_router(mcp_servers_router.router)
     application.include_router(mcp_stdio_router.router)
+    application.include_router(mcp_tools_router.router)
     application.include_router(scheduler_router.router)
     application.include_router(api_keys_router.router)
     application.include_router(configs_router.router)

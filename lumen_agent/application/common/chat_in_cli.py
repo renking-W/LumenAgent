@@ -113,6 +113,9 @@ async def async_main() -> None:
                         print(f"[错误] {data}")
         except Exception as e:
             print(f"\n  [异常] {e}")
+        finally:
+            from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
+            clear_allowed_server_ids()
 
     print("再见！")
 
