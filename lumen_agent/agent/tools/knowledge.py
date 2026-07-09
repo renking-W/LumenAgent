@@ -7,7 +7,7 @@ import logging
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
-from lumen_agent.application.service.rag_service import RagService
+from lumen_agent.application.service.embedding.rag_service import RagService
 from lumen_agent.config import get_settings
 
 

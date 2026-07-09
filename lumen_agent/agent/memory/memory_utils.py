@@ -24,7 +24,7 @@ class MemoryFileUtils:
         return self.memory_dir
 
     def memory_file_path(self) -> Path:
-        return self.memory_dir / "MEMORY.md"
+        return self.memory_dir.parent / "MEMORY.md"
 
     def daily_file_path(self, target_date: date | None = None) -> Path:
         d = target_date or date.today()

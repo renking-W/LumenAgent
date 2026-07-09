@@ -74,20 +74,15 @@
 
 ## 输出格式
 
-整体输出格式为一个大的 `json` 字串
-```json
-{
-   "new_summary": "新全局摘要具体内容",
-   "count_summary": "当前轮次会话摘要具体内容"
-}
- ```
+请**直接输出**一个 JSON 对象，不要用 markdown 代码块（不要用 ``` 包裹），不要添加任何额外说明文字。
+
+输出示例：
+
+{"new_summary": "新全局摘要具体内容", "count_summary": "当前轮次会话摘要具体内容"}
+
 其中 new_summary 和 count_summary 中的内容需要按照以下格式输出：
 - new_summary：直接按照纯文本（txt）格式输出即可
-- count_summary：按照下方md格式输出。
-```markdown
-- 用户xxx，助手xxx
-- 助手xxx
--
-```
+- count_summary：在 JSON 字符串值内使用 markdown 无序列表，例如：
+  "- 用户xxx，助手xxx\n- 助手xxx"
 
-说明：输出格式必须是**一个json字串**不能有其它格式。
+说明：你的完整回复必须且只能是一个 JSON 对象，不能有其它内容。

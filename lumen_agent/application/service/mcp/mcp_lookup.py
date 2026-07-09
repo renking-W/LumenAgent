@@ -6,12 +6,18 @@
 - get_id_by_name          — 按名称查 ID（两表顺序查，先 HTTP 后 stdio）
 - resolve_names_to_ids    — 批量 name→ID，任一未找到即 ValueError
 - validate_ids_exist      — 批量校验 ID 是否存在（两表合并查），未找到即 ValueError
+- load_enabled_mcp_servers_for_prompt — 加载已启用 server（含 description），供 Agent prompt
+- load_all_mcp_servers    — 合并已启用 ID 与调用方传入 ID
 """
 
 from __future__ import annotations
 
 import aiosqlite
 from pathlib import Path
+
+from lumen_agent.application.uitls.dir_guide import DirGuide
+from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
+from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import SqliteMCPStdioServerRepository
 
 
 async def _fetch_one(db_path: Path, sql: str, params: tuple) -> dict | None:
@@ -85,4 +91,44 @@ async def validate_ids_exist(db_path: Path, ids: list[str]) -> list[str]:
     missing = [i for i in ids if i not in found]
     if missing:
         raise ValueError(f"找不到以下 MCP Server ID：{missing}")
+    return ids
+
+
+async def load_enabled_mcp_servers_for_prompt() -> list[dict]:
+    """加载全部已启用 MCP Server（含 LLM 生成的 description）。
+
+    返回结构供 build_system_prompt.add_mcp_server_system 与
+    mcp_request_context.set_allowed_server_ids 共用。
+    """
+    db_path = DirGuide.data_dir() / "conversations.db"
+    mcp_server_repo = SqliteMCPServerRepository(db_path)
+    mcp_stdio_repo = SqliteMCPStdioServerRepository(db_path)
+    servers: list[dict] = []
+    # HTTP 与 stdio 分表存储，合并为统一列表并标注 kind
+    for svr in await mcp_server_repo.list_enabled():
+        servers.append({
+            "id": svr["id"],
+            "name": svr["name"],
+            "kind": "http",
+            "description": svr.get("description") or "",
+            "enabled": True,
+        })
+    for svr in await mcp_stdio_repo.list_enabled():
+        servers.append({
+            "id": svr["id"],
+            "name": svr["name"],
+            "kind": "stdio",
+            "description": svr.get("description") or "",
+            "enabled": True,
+        })
+    return servers
+
+
+async def load_all_mcp_servers(mcp_server_ids: list[str] | None) -> list[str]:
+    """加载全部已启用的 MCP Server ID（合并调用方传入的 id）。"""
+    servers = await load_enabled_mcp_servers_for_prompt()
+    ids = list(mcp_server_ids or [])
+    for svr in servers:
+        if svr["id"] not in ids:
+            ids.append(svr["id"])
     return ids

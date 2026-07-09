@@ -6,7 +6,7 @@ import logging
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
-from lumen_agent.application.service.memory_rag_service import MemoryRagService
+from lumen_agent.application.service.embedding.memory_rag_service import MemoryRagService
 from lumen_agent.config import get_settings
 
 

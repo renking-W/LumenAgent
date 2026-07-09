@@ -16,8 +16,8 @@ from lumen_agent.api.schemas.stream_events import (
     StreamErrorEvent,
     StreamEventDispatcher,
 )
-from lumen_agent.application.service.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
-from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
+from lumen_agent.application.service.chat.chat_service import reply_single_turn, reply_single_turn_stream, reply_with_agent
+from lumen_agent.application.service.mcp.mcp_request_context import clear_allowed_server_ids
 from lumen_agent.application.uitls.llm_error_policy import (
     llm_chain_failure_detail,
     llm_chain_failure_http_status,
@@ -129,7 +129,6 @@ async def post_chat_stream(
         stream_it = reply_with_agent(
             repo, llm, body.session_id, body.session_kind, body.message, settings, body.approval_mode,
             on_connect=on_connect,
-            mcp_servers=body.mcp_servers,
             mcp_server_ids=body.mcp_server_ids,
             self_system=body.self_system,
             image_urls=body.image_urls,

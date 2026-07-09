@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from lumen_agent.agent.context import extract_complete_turns, turns_to_messages
@@ -103,13 +105,67 @@ def _message_to_text(message: dict[str, Any]) -> str:
     return str(content)
 
 
+_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+
+
+def _extract_json_object(text: str) -> str | None:
+    """从文本中提取第一个完整的 JSON 对象（支持嵌套花括号）。"""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _extract_json_text(raw: str) -> str:
+    """清洗 LLM 返回值，尽量提取可解析的 JSON 字符串。"""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+
+    fence_match = _FENCE_RE.search(text)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    extracted = _extract_json_object(text)
+    return extracted if extracted is not None else text
+
+
 def _parse_summary_payload(raw: str) -> tuple[str, str]:
-    """兼容旧文本与新 JSON 摘要返回值。"""
+    """兼容旧文本与新 JSON 摘要返回值（含 markdown 代码块包裹）。"""
     text = (raw or "").strip()
     if not text:
         return "", ""
+
+    json_text = _extract_json_text(text)
     try:
-        data = json.loads(text)
+        data = json.loads(json_text)
     except json.JSONDecodeError:
         return text, text
 
@@ -156,7 +212,7 @@ async def _write_daily_memory_append(
                 "session_id": session_id,
                 "timestamp": ts,
             }
-            from lumen_agent.application.service.memory_rag_service import MemoryRagService
+            from lumen_agent.application.service.embedding.memory_rag_service import MemoryRagService
             from lumen_agent.config import get_settings
 
             service = MemoryRagService(get_settings())
@@ -178,21 +234,6 @@ def _write_memory_file(
         message_to_text_fn=_message_to_text,
     )
     logging.info(f"session={session_id} 截断记录已写入 {file_path}")
-
-
-def build_llm_messages(
-    summary: str,
-    recent: list[dict[str, Any]],
-    user_message: str,
-) -> list[dict[str, Any]]:
-    """拼装本轮调 LLM 的 messages：可选 system summary + 最近原始消息 + 本轮 user。"""
-    msgs: list[dict[str, Any]] = []
-    if summary:
-        msgs.append({"role": "system", "content": [{"type": "text", "text": f"会话摘要：\n{summary}"}]})
-    msgs.extend(recent)
-    msgs.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
-    return msgs
-
 
 async def maybe_trigger_summary(
     repo: ConversationRepositoryPort,
@@ -266,7 +307,7 @@ async def maybe_trigger_summary(
         prompt = _render_summary_prompt(session["summary"], rounds_text)
 
         # 校验占位符已全部替换，防止模板文件字符异常时静默发送未渲染的 prompt
-        if "{{" in prompt:
+        if "{{old_summary}}" in prompt or "{{rounds_text}}" in prompt:
             logging.error(
                 f"session={session_id} prompt 模板占位符未完全替换，跳过摘要（请检查 summary.md 格式）"
             )

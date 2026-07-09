@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lumen_agent.application.service.mcp_tool_rag_service import McpToolRagService
+from lumen_agent.application.service.mcp.mcp_tool_rag_service import McpToolRagService
 from lumen_agent.config import Settings, get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
 from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import SqliteMCPStdioServerRepository

@@ -16,7 +16,7 @@ from lumen_agent.api.schemas.scheduler_dtos import (
     SchedulerJobList,
     UpdatePromptResponse,
 )
-from lumen_agent.application.service.mcp_lookup import resolve_names_to_ids
+from lumen_agent.application.service.mcp.mcp_lookup import resolve_names_to_ids
 from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_scheduler import (
     SqliteSchedulerRepository,

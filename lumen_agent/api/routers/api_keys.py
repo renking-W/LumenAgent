@@ -15,7 +15,7 @@ from lumen_agent.api.schemas.api_key_dtos import (
     ApiKeyResponse,
     ApiKeyToggleRequest,
 )
-from lumen_agent.application.service.api_key_service import generate_api_key
+from lumen_agent.application.service.chat.api_key_service import generate_api_key
 from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_api_key import (
     SqliteApiKeyRepository,

@@ -12,7 +12,7 @@ from lumen_agent.api.schemas.session_dtos import (
     StoredMessage,
     UpdateTitleRequest,
 )
-from lumen_agent.application.service.session_service import normalize_and_prepare_content
+from lumen_agent.application.service.chat.session_service import normalize_and_prepare_content
 from lumen_agent.domain.ports import ConversationRepositoryPort
 
 router = APIRouter(prefix="/v1/sessions", tags=["sessions"])

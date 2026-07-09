@@ -6,14 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
-class MCPServerConfig(BaseModel):
-    """MCP Server 连接配置。"""
-
-    url: str = Field(..., description="MCP Server SSE 端点 URL")
-    api_key: str | None = Field(default=None, description="MCP Server 鉴权密钥")
-
-
 class ChatRequest(BaseModel):
     """``POST /v1/chat`` / ``POST /v1/chat/stream``。"""
 
@@ -21,13 +13,9 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1)
     session_kind: int | None = None
     mode: Literal["simple", "agent"] = "agent"
-    mcp_servers: list[MCPServerConfig] | None = Field(
-        default=None,
-        description="外部 MCP Server 列表，仅 agent 模式下生效",
-    )
-    mcp_server_ids: list[str] | None = Field(
-        default=None,
-        description="要使用的 MCP Server ID 列表，None=使用全部已启用的",
+    mcp_server_ids: list[str] = Field(
+        default_factory=list,
+        description="（可选）MCP Server ID；留空时后端自动加载全部已启用的 MCP",
     )
     self_system: str | None = Field(
         default=None,

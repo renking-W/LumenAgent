@@ -1,7 +1,7 @@
 """MCP Server 管理服务：CRUD 编排、连接管理、测试等全部业务逻辑。
 
-工具索引：创建/启用/更新 description/测试成功后调用 McpToolSyncService；
-禁用时清理 Chroma + SQLite 中的 tool 记录。
+工具索引：创建/启用/更新/测试成功后调用 McpToolSyncService；
+description 由 LLM 基于 mcp_tools 自动生成。
 """
 
 from __future__ import annotations
@@ -15,13 +15,17 @@ from lumen_agent.api.schemas.mcp_dtos import (
     MCPServerTestResult,
     MCPServerUpdate,
 )
-from lumen_agent.application.service.mcp_lookup import (
+from lumen_agent.application.service.mcp.mcp_description_service import (
+    refresh_server_description_after_sync,
+)
+from lumen_agent.application.service.mcp.mcp_lookup import (
     assert_name_available,
     assert_name_available_exclude,
 )
-from lumen_agent.application.service.mcp_tool_sync_service import McpToolSyncService
+from lumen_agent.application.service.mcp.mcp_tool_sync_service import McpToolSyncService
 from lumen_agent.config import Settings, get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
+from lumen_agent.model_adapters.base import ModelAdapter
 from lumen_agent.model_adapters.client import MCPConnection, get_mcp_manager
 
 logger = logging.getLogger(__name__)
@@ -42,6 +46,32 @@ def _to_response(server: dict) -> MCPServerResponse:
     )
 
 
+async def _sync_http_tools(settings: Settings, server_id: str) -> int:
+    """将 HTTP MCP 的 tools 同步到 mcp_tools + Chroma；失败返回 0 不抛。"""
+    try:
+        return await McpToolSyncService(settings).sync_server("http", server_id)
+    except Exception:
+        logger.exception("MCP Server %s 工具索引同步失败", server_id)
+        return 0
+
+
+async def _refresh_http_description(
+    llm: ModelAdapter | None,
+    settings: Settings,
+    server: dict[str, Any],
+    user_hint: str | None,
+) -> None:
+    """在 tool sync 之后调用 LLM 生成 description 并写库。"""
+    await refresh_server_description_after_sync(
+        llm,
+        settings,
+        server_kind="http",
+        server_id=server["id"],
+        server_name=server["name"],
+        user_hint=user_hint,
+    )
+
+
 async def list_mcp_servers(repo: SqliteMCPServerRepository) -> list[MCPServerResponse]:
     """列出所有已配置的 MCP Server。"""
     servers = await repo.list_all()
@@ -52,17 +82,21 @@ async def create_mcp_server(
     repo: SqliteMCPServerRepository,
     body: MCPServerCreate,
     settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPServerResponse:
     """新增 MCP Server 配置。
 
     若 enabled=True，先用临时连接验证可达性（探测 transport）；
     连接失败直接抛 ValueError，**不写入 DB**。
-    验证通过后写 DB，再以已知 transport 直接注册到 manager（无需二次探测）。
+
+    用户提交的 description 仅作 user_hint，最终描述由 LLM 在 sync 后生成。
     """
     if settings is None:
         settings = get_settings()
     await assert_name_available(resolve_db_path(settings), body.name)
 
+    # 前端「描述（可选）」→ 生成参考，不落库
+    user_hint = (body.description or "").strip() or None
     resolved_transport = ""
 
     if body.enabled:
@@ -79,6 +113,7 @@ async def create_mcp_server(
             raise ValueError(f"无法连接到 MCP Server：{e}") from e
 
     data = body.model_dump()
+    data["description"] = ""  # 占位，稍后由 refresh 写入 LLM 产物
     data["transport"] = resolved_transport
     server = await repo.create(data)
     logger.info("MCP Server 已创建：%s（%s）", server["name"], server["url"])
@@ -94,14 +129,13 @@ async def create_mcp_server(
         if not ok:
             logger.warning("MCP Server %s 注册到 manager 失败（已保存配置）", server["name"])
         else:
-            # 连接成功后同步 list_tools → SQLite + Chroma 索引
-            try:
-                synced = await McpToolSyncService(settings).sync_server("http", server["id"])
-                logger.info("MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
-            except Exception:
-                logger.exception("MCP Server %s 工具索引同步失败", server["name"])
+            synced = await _sync_http_tools(settings, server["id"])
+            logger.info("MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
 
-    return _to_response(server)
+    # sync 后（或无 tools 时）生成 description；disabled 也会生成短描述
+    await _refresh_http_description(llm, settings, server, user_hint)
+    updated = await repo.get(server["id"])
+    return _to_response(updated or server)
 
 
 async def get_mcp_server(
@@ -118,30 +152,36 @@ async def update_mcp_server(
     server_id: str,
     body: MCPServerUpdate,
     settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPServerResponse | None:
     """更新 MCP Server 配置，变更 URL/api_key/enabled 时自动重连。
 
-    - 若变更了 url 或 api_key，清空 transport 让下次连接重新探测。
-    - 未找到返回 None。
-
-    Raises:
-        ValueError: 没有需要更新的字段。
+    body.description 若出现在请求中，视为 user_hint 触发重生成，不直接 update 到 DB。
     """
     if settings is None:
         settings = get_settings()
-    update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-    if not update_data:
+    raw = body.model_dump(exclude_unset=True)
+    update_data = {k: v for k, v in raw.items() if v is not None}
+    user_hint: str | None = None
+    if "description" in raw:
+        # 仅当客户端显式传了 description 字段时才当作生成参考
+        user_hint = (raw.get("description") or "").strip() or None
+        update_data.pop("description", None)
+
+    if not update_data and user_hint is None:
         raise ValueError("没有需要更新的字段")
     if "name" in update_data:
         await assert_name_available_exclude(
             resolve_db_path(settings), update_data["name"], server_id
         )
 
-    # url 或 api_key 变更则清空 transport，触发重新探测
     if "url" in update_data or "api_key" in update_data:
         update_data["transport"] = ""
 
-    server = await repo.update(server_id, update_data)
+    if update_data:
+        server = await repo.update(server_id, update_data)
+    else:
+        server = await repo.get(server_id)
     if server is None:
         return None
 
@@ -164,24 +204,21 @@ async def update_mcp_server(
         if ok and resolved and resolved != server.get("transport", ""):
             await repo.update_transport(server_id, resolved)
             server["transport"] = resolved
+        if ok:
+            synced = await _sync_http_tools(settings, server_id)
+            logger.info("MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
     else:
         await mgr.disconnect(server_id)
         logger.info("MCP Server %s 已断开", server["name"])
-        # 禁用时清理该 server 下全部 tool 索引
         try:
             await McpToolSyncService(settings).clear_server("http", server_id)
         except Exception:
             logger.exception("MCP Server %s 工具索引清理失败", server_id)
 
-    # 启用或仅更新 description 时重新同步（description 写入 search_doc）
-    if server["enabled"] or "description" in update_data:
-        try:
-            synced = await McpToolSyncService(settings).sync_server("http", server_id)
-            logger.info("MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
-        except Exception:
-            logger.exception("MCP Server %s 工具索引同步失败", server["name"])
-
-    return _to_response(server)
+    # 每次保存后刷新 description（含仅改 user_hint 的场景）
+    await _refresh_http_description(llm, settings, server, user_hint)
+    updated = await repo.get(server_id)
+    return _to_response(updated or server)
 
 
 async def delete_mcp_server(
@@ -197,7 +234,6 @@ async def delete_mcp_server(
         return False
 
     try:
-        # 删除配置时一并清理 tool 索引
         await McpToolSyncService().clear_server("http", server_id)
     except Exception:
         logger.exception("MCP Server %s 工具索引清理失败", server_id)
@@ -209,8 +245,16 @@ async def delete_mcp_server(
 async def test_mcp_server(
     repo: SqliteMCPServerRepository,
     server_id: str,
+    settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPServerTestResult | None:
-    """测试 MCP Server 连接（临时连接，使用 DB 中已有 transport 加速）。未找到返回 None。"""
+    """测试 MCP Server 连接（临时连接，使用 DB 中已有 transport 加速）。
+
+    测试成功后会 sync tools 并用最新工具列表重生成 description；
+    user_hint 置空，避免把已有 LLM 描述当参考造成自我强化。
+    """
+    if settings is None:
+        settings = get_settings()
     server = await repo.get(server_id)
     if server is None:
         return None
@@ -226,12 +270,13 @@ async def test_mcp_server(
         await conn.close()
         tools_synced = 0
         try:
-            # 测试连接已 list_tools，直接传入避免重复请求
-            tools_synced = await McpToolSyncService().sync_server(
+            tools_synced = await McpToolSyncService(settings).sync_server(
                 "http", server_id, tool_defs=tools
             )
         except Exception:
             logger.exception("MCP Server %s 测试后工具索引同步失败", server["name"])
+        # 测试路径不传 user_hint，仅依据最新 tools 重生成
+        await _refresh_http_description(llm, settings, server, user_hint=None)
         logger.info("MCP Server %s 测试通过，%d 个工具", server["name"], len(tools))
         return MCPServerTestResult(
             status="ok",

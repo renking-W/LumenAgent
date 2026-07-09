@@ -136,7 +136,7 @@ async def assemble_for_llm(
             "[ContextAssembly] session=%s total_tokens=%d > threshold=%d，触发强制压缩",
             session_id, ctx.total_tokens, force_threshold,
         )
-        from lumen_agent.application.service.summary_service import force_compress_now
+        from lumen_agent.application.service.chat.summary_service import force_compress_now
         await force_compress_now(
             repo, llm, settings,
             session_id=session_id,

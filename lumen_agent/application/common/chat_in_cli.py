@@ -17,7 +17,7 @@ import threading
 from uuid import uuid4
 import questionary
 from knowledge_in_cli import knowledge_operation
-from lumen_agent.application.service.chat_service import reply_with_agent
+from lumen_agent.application.service.chat.chat_service import reply_with_agent
 from lumen_agent.agent.tools import init_tools
 from lumen_agent.config import get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_conversation import SqliteConversationRepository
@@ -114,7 +114,7 @@ async def async_main() -> None:
         except Exception as e:
             print(f"\n  [异常] {e}")
         finally:
-            from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
+            from lumen_agent.application.service.mcp.mcp_request_context import clear_allowed_server_ids
             clear_allowed_server_ids()
 
     print("再见！")

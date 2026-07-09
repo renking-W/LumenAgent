@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from lumen_agent.api.dependency import get_settings
+from lumen_agent.api.dependency import get_llm_client, get_settings
 from lumen_agent.api.schemas.mcp_dtos import MCPServerTestResult
 from lumen_agent.api.schemas.mcp_stdio_dtos import (
     MCPStdioServerCreate,
     MCPStdioServerResponse,
     MCPStdioServerUpdate,
 )
-from lumen_agent.application.service.mcp_stdio_server_service import (
+from lumen_agent.application.service.mcp.mcp_stdio_server_service import (
     create_stdio_server as svc_create,
     delete_stdio_server as svc_delete,
     get_stdio_server as svc_get,
@@ -23,6 +23,7 @@ from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import (
     SqliteMCPStdioServerRepository,
 )
+from lumen_agent.model_adapters.base import ModelAdapter
 
 router = APIRouter(prefix="/v1/mcp/stdio-servers", tags=["mcp-stdio"])
 
@@ -44,9 +45,10 @@ async def list_stdio_servers(
 async def create_stdio_server(
     body: MCPStdioServerCreate,
     repo: SqliteMCPStdioServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),  # 用于 sync 后生成 description
 ) -> MCPStdioServerResponse:
     try:
-        return await svc_create(repo, body)
+        return await svc_create(repo, body, llm=llm)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -67,9 +69,10 @@ async def update_stdio_server(
     server_id: str,
     body: MCPStdioServerUpdate,
     repo: SqliteMCPStdioServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),  # 用于 sync 后生成 description
 ) -> MCPStdioServerResponse:
     try:
-        result = await svc_update(repo, server_id, body)
+        result = await svc_update(repo, server_id, body, llm=llm)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
     if result is None:
@@ -92,8 +95,9 @@ async def delete_stdio_server(
 async def test_stdio_server(
     server_id: str,
     repo: SqliteMCPStdioServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),
 ) -> MCPServerTestResult:
-    result = await svc_test(repo, server_id)
+    result = await svc_test(repo, server_id, llm=llm)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="stdio MCP Server 不存在")
     return result

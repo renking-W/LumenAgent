@@ -1,12 +1,12 @@
 """stdio MCP Server 管理服务：CRUD 编排、连接管理、测试等全部业务逻辑。
 
-工具索引：创建/启用/更新 description/测试成功后调用 McpToolSyncService；
-禁用时清理 Chroma + SQLite 中的 tool 记录。
+工具索引与 description 生成逻辑同 HTTP 版（见 mcp_server_service）。
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from lumen_agent.api.schemas.mcp_dtos import MCPServerTestResult
 from lumen_agent.api.schemas.mcp_stdio_dtos import (
@@ -14,15 +14,19 @@ from lumen_agent.api.schemas.mcp_stdio_dtos import (
     MCPStdioServerResponse,
     MCPStdioServerUpdate,
 )
-from lumen_agent.application.service.mcp_lookup import (
+from lumen_agent.application.service.mcp.mcp_description_service import (
+    refresh_server_description_after_sync,
+)
+from lumen_agent.application.service.mcp.mcp_lookup import (
     assert_name_available,
     assert_name_available_exclude,
 )
-from lumen_agent.application.service.mcp_tool_sync_service import McpToolSyncService
+from lumen_agent.application.service.mcp.mcp_tool_sync_service import McpToolSyncService
 from lumen_agent.config import Settings, get_settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp_stdio import (
     SqliteMCPStdioServerRepository,
 )
+from lumen_agent.model_adapters.base import ModelAdapter
 from lumen_agent.model_adapters.client import get_mcp_manager
 from lumen_agent.model_adapters.client.mcp_client import MCPStdioConnection
 
@@ -44,6 +48,32 @@ def _to_response(server: dict) -> MCPStdioServerResponse:
     )
 
 
+async def _sync_stdio_tools(settings: Settings, server_id: str) -> int:
+    """将 stdio MCP 的 tools 同步到 mcp_tools + Chroma；失败返回 0 不抛。"""
+    try:
+        return await McpToolSyncService(settings).sync_server("stdio", server_id)
+    except Exception:
+        logger.exception("stdio MCP Server %s 工具索引同步失败", server_id)
+        return 0
+
+
+async def _refresh_stdio_description(
+    llm: ModelAdapter | None,
+    settings: Settings,
+    server: dict[str, Any],
+    user_hint: str | None,
+) -> None:
+    """在 tool sync 之后调用 LLM 生成 description 并写库。"""
+    await refresh_server_description_after_sync(
+        llm,
+        settings,
+        server_kind="stdio",
+        server_id=server["id"],
+        server_name=server["name"],
+        user_hint=user_hint,
+    )
+
+
 async def list_stdio_servers(
     repo: SqliteMCPStdioServerRepository,
 ) -> list[MCPStdioServerResponse]:
@@ -56,17 +86,17 @@ async def create_stdio_server(
     repo: SqliteMCPStdioServerRepository,
     body: MCPStdioServerCreate,
     settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPStdioServerResponse:
     """新增 stdio MCP Server 配置。
 
-    若 enabled=True，先用临时连接验证命令可执行；
-    连接失败直接抛 ValueError，**不写入 DB**。
-    验证通过后写 DB，再注册到 manager。
+    用户提交的 description 仅作 user_hint，最终描述由 LLM 在 sync 后生成。
     """
     if settings is None:
         settings = get_settings()
     await assert_name_available(resolve_db_path(settings), body.name)
 
+    user_hint = (body.description or "").strip() or None
     args = body.args or []
     env = body.env or None
     cwd = body.cwd or None
@@ -82,6 +112,7 @@ async def create_stdio_server(
             raise ValueError(f"无法启动 stdio MCP Server：{e}") from e
 
     data = body.model_dump()
+    data["description"] = ""  # 占位，稍后由 refresh 写入 LLM 产物
     if data.get("cwd") is None:
         data["cwd"] = ""
     server = await repo.create(data)
@@ -101,14 +132,12 @@ async def create_stdio_server(
                 "stdio MCP Server %s 注册到 manager 失败（已保存配置）", server["name"]
             )
         else:
-            # 连接成功后同步 list_tools → SQLite + Chroma 索引
-            try:
-                synced = await McpToolSyncService(settings).sync_server("stdio", server["id"])
-                logger.info("stdio MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
-            except Exception:
-                logger.exception("stdio MCP Server %s 工具索引同步失败", server["name"])
+            synced = await _sync_stdio_tools(settings, server["id"])
+            logger.info("stdio MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
 
-    return _to_response(server)
+    await _refresh_stdio_description(llm, settings, server, user_hint)
+    updated = await repo.get(server["id"])
+    return _to_response(updated or server)
 
 
 async def get_stdio_server(
@@ -125,23 +154,32 @@ async def update_stdio_server(
     server_id: str,
     body: MCPStdioServerUpdate,
     settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPStdioServerResponse | None:
     """更新 stdio MCP Server 配置，相关字段变更时自动重连。
 
-    Raises:
-        ValueError: 没有需要更新的字段。
+    body.description 若出现在请求中，视为 user_hint 触发重生成，不直接 update 到 DB。
     """
     if settings is None:
         settings = get_settings()
-    update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-    if not update_data:
+    raw = body.model_dump(exclude_unset=True)
+    update_data = {k: v for k, v in raw.items() if v is not None}
+    user_hint: str | None = None
+    if "description" in raw:
+        user_hint = (raw.get("description") or "").strip() or None
+        update_data.pop("description", None)
+
+    if not update_data and user_hint is None:
         raise ValueError("没有需要更新的字段")
     if "name" in update_data:
         await assert_name_available_exclude(
             resolve_db_path(settings), update_data["name"], server_id
         )
 
-    server = await repo.update(server_id, update_data)
+    if update_data:
+        server = await repo.update(server_id, update_data)
+    else:
+        server = await repo.get(server_id)
     if server is None:
         return None
 
@@ -158,24 +196,21 @@ async def update_stdio_server(
             server.get("cwd") or None,
         )
         logger.info("stdio MCP Server %s 重连%s", server["name"], "成功" if ok else "失败")
+        if ok:
+            synced = await _sync_stdio_tools(settings, server_id)
+            logger.info("stdio MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
     else:
         await mgr.disconnect(server_id)
         logger.info("stdio MCP Server %s 已断开", server["name"])
-        # 禁用时清理该 server 下全部 tool 索引
         try:
             await McpToolSyncService(settings).clear_server("stdio", server_id)
         except Exception:
             logger.exception("stdio MCP Server %s 工具索引清理失败", server_id)
 
-    # 启用或仅更新 description 时重新同步（description 写入 search_doc）
-    if server["enabled"] or "description" in update_data:
-        try:
-            synced = await McpToolSyncService(settings).sync_server("stdio", server_id)
-            logger.info("stdio MCP Server %s 工具索引已同步：%s 个", server["name"], synced)
-        except Exception:
-            logger.exception("stdio MCP Server %s 工具索引同步失败", server["name"])
-
-    return _to_response(server)
+    # 每次保存后刷新 description
+    await _refresh_stdio_description(llm, settings, server, user_hint)
+    updated = await repo.get(server_id)
+    return _to_response(updated or server)
 
 
 async def delete_stdio_server(
@@ -191,7 +226,6 @@ async def delete_stdio_server(
         return False
 
     try:
-        # 删除配置时一并清理 tool 索引
         await McpToolSyncService().clear_server("stdio", server_id)
     except Exception:
         logger.exception("stdio MCP Server %s 工具索引清理失败", server_id)
@@ -203,8 +237,15 @@ async def delete_stdio_server(
 async def test_stdio_server(
     repo: SqliteMCPStdioServerRepository,
     server_id: str,
+    settings: Settings | None = None,
+    llm: ModelAdapter | None = None,
 ) -> MCPServerTestResult | None:
-    """测试 stdio MCP Server 连接（临时连接，不保持）。未找到返回 None。"""
+    """测试 stdio MCP Server 连接（临时连接，不保持）。未找到返回 None。
+
+    测试成功后会 sync tools 并重生成 description；user_hint 置空。
+    """
+    if settings is None:
+        settings = get_settings()
     server = await repo.get(server_id)
     if server is None:
         return None
@@ -221,12 +262,13 @@ async def test_stdio_server(
         await conn.close()
         tools_synced = 0
         try:
-            # 测试连接已 list_tools，直接传入避免重复请求
-            tools_synced = await McpToolSyncService().sync_server(
+            tools_synced = await McpToolSyncService(settings).sync_server(
                 "stdio", server_id, tool_defs=tools
             )
         except Exception:
             logger.exception("stdio MCP Server %s 测试后工具索引同步失败", server["name"])
+        # 测试路径不传 user_hint，仅依据最新 tools 重生成
+        await _refresh_stdio_description(llm, settings, server, user_hint=None)
         logger.info(
             "stdio MCP Server %s 测试通过，%d 个工具", server["name"], len(tools)
         )

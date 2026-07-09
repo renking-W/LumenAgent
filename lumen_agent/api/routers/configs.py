@@ -9,7 +9,7 @@ from lumen_agent.api.schemas.config_dtos import (
     UpdateConfigRequest,
     UpdateConfigResponse,
 )
-from lumen_agent.application.service.config_service import (
+from lumen_agent.application.service.common.config_service import (
     list_configs as svc_list_configs,
     update_config as svc_update_config,
 )

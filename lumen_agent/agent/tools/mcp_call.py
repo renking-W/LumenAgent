@@ -11,7 +11,7 @@ from typing import Any
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
-from lumen_agent.application.service.mcp_request_context import get_allowed_server_ids
+from lumen_agent.application.service.mcp.mcp_request_context import get_allowed_server_ids
 from lumen_agent.model_adapters.client import get_mcp_manager
 
 

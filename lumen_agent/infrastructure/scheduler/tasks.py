@@ -50,7 +50,7 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
     )
 
     try:
-        from lumen_agent.application.service.chat_service import (
+        from lumen_agent.application.service.chat.chat_service import (
             reply_with_agent,
         )
         from lumen_agent.config import get_settings, resolve_db_path
@@ -85,7 +85,7 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         async for kind, data in reply_with_agent(
             repo, llm, session_id, 1, prompt, settings,
             approval_mode="none",
-            mcp_server_ids=mcp_server_ids or None,
+            mcp_server_ids=mcp_server_ids or [],
         ):
             if kind == "done":
                 final_text = data
@@ -105,7 +105,7 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         return await _save_result(task_id, session_id, "failed", str(exc))
 
     finally:
-        from lumen_agent.application.service.mcp_request_context import clear_allowed_server_ids
+        from lumen_agent.application.service.mcp.mcp_request_context import clear_allowed_server_ids
         clear_allowed_server_ids()
         # 一次性任务无论成功/失败，触发后自动停用
         if trigger_type == "date":
@@ -280,7 +280,7 @@ async def clean_old_logs(**kwargs: Any) -> None:
     系统日志文件名格式: ``agent.log.YYYY-MM-DD``
     虚拟机日志文件名格式: ``{host}.MM-DD_HH-MM-SS.log``（归档文件），活跃 ``{host}.log`` 不清理。
     """
-    from lumen_agent.application.service.log_service import log_directory
+    from lumen_agent.application.service.common.log_service import log_directory
     from lumen_agent.application.uitls.dir_guide import DirGuide
 
     retain_days = int(

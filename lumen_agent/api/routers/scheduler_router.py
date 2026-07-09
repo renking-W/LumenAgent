@@ -16,7 +16,7 @@ from lumen_agent.api.schemas.scheduler_dtos import (
     UpdatePromptRequest,
     UpdatePromptResponse,
 )
-from lumen_agent.application.service.scheduler_task_service import (
+from lumen_agent.application.service.common.scheduler_task_service import (
     create_job as svc_create_job,
     delete_job as svc_delete_job,
     get_job as svc_get_job,

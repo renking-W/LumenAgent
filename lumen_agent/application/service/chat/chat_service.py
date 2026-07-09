@@ -11,8 +11,10 @@ from typing import Any
 
 from lumen_agent.agent.tokens import get_token_counter
 from lumen_agent.application.common.context_assembly import assemble_for_llm
-from lumen_agent.application.service.summary_service import maybe_trigger_summary
-from lumen_agent.application.service.title_service import maybe_generate_title
+from lumen_agent.application.service.mcp.mcp_lookup import load_enabled_mcp_servers_for_prompt
+from lumen_agent.application.service.chat.summary_service import maybe_trigger_summary
+from lumen_agent.application.service.chat.title_service import maybe_generate_title
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings, get_context_window
 from lumen_agent.domain.messages import image_block, text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
@@ -240,7 +242,6 @@ async def reply_with_agent(
     settings: Settings,
     approval_mode: str | None = None,
     on_connect: StreamHandleCallback | None = None,
-    mcp_servers: list[Any] | None = None,
     mcp_server_ids: list[str] | None = None,
     self_system: str | None = None,
     image_urls: list[str] | None = None,
@@ -259,7 +260,7 @@ async def reply_with_agent(
     from lumen_agent.agent.tools.registry import ToolRegistry
     from lumen_agent.agent.prompts.builder import build_system_prompt
     from lumen_agent.agent.skills import load_skills
-    from lumen_agent.application.service.mcp_request_context import set_allowed_server_ids
+    from lumen_agent.application.service.mcp.mcp_request_context import set_allowed_server_ids
 
     # 确保工具已注册（幂等）
     init_tools()
@@ -279,10 +280,17 @@ async def reply_with_agent(
     # 2) 构建 system 提示词（MCP 工具通过 mcp_search / mcp_call 按需使用，不再全量注入 MCPBridgeTool）
     all_tools = ToolRegistry.create_all_tools()
     skills = load_skills()
-    system_content = build_system_prompt(all_tools, skills, self_system, session_kind) or None
+    enabled_mcp = await load_enabled_mcp_servers_for_prompt()
+    system_content = build_system_prompt(
+        all_tools, skills, self_system, session_kind, mcp_servers=enabled_mcp
+    ) or None
 
-    # 将前端选中的 MCP Server 写入请求上下文，供 mcp_search / mcp_call 限定范围
-    set_allowed_server_ids(mcp_server_ids)
+    # mcp_call 允许的 server id：默认全部已启用 + 调用方额外传入
+    allowed_ids = [s["id"] for s in enabled_mcp]
+    for sid in (mcp_server_ids or []):
+        if sid not in allowed_ids:
+            allowed_ids.append(sid)
+    set_allowed_server_ids(allowed_ids)
 
     # 3) 组装上下文（含 token 预算检查 / 强制压缩）
     counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))

@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from lumen_agent.application.service.log_service import count_logs, read_logs
+from lumen_agent.application.service.common.log_service import count_logs, read_logs
 
 router = APIRouter(prefix="/v1", tags=["logs"])
 

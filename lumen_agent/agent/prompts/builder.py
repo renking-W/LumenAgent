@@ -85,6 +85,38 @@ class SystemPromptBuilder:
         return self
 
     # ------------------------------------------------------------------ #
+    # 1.5 MCP 外部服务
+    # ------------------------------------------------------------------ #
+
+    def add_mcp_server_system(self, servers: list[dict]) -> "SystemPromptBuilder":
+        """注入已启用的 MCP Server 列表及 AI 生成的能力描述。
+
+        帮助 Agent 在调用 mcp_search 之前先了解各 server 能做什么；
+        servers 由 chat_service 从 DB list_enabled 加载。
+        """
+        enabled = [s for s in servers if s.get("enabled", True)]
+        lines: list[str] = [
+            "# MCP 外部服务",
+            "",
+            "以下 MCP Server 已接入本系统。选型时**先参考本节描述**，再使用 `mcp_search` 检索具体工具，最后用 `mcp_call` 执行。",
+            "",
+        ]
+        if not enabled:
+            lines.append("- 当前没有已启用的 MCP Server。")
+        else:
+            for svr in enabled:
+                sid = svr.get("id", "")
+                name = svr.get("name", sid)
+                kind = svr.get("kind", "http")
+                desc = (svr.get("description") or "").strip() or "（暂无描述）"
+                lines.append(f"## {name} (`{sid}`)")
+                lines.append(f"- **类型**：{kind}")
+                lines.append(f"- **说明**：{desc}")
+                lines.append("")
+        self._sections.append("\n".join(lines).rstrip())
+        return self
+
+    # ------------------------------------------------------------------ #
     # 2. 技能系统
     # ------------------------------------------------------------------ #
 
@@ -254,7 +286,7 @@ class SystemPromptBuilder:
     # 9. 适应不同类型的session
     # ------------------------------------------------------------------ #
     def adapt_session_kind(self,session_kind) -> "SystemPromptBuilder" :
-        self._sections.append("\n\n--------------以下为会话环境说明-------------")
+        self._sections.append("\n\n以下为会话环境说明")
         if session_kind == 0:
             self._sections.append("\n\n当前处于正常会话环境")
         if session_kind == 1:
@@ -270,11 +302,17 @@ def build_system_prompt(
     skills: list[SkillMeta] | None = None,
     self_system : str | None = None,
     session_kind: int | None = None,
+    mcp_servers: list[dict] | None = None,
 ) -> str:
-    """工厂函数：按规范顺序组装系统提示词，返回完整 system 字符串。"""
+    """工厂函数：按规范顺序组装系统提示词，返回完整 system 字符串。
+
+    mcp_servers: 已启用 MCP 的 id/name/kind/description，紧挨 tool 段注入，
+    便于 Agent 选型后再 mcp_search。
+    """
     return (
         SystemPromptBuilder()
         .add_tool_system(tools)
+        .add_mcp_server_system(mcp_servers or [])  # 在 meta-tools 之后展示 server 能力摘要
         .add_skill_system(skills or [])
         .add_memory_system()
         .add_knowledge_system()

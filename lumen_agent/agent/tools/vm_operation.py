@@ -14,7 +14,7 @@ import logging
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
-from lumen_agent.application.service.vm_connection_service import (
+from lumen_agent.application.service.common.vm_connection_service import (
     get_vm_connection_service,
 )
 from lumen_agent.config import get_settings, resolve_db_path
@@ -107,7 +107,7 @@ class VirtualMachineOperation(BaseTool):
             if config is None:
                 return ToolResult.error(f"VM '{vm_id}' 不存在，请先注册或使用 list_vms 查看可用 VM")
             conn = await svc.connect(vm_id, config)
-            from lumen_agent.application.service.vm_connection_service import (
+            from lumen_agent.application.service.common.vm_connection_service import (
                 VMConnectionStatus,
             )
             if conn.status == VMConnectionStatus.ERROR:
@@ -152,7 +152,7 @@ class VirtualMachineOperation(BaseTool):
         if config is None:
             return ToolResult.error(f"VM '{vm_id}' 不存在，请先注册或使用 list_vms 查看可用 VM")
 
-        from lumen_agent.application.service.vm_connection_service import (
+        from lumen_agent.application.service.common.vm_connection_service import (
             VMConnectionStatus,
         )
         conn = await svc.connect(vm_id, config)

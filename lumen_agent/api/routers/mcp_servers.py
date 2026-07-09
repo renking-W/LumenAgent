@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from lumen_agent.api.dependency import get_settings
+from lumen_agent.api.dependency import get_llm_client, get_settings
 from lumen_agent.api.schemas.mcp_dtos import (
     MCPServerCreate,
     MCPServerResponse,
     MCPServerTestResult,
     MCPServerUpdate,
 )
-from lumen_agent.application.service.mcp_server_service import (
+from lumen_agent.application.service.mcp.mcp_server_service import (
     create_mcp_server as svc_create,
     delete_mcp_server as svc_delete,
     get_mcp_server as svc_get,
@@ -21,6 +21,7 @@ from lumen_agent.application.service.mcp_server_service import (
 )
 from lumen_agent.config import Settings, resolve_db_path
 from lumen_agent.infrastructure.data_base.sqlite_mcp import SqliteMCPServerRepository
+from lumen_agent.model_adapters.base import ModelAdapter
 
 router = APIRouter(prefix="/v1/mcp/http-servers", tags=["mcp"])
 
@@ -40,9 +41,10 @@ async def list_mcp_servers(
 async def create_mcp_server(
     body: MCPServerCreate,
     repo: SqliteMCPServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),  # 用于 sync 后生成 description
 ) -> MCPServerResponse:
     try:
-        return await svc_create(repo, body)
+        return await svc_create(repo, body, llm=llm)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -63,9 +65,10 @@ async def update_mcp_server(
     server_id: str,
     body: MCPServerUpdate,
     repo: SqliteMCPServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),  # 用于 sync 后生成 description
 ) -> MCPServerResponse:
     try:
-        result = await svc_update(repo, server_id, body)
+        result = await svc_update(repo, server_id, body, llm=llm)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
     if result is None:
@@ -88,8 +91,9 @@ async def delete_mcp_server(
 async def test_mcp_server(
     server_id: str,
     repo: SqliteMCPServerRepository = Depends(_get_repo),
+    llm: ModelAdapter = Depends(get_llm_client),  # 测试成功后重生成 description
 ) -> MCPServerTestResult:
-    result = await svc_test(repo, server_id)
+    result = await svc_test(repo, server_id, llm=llm)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="MCP Server 不存在")
     return result

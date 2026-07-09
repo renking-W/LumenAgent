@@ -197,12 +197,7 @@
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
         <div class="composer-mcp-bar">
-          <MCPServerSelector
-            v-if="useAgentMode"
-            :selected-ids="selectedMcpServerIds"
-            :disabled="sending"
-            @update:selected-ids="selectedMcpServerIds = $event"
-          />
+          <MCPServerSelector v-if="useAgentMode" />
         </div>
         <AppComposer
           :prompt="prompt"
@@ -262,7 +257,6 @@ const sidebarCollapsed = ref(false)
 const useAgentMode = ref(true)
 const approvalMode = ref<'none' | 'all' | 'dangerous'>('dangerous')
 const prompt = ref('')
-const selectedMcpServerIds = ref<string[]>([])
 const apiKeyDialogVisible = ref(false)
 const mainContent = ref<HTMLElement | null>(null)
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
@@ -437,9 +431,6 @@ const sendMessage = async (imageUrls: string[] = []) => {
   chat.send(content, {
     mode: useAgentMode.value ? 'agent' : 'simple',
     approval_mode: useAgentMode.value ? approvalMode.value : undefined,
-    mcp_server_ids: useAgentMode.value && selectedMcpServerIds.value.length > 0
-      ? selectedMcpServerIds.value
-      : undefined,
     image_urls: useAgentMode.value && imageUrls.length ? imageUrls : undefined,
   })
   await nextTick()

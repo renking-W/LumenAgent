@@ -118,14 +118,14 @@ class TaskScheduler(BaseTool):
         mcp_server_ids: list[str] = []
         if raw_mcp_names:
             try:
-                from lumen_agent.application.service.mcp_lookup import resolve_names_to_ids
+                from lumen_agent.application.service.mcp.mcp_lookup import resolve_names_to_ids
                 settings = get_settings()
                 mcp_server_ids = await resolve_names_to_ids(resolve_db_path(settings), raw_mcp_names)
             except ValueError as exc:
                 return ToolResult.error(f"MCP 名称解析失败: {exc}")
         elif raw_mcp_ids:
             try:
-                from lumen_agent.application.service.mcp_lookup import validate_ids_exist
+                from lumen_agent.application.service.mcp.mcp_lookup import validate_ids_exist
                 settings = get_settings()
                 mcp_server_ids = await validate_ids_exist(resolve_db_path(settings), raw_mcp_ids)
             except ValueError as exc:

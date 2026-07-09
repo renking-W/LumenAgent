@@ -6,12 +6,19 @@ from pydantic import BaseModel, Field
 
 
 class MCPServerCreate(BaseModel):
-    """创建 MCP Server 配置。"""
+    """创建 MCP Server 配置。
+
+    请求中的 description 为可选 user_hint；响应 MCPServerResponse.description
+    为 AI 根据 tools 生成的最终说明。
+    """
 
     name: str = Field(..., min_length=1, max_length=100, description="显示名称")
     url: str = Field(..., description="MCP Server SSE 端点 URL")
     api_key: str | None = Field(default=None, description="MCP Server 鉴权密钥")
-    description: str | None = Field(default=None, description="一句话说明，用于 MCP 工具向量检索")
+    description: str | None = Field(
+        default=None,
+        description="可选参考说明，保存后由 AI 根据工具列表自动生成最终描述（≤400字）",
+    )
     enabled: bool = Field(default=True, description="是否启用")
 
 
@@ -21,7 +28,10 @@ class MCPServerUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     url: str | None = None
     api_key: str | None = None
-    description: str | None = Field(default=None, description="一句话说明，用于 MCP 工具向量检索")
+    description: str | None = Field(
+        default=None,
+        description="可选参考说明，保存后由 AI 根据工具列表自动生成最终描述（≤400字）",
+    )
     enabled: bool | None = None
 
 

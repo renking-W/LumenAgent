@@ -9,8 +9,8 @@ import logging
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
-from lumen_agent.application.service.mcp_request_context import get_allowed_server_ids
-from lumen_agent.application.service.mcp_tool_query_service import McpToolQueryService
+from lumen_agent.application.service.mcp.mcp_request_context import get_allowed_server_ids
+from lumen_agent.application.service.mcp.mcp_tool_query_service import McpToolQueryService
 from lumen_agent.config import get_settings
 
 
@@ -26,6 +26,8 @@ class McpSearch(BaseTool):
         "使用前请用自然语言 query 搜索相关工具，获取 tool_name 与 parameters；"
         "需要浏览某 server 下全部工具时设置 list_all=true。"
         "确认工具后再用 mcp_call 执行。"
+        "当你需要解决目前tools无法解决的问题时，可以使用该tool来获取额外的mcp能力"
+        "不知道用哪个tool可以使用list_all模式"
     )
     parameters = {
         "type": "object",

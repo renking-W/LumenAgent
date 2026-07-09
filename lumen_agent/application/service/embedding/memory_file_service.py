@@ -8,7 +8,7 @@ import chromadb
 
 from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
 from lumen_agent.api.schemas.memory_dtos import MemoryFileItem
-from lumen_agent.application.service.memory_rag_service import MemoryRagService
+from lumen_agent.application.service.embedding.memory_rag_service import MemoryRagService
 from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings, resolve_chroma_path
 

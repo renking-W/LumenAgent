@@ -123,7 +123,7 @@ async def lifespan(_app: FastAPI):
 
     # ── 断开所有 VM SSH 连接 ─────────────────────────────────
     try:
-        from lumen_agent.application.service.vm_connection_service import (
+        from lumen_agent.application.service.common.vm_connection_service import (
             get_vm_connection_service,
         )
         await get_vm_connection_service().disconnect_all()
@@ -142,7 +142,7 @@ async def lifespan(_app: FastAPI):
 async def _sync_mcp_tools_on_startup() -> None:
     """后台任务：同步所有 enabled MCP Server 的工具索引。"""
     try:
-        from lumen_agent.application.service.mcp_tool_sync_service import McpToolSyncService
+        from lumen_agent.application.service.mcp.mcp_tool_sync_service import McpToolSyncService
 
         service = McpToolSyncService()
         count = await service.sync_all_enabled()
@@ -155,7 +155,7 @@ async def _index_memory_on_startup() -> None:
     """后台任务：全量扫描每日记忆文件，向量化后写入 ChromaDB。"""
     try:
         from lumen_agent.agent.memory.memory_utils import MemoryFileUtils
-        from lumen_agent.application.service.memory_rag_service import MemoryRagService
+        from lumen_agent.application.service.embedding.memory_rag_service import MemoryRagService
 
         settings = get_settings()
         workspace_path = DirGuide.workspace_dir()
@@ -169,7 +169,7 @@ async def _index_memory_on_startup() -> None:
 
 async def _ensure_default_api_key() -> None:
     """第一次启动时自动生成一个默认 API Key 并打印到日志。"""
-    from lumen_agent.application.service.api_key_service import generate_api_key
+    from lumen_agent.application.service.chat.api_key_service import generate_api_key
     from lumen_agent.infrastructure.data_base.sqlite_api_key import (
         SqliteApiKeyRepository,
     )

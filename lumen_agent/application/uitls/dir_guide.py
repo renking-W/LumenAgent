@@ -80,6 +80,11 @@ class DirGuide:
         return cls.docs_dir() / "memory_refine.md"
 
     @classmethod
+    def mcp_server_description_prompt_path(cls) -> Path:
+        """返回 ``docs/mcp_server_description.md``。"""
+        return cls.docs_dir() / "mcp_server_description.md"
+
+    @classmethod
     def agent_log_path(cls) -> Path:
         """返回 ``lumen_agent/log/agent.log``。"""
         return cls._PACKAGE_DIR / "log" / "agent.log"

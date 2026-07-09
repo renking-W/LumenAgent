@@ -21,7 +21,7 @@ from lumen_agent.api.schemas.vm_dtos import (
     VMStatusResponse,
     VMUpdateRequest,
 )
-from lumen_agent.application.service.vm_connection_service import (
+from lumen_agent.application.service.common.vm_connection_service import (
     VMConnectionStatus,
     VmConnectionService,
     get_vm_connection_service,

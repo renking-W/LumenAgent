@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from lumen_agent.api.schemas.memory_dtos import MemoryFileItem
-from lumen_agent.application.service.memory_file_service import (
+from lumen_agent.application.service.embedding.memory_file_service import (
     list_memory_files as svc_list_memories,
     reindex_memory_files as svc_reindex_memories,
 )

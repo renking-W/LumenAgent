@@ -12,8 +12,8 @@ from lumen_agent.api.schemas.mcp_tool_dtos import (
     MCPToolSearchResponse,
     MCPToolSyncResponse,
 )
-from lumen_agent.application.service.mcp_tool_query_service import McpToolQueryService
-from lumen_agent.application.service.mcp_tool_sync_service import McpToolSyncService
+from lumen_agent.application.service.mcp.mcp_tool_query_service import McpToolQueryService
+from lumen_agent.application.service.mcp.mcp_tool_sync_service import McpToolSyncService
 from lumen_agent.config import Settings
 
 router = APIRouter(prefix="/v1/mcp/tools", tags=["mcp-tools"])

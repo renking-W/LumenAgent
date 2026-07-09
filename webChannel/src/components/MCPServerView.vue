@@ -157,14 +157,14 @@
         <el-form-item label="API Key（可选）" prop="api_key">
           <el-input v-model="httpForm.api_key" type="password" show-password placeholder="留空则不设置" />
         </el-form-item>
-        <el-form-item label="一句话说明（可选）">
+        <el-form-item label="描述（可选）">
           <el-input
             v-model="httpForm.description"
             type="textarea"
             :rows="2"
             maxlength="200"
             show-word-limit
-            placeholder="例如：飞书多维表格，用来查和改 Base 数据"
+            placeholder="留空则由 AI 根据工具列表自动生成；填写则作为生成参考"
           />
         </el-form-item>
         <el-form-item label="状态">
@@ -198,14 +198,14 @@
         <el-form-item label="工作目录（可选）">
           <el-input v-model="stdioForm.cwd" placeholder="留空使用默认" />
         </el-form-item>
-        <el-form-item label="一句话说明（可选）">
+        <el-form-item label="描述（可选）">
           <el-input
             v-model="stdioForm.description"
             type="textarea"
             :rows="2"
             maxlength="200"
             show-word-limit
-            placeholder="例如：本地文件系统 MCP"
+            placeholder="留空则由 AI 根据工具列表自动生成；填写则作为生成参考"
           />
         </el-form-item>
         <el-form-item label="环境变量">
@@ -255,6 +255,7 @@ const httpFormRef = ref<FormInstance | null>(null)
 const stdioFormRef = ref<FormInstance | null>(null)
 
 const httpForm = reactive({ name: '', url: '', api_key: '', description: '', enabled: true })
+// description：用户可选参考，提交后由后端 LLM 生成最终描述（响应里带回并展示在列表）
 const httpFormRules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   url: [{ required: true, message: '请输入 URL', trigger: 'blur' }],
@@ -381,6 +382,7 @@ const submitHttpForm = async () => {
       name: httpForm.name,
       url: httpForm.url,
       enabled: httpForm.enabled,
+      // 作为 user_hint 传给后端，不会原样落库
       description: httpForm.description.trim() || null,
     }
     if (httpForm.api_key) payload.api_key = httpForm.api_key
@@ -421,7 +423,7 @@ const submitStdioForm = async () => {
     const payload: Record<string, unknown> = {
       name: stdioForm.name, command: stdioForm.command,
       args, env, enabled: stdioForm.enabled,
-      description: stdioForm.description.trim() || null,
+      description: stdioForm.description.trim() || null,  // user_hint，非最终落库描述
     }
     if (stdioForm.cwd.trim()) payload.cwd = stdioForm.cwd.trim()
 
