@@ -61,22 +61,6 @@ class TaskScheduler(BaseTool):
                 "type": "string",
                 "description": "要操作的任务 ID。action=delete/pause/resume 时必填。",
             },
-            "mcp_names": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "action=create 时可选。要挂载的 MCP Server 名称列表"
-                    "（跨 HTTP + stdio 全局唯一）。与 mcp_server_ids 二选一，不可同时传。"
-                ),
-            },
-            "mcp_server_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "action=create 时可选。要挂载的 MCP Server ID 列表。"
-                    "与 mcp_names 二选一，不可同时传。"
-                ),
-            },
         },
         "required": ["action"],
     }
@@ -107,29 +91,6 @@ class TaskScheduler(BaseTool):
             return ToolResult.error(
                 "创建任务缺少必要参数：trigger_type、trigger_expr、task_name、prompt 均不能为空。"
             )
-
-        # ── 0. 解析 MCP 参数 ────────────────────────────────────
-        raw_mcp_names: list[str] | None = params.get("mcp_names") or None
-        raw_mcp_ids: list[str] | None = params.get("mcp_server_ids") or None
-
-        if raw_mcp_names and raw_mcp_ids:
-            return ToolResult.error("mcp_names 和 mcp_server_ids 只能二选一，不可同时传。")
-
-        mcp_server_ids: list[str] = []
-        if raw_mcp_names:
-            try:
-                from lumen_agent.application.service.mcp.mcp_lookup import resolve_names_to_ids
-                settings = get_settings()
-                mcp_server_ids = await resolve_names_to_ids(resolve_db_path(settings), raw_mcp_names)
-            except ValueError as exc:
-                return ToolResult.error(f"MCP 名称解析失败: {exc}")
-        elif raw_mcp_ids:
-            try:
-                from lumen_agent.application.service.mcp.mcp_lookup import validate_ids_exist
-                settings = get_settings()
-                mcp_server_ids = await validate_ids_exist(resolve_db_path(settings), raw_mcp_ids)
-            except ValueError as exc:
-                return ToolResult.error(f"MCP ID 校验失败: {exc}")
 
         # ── 1. 生成 ID ─────────────────────────────────────────
         task_id = f"scheduled_{uuid.uuid4().hex[:8]}"
@@ -163,7 +124,7 @@ class TaskScheduler(BaseTool):
                     "session_id": f"__scheduled__{task_id}",
                     "task_name": task_name,
                     "prompt": prompt,
-                    "mcp_server_ids": mcp_server_ids,
+                    "trigger_type": trigger_type,
                 },
                 replace_existing=False,
             )
@@ -189,7 +150,6 @@ class TaskScheduler(BaseTool):
                 "enabled": True,
                 "created_by": "agent",
                 "session_id": f"__scheduled__{task_id}",
-                "mcp_server_ids": mcp_server_ids,
             })
         except Exception as exc:
             self._logger.warning("持久化任务元数据失败（不影响调度）: %s", exc)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,7 +41,6 @@ class SqliteSchedulerRepository:
                 created_by TEXT NOT NULL DEFAULT 'agent',
                 session_id TEXT NOT NULL DEFAULT '',
                 system_prompt TEXT NOT NULL DEFAULT '',
-                mcp_server_ids TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -67,13 +65,7 @@ class SqliteSchedulerRepository:
 
     @staticmethod
     def _row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
-        d = dict(row)
-        raw = d.get("mcp_server_ids", "[]")
-        try:
-            d["mcp_server_ids"] = json.loads(raw) if isinstance(raw, str) else raw
-        except (ValueError, TypeError):
-            d["mcp_server_ids"] = []
-        return d
+        return dict(row)
 
     async def _connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self._db_path)
@@ -87,16 +79,14 @@ class SqliteSchedulerRepository:
         now = _utc_now()
         task_id = task.get("id", "")
         db = await self._connect()
-        mcp_ids_raw = task.get("mcp_server_ids", [])
-        mcp_ids_json = json.dumps(mcp_ids_raw) if isinstance(mcp_ids_raw, list) else mcp_ids_raw
         try:
             await db.execute(
                 """
                 INSERT INTO scheduled_tasks
                     (id, name, prompt, trigger_type, trigger_expr, timezone,
-                     enabled, created_by, session_id, system_prompt, mcp_server_ids,
+                     enabled, created_by, session_id, system_prompt,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -109,7 +99,6 @@ class SqliteSchedulerRepository:
                     task.get("created_by", "agent"),
                     task.get("session_id", ""),
                     task.get("system_prompt", ""),
-                    mcp_ids_json,
                     now,
                     now,
                 ),
@@ -123,16 +112,13 @@ class SqliteSchedulerRepository:
         """更新任务字段（只更新传了的字段）。"""
         now = _utc_now()
         allowed = {"name", "prompt", "trigger_type", "trigger_expr",
-                    "timezone", "enabled", "system_prompt", "mcp_server_ids"}
+                    "timezone", "enabled", "system_prompt"}
         sets = ["updated_at = ?"]
         params: list[Any] = [now]
         for key, value in updates.items():
             if key in allowed:
                 sets.append(f"{key} = ?")
-                if key == "mcp_server_ids" and isinstance(value, list):
-                    params.append(json.dumps(value))
-                else:
-                    params.append(value)
+                params.append(value)
         if len(sets) == 1:
             return False  # 没有有效字段
         params.append(task_id)

@@ -21,10 +21,6 @@ class CreateJobRequest(BaseModel):
     trigger_type: str = Field(..., description="cron / interval / date")
     trigger_expr: str = Field(..., description="cron 表达式、秒数或 ISO 日期")
     timezone: str | None = Field(default=None, description="时区，缺省使用配置")
-    mcp_names: list[str] | None = Field(
-        default=None,
-        description="要加载的 MCP Server 名称列表（跨 HTTP + stdio 全局唯一）",
-    )
 
 
 class SchedulerJobItem(BaseModel):
@@ -42,7 +38,6 @@ class SchedulerJobItem(BaseModel):
     pending: bool | None = None
     timezone: str | None = None
     updated_at: str | None = None
-    mcp_server_ids: list[str] = []
 
 
 class SchedulerJobList(BaseModel):
