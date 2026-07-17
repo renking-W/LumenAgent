@@ -8,4 +8,7 @@ from lumen_agent.model_adapters.client.mcp_client import (
     get_mcp_manager,
 )
 from lumen_agent.model_adapters.client.ollama_client import OllamaHttpClient
+from lumen_agent.model_adapters.client.openai_responses_client import (
+    OpenAIResponsesHttpClient,
+)
 from lumen_agent.model_adapters.client.open_router_client import OpenRouterHttpClient

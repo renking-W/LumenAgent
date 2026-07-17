@@ -43,6 +43,14 @@ _BASIC_CONFIG_KEYS: frozenset[str] = frozenset({
     "LLM_PROVIDER",
 })
 
+def _loggable_config_value(key: str, value: Any) -> Any:
+    """Redact credentials before writing configuration changes to logs."""
+    sensitive_markers = ("API_KEY", "SECRET", "TOKEN", "PASSWORD")
+    if any(marker in key.upper() for marker in sensitive_markers):
+        return "[REDACTED]"
+    return value
+
+
 
 # ── 文件 I/O ──────────────────────────────────────────────────
 
@@ -70,6 +78,7 @@ def _write_json(key: str, value: str) -> None:
         encoding="utf-8",
     )
     refresh_settings()
+    typed_value = _loggable_config_value(key, typed_value)
     logger.info("配置已写入 config.json 并热生效: %s=%s", key, typed_value)
 
 

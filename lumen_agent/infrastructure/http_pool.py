@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -35,6 +35,7 @@ class StreamHandle:
         json: dict[str, Any] | None = None,
         timeout: httpx.Timeout | None = None,
         on_close: Callable[[], None] | None = None,
+        protocol: Literal["chat_completions", "responses"] = "chat_completions",
     ) -> None:
         self._method = method
         self._url = url
@@ -42,6 +43,7 @@ class StreamHandle:
         self._json = json
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._on_close = on_close
+        self._protocol = protocol
 
         self._client: httpx.AsyncClient | None = None
         self._response: httpx.Response | None = None
@@ -94,6 +96,11 @@ class StreamHandle:
         if self._state != "STREAMING":
             raise RuntimeError(f"StreamHandle.receive() 需在 STREAMING 状态调用（state={self._state}）")
         if self._response is None:
+            return
+
+        if self._protocol == "responses":
+            async for item in self._receive_responses():
+                yield item
             return
 
         pending_tool_calls: dict[int, dict[str, str]] = {}
@@ -168,6 +175,68 @@ class StreamHandle:
                         "input": parsed_input,
                     },
                 )
+
+
+    async def _receive_responses(self) -> AsyncIterator[tuple[str, str | dict]]:
+        """Parse semantic SSE events emitted by the OpenAI Responses API."""
+        if self._response is None:
+            return
+
+        async for line in self._response.aiter_lines():
+            line = line.strip()
+            if not line or line.startswith(":") or not line.startswith("data:"):
+                continue
+            data_str = line[5:].strip()
+            if data_str == "[DONE]":
+                continue
+            try:
+                event: dict[str, Any] = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+            event_type = event.get("type", "")
+            if event_type == "error":
+                error = event.get("error") or event
+                message = error.get("message") if isinstance(error, dict) else str(error)
+                raise RuntimeError(message or "OpenAI Responses API stream failed")
+            if event_type == "response.failed":
+                response = event.get("response") or {}
+                error = response.get("error") or {}
+                message = error.get("message") if isinstance(error, dict) else str(error)
+                raise RuntimeError(message or "OpenAI Responses API response failed")
+
+            delta = event.get("delta")
+            if event_type in {"response.output_text.delta", "response.refusal.delta"}:
+                if isinstance(delta, str) and delta:
+                    yield ("content", delta)
+                continue
+            if event_type in {
+                "response.reasoning_summary_text.delta",
+                "response.reasoning_text.delta",
+            }:
+                if isinstance(delta, str) and delta:
+                    yield ("reasoning_content", delta)
+                continue
+
+            if event_type != "response.output_item.done":
+                continue
+            output_item = event.get("item") or {}
+            if output_item.get("type") != "function_call":
+                continue
+            raw_arguments = output_item.get("arguments", "")
+            try:
+                parsed_input = json.loads(raw_arguments) if raw_arguments else {}
+            except json.JSONDecodeError:
+                parsed_input = {"_raw": raw_arguments}
+            yield (
+                "tool_use",
+                {
+                    "type": "tool_use",
+                    "id": output_item.get("call_id") or output_item.get("id", ""),
+                    "name": output_item.get("name", ""),
+                    "input": parsed_input,
+                },
+            )
 
     async def close(self) -> None:
         """关闭连接并销毁独立 client。可反复调用，幂等。"""
@@ -263,6 +332,7 @@ class HttpPool:
         *,
         headers: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
+        protocol: Literal["chat_completions", "responses"] = "chat_completions",
     ) -> StreamHandle:
         """流式请求。返回独立的 ``StreamHandle``，关闭时自动从活跃列表移除。"""
         self._ensure_initialized()
@@ -272,6 +342,7 @@ class HttpPool:
             json=json,
             timeout=_DEFAULT_TIMEOUT,
             on_close=lambda: self._remove_handle(handle),
+            protocol=protocol,
         )
         self._active_handles.append(handle)
         return handle
