@@ -26,6 +26,7 @@ from lumen_agent.config import Settings, get_settings
 from lumen_agent.domain.messages import text_message
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.infrastructure.approval_registry import get_approval_registry
+from lumen_agent.infrastructure.chat_run_manager import get_chat_run_manager
 from lumen_agent.infrastructure.http_pool import StreamHandle
 from lumen_agent.infrastructure.sse_registry import get_sse_registry
 from lumen_agent.model_adapters.base import ModelAdapter
@@ -214,6 +215,8 @@ async def interrupt_stream(body: InterruptRequest) -> dict:
 async def approve_tool_call(body: ApproveRequest) -> ApproveResponse:
     """提交工具调用审批决策。批量提交 tool_call_id → 批准/拒绝。"""
     registry = get_approval_registry()
+    run_manager = get_chat_run_manager()
+    active_run = await run_manager.active_for_session(body.session_id)
     updated = 0
     logging.info(
         "审批提交请求: session=%s approvals=%s pending_keys=%s",
@@ -224,5 +227,11 @@ async def approve_tool_call(body: ApproveRequest) -> ApproveResponse:
         ok = await registry.approve(body.session_id, tool_call_id, decision)
         if ok:
             updated += 1
+            if active_run is not None:
+                await run_manager.publish(
+                    active_run.run_id,
+                    "approval_result",
+                    {"tool_call_id": tool_call_id, "approved": decision},
+                )
     logging.info("审批提交: session=%s updated=%d", body.session_id, updated)
     return ApproveResponse(status="ok", updated=updated)

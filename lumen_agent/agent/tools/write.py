@@ -76,11 +76,13 @@ class Write(BaseTool):
                 "description": (
                     "与 new_string 一起用于局部替换（各最多 2000 行、50KB）；"
                     "在文件正文中必须恰好出现一次。不能与 append 同时使用。"
+                    "必须与new_string同时出现"
                 ),
             },
             "new_string": {
                 "type": "string",
-                "description": "替换 old_string 的文本（最多 2000 行、50KB）；可为空字符串。",
+                "description": "替换 old_string 的文本（最多 2000 行、50KB）；可为空字符串(删除文本)。"
+                               "必须和new_string 同时出现",
             },
         },
         "required": ["path"],
@@ -93,7 +95,7 @@ class Write(BaseTool):
 
         append_flag = bool(params.get("append"))
         old_raw = params.get("old_string")
-        has_replace = old_raw is not None
+        has_replace = old_raw is not None and old_raw != ""
         new_raw = params.get("new_string")
 
         if append_flag and has_replace:

@@ -223,7 +223,7 @@
 import { ElMessageBox } from 'element-plus'
 import { onMounted, ref, watch, nextTick } from 'vue'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage } from './types'
-import { useChatStream } from './composables/useChatStream'
+import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
 import ChatView from './components/ChatView.vue'
 import ToolView from './components/ToolView.vue'
@@ -465,6 +465,7 @@ const refreshCapabilities = async () => {
 // ── lifecycle ──────────────────────────────────────
 onMounted(async () => {
   await refreshCapabilities()
+  await chat.restoreLastSession()
 })
 
 // 切换界面时自动刷新对应数据

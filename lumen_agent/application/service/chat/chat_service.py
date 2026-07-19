@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import base64
 import logging
 import mimetypes
@@ -25,6 +26,8 @@ async def merge_and_persist_messages(
     repo: ConversationRepositoryPort,
     session_id: str,
     new_messages: list[dict[str, Any]],
+    *,
+    status: int = 1,
 ) -> None:
     """合并、回填并持久化 Agent 工具循环产生的新消息。
 
@@ -32,6 +35,7 @@ async def merge_and_persist_messages(
     1. 将 tool_result 与前面的 assistant 消息合并（避免存储冗余的"用户"角色消息）
     2. 回填没有 tool_result 的孤立 tool_use 的 (interrupted)
     3. 将合并后的每条消息写入 DB
+    4. status=0 表示消息由中断流程保存，status=1 表示正常完成
     """
     # Step 1: 将 tool_result 与前面的 assistant 合并
     merged: list[dict[str, Any]] = []
@@ -82,7 +86,7 @@ async def merge_and_persist_messages(
     for msg in merged:
         if not msg.get("content"):
             continue
-        await repo.append_message(session_id, msg["role"], msg["content"])
+        await repo.append_message(session_id, msg["role"], msg["content"], status=status)
 
 
 async def reply_single_turn(
@@ -176,12 +180,36 @@ async def reply_single_turn_stream(
     # 3) 流式生成；累加 text + thinking 用于落库
     accumulated = ""
     accumulated_thinking = ""
-    async for kind, chunk in llm.chat_stream(messages, on_connect=on_connect):
-        if kind == "text":
-            accumulated += chunk
-        elif kind == "thinking":
-            accumulated_thinking += chunk
-        yield (kind, chunk)
+    async def persist_partial_message() -> None:
+        """将简单模式已经收到的增量保存为中断消息。"""
+        blocks: list[dict[str, Any]] = []
+        if accumulated_thinking.strip():
+            blocks.append({"type": "thinking", "thinking": accumulated_thinking})
+        if accumulated.strip():
+            blocks.append({"type": "text", "text": accumulated})
+        if blocks:
+            await repo.append_message(
+                session_id,
+                "assistant",
+                blocks,
+                status=0,
+            )
+
+    try:
+        async for kind, chunk in llm.chat_stream(messages, on_connect=on_connect):
+            if kind == "text":
+                accumulated += chunk
+            elif kind == "thinking":
+                accumulated_thinking += chunk
+            yield (kind, chunk)
+    except (httpx.ReadError, asyncio.CancelledError):
+        # 显式 interrupt 取消 owner task 后，在后端保存 partial 回复。
+        await persist_partial_message()
+        yield ("error", "stream_interrupted")
+        return
+    except Exception:
+        await persist_partial_message()
+        raise
 
     # 4) 正常结束：助手落库（含 thinking 块）+ 轮次 +1 + 摘要触发
     if accumulated.strip() or accumulated_thinking.strip():
@@ -332,9 +360,33 @@ async def reply_with_agent(
 
     # 5) 运行工具循环，处理事件流
     final_text = ""
-    async for kind, data in executor.run_stream(messages, on_connect=on_connect):
+    initial_len = len(messages)
+    persist_status = 1
+
+    async def persistable_events():
+        """兜住工具审批/执行阶段的任务取消。
+
+        如果取消发生在模型流内，AgentStreamExecutor 会自行产出 new_messages；
+        这里只处理取消尚未被内部生成器转换为事件的阶段。
+        """
+        try:
+            async for event in executor.run_stream(messages, on_connect=on_connect):
+                yield event
+        except asyncio.CancelledError:
+            pending = messages[initial_len:]
+            if pending:
+                await merge_and_persist_messages(
+                    repo, session_id, pending, status=0
+                )
+            raise
+
+    async for kind, data in persistable_events():
         if kind == "new_messages":
-            await merge_and_persist_messages(repo, session_id, data)  # type: ignore[arg-type]
+            await merge_and_persist_messages(repo, session_id, data, status=persist_status)  # type: ignore[arg-type]
+            # status=0 表示本轮被显式中断，前端仍可展示但不计正常轮次。
+        elif kind == "error" and data == "stream_interrupted":
+            persist_status = 0
+            yield (kind, data)
         elif kind == "done":
             final_text = data  # type: ignore[assignment]
             yield (kind, data)
@@ -345,7 +397,7 @@ async def reply_with_agent(
             yield (kind, data)
 
     # 6) 轮次 +1
-    if final_text.strip():
+    if final_text.strip() and persist_status == 1:
         new_count = await repo.increment_round_counter(session_id)
         logging.info(f"[Agent] session={session_id} 工具循环结束 count={new_count}")
         asyncio.create_task(maybe_trigger_summary(repo, llm, session_id, settings))

@@ -66,11 +66,14 @@ class ApprovalRegistry:
 
         Returns:
             True  — 决策已生效
-            False — 该 session 没有待审批项
+            False — 没有待审批项、工具不存在或该工具已经审批
         """
         async with self._lock:
             pa = self._pending.get(session_id)
             if pa is None:
+                return False
+            valid_ids = {tc["id"] for tc in pa.tool_calls}
+            if tool_call_id not in valid_ids or tool_call_id in pa.decisions:
                 return False
             pa.decisions[tool_call_id] = decision
             if pa.all_decided:

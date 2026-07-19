@@ -116,7 +116,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useChatStream } from '../composables/useChatStream'
+import { useChatStream } from '../composables/useDetachedChatStream'
 import { renderMarkdown } from '../utils/markdown'
 import type { ChatBlock } from '../types'
 import ApprovalCard from './approval/ApprovalCard.vue'
@@ -136,7 +136,7 @@ const msgListRef = ref<HTMLElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
 // 独立的聊天流实例
-const chat = useChatStream()
+const chat = useChatStream(false)
 
 // ── 面板位置 & 大小 ──
 const panelLeft = ref<number | undefined>(undefined)
@@ -192,9 +192,7 @@ async function openPanel() {
 }
 
 function closePanel() {
-  if (chat.sending.value) {
-    chat.interrupt()
-  }
+  chat.detachSubscription()
   visible.value = false
 }
 

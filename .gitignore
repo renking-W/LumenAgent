@@ -37,3 +37,7 @@ webChannel/.vite/
 uv.lock
 
 target.md
+.agents /
+.claude /
+.codegraph /
+tests/

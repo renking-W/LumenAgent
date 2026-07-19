@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -87,6 +88,27 @@ class AgentStreamExecutor:
             full_text = ""
             full_thinking = ""
 
+            def append_partial_assistant() -> None:
+                """把本轮已生成内容写回 messages，供中断路径统一持久化。"""
+                assistant_blocks: list[dict[str, Any]] = []
+                if full_thinking.strip():
+                    assistant_blocks.append(
+                        {"type": "thinking", "thinking": full_thinking}
+                    )
+                if full_text:
+                    assistant_blocks.append({"type": "text", "text": full_text})
+                for tool_call in tool_calls_this_turn:
+                    assistant_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tool_call["id"],
+                            "name": tool_call["name"],
+                            "input": tool_call.get("input", {}),
+                        }
+                    )
+                if assistant_blocks:
+                    messages.append({"role": "assistant", "content": assistant_blocks})
+
             # ── 1. 流式调用模型  这里循环调用llm，直到llm返回一个done为止
             try:
                 async for kind, data in self.adapter.chat_stream(
@@ -100,36 +122,24 @@ class AgentStreamExecutor:
                         yield ("thinking", data)
                     elif kind == "tool_use":
                         tool_calls_this_turn.append(data)  # type: ignore[arg-type]
-            except httpx.ReadError:
+            except (httpx.ReadError, asyncio.CancelledError):
                 # 流式连接被外部中断（用户取消/中断请求），非模型错误
+                # 显式取消和浏览器无关，由 ChatRun interrupt 触发。
                 logger.warning("[Agent] 流式连接中断")
                 yield ("error", "stream_interrupted")
+                append_partial_assistant()
                 yield ("new_messages", messages[initial_len:])
                 return
             except Exception as exc:
                 logger.exception("[Agent] 模型调用异常")
                 yield ("error", str(exc))
+                # 上游异常也保留已产生内容，避免错误前的回复静默丢失。
+                append_partial_assistant()
                 yield ("new_messages", messages[initial_len:])
                 return
 
             # ── 2. 将 assistant 响应追加到消息历史 ─────────────
-            assistant_blocks: list[dict] = []
-            if full_thinking.strip():
-                assistant_blocks.append(
-                    {"type": "thinking", "thinking": full_thinking}
-                )
-            if full_text:
-                assistant_blocks.append({"type": "text", "text": full_text})
-            for tc in tool_calls_this_turn:
-                assistant_blocks.append(
-                    {
-                        "type": "tool_use",
-                        "id": tc["id"],
-                        "name": tc["name"],
-                        "input": tc.get("input", {}),
-                    }
-                )
-            messages.append({"role": "assistant", "content": assistant_blocks})
+            append_partial_assistant()
 
             # ── 3. 无工具调用 → 结束 ────────────────────────────
             if not tool_calls_this_turn:

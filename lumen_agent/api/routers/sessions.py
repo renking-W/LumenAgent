@@ -13,6 +13,7 @@ from lumen_agent.api.schemas.session_dtos import (
     UpdateTitleRequest,
 )
 from lumen_agent.application.service.chat.session_service import normalize_and_prepare_content
+from lumen_agent.infrastructure.chat_run_manager import get_chat_run_manager
 from lumen_agent.domain.ports import ConversationRepositoryPort
 
 router = APIRouter(prefix="/v1/sessions", tags=["sessions"])
@@ -109,6 +110,12 @@ async def delete_session(
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> dict:
     """删除指定会话及其全部消息。"""
+    active = await get_chat_run_manager().active_for_session(session_id)
+    # 删除活跃会话会造成后台任务继续写入已删除记录，因此明确拒绝。
+    if active is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail="cannot delete a session with an active run"
+        )
     deleted = await repo.delete_session(session_id)
     if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")

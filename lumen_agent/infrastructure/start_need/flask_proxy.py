@@ -77,6 +77,21 @@ def run_frontend() -> None:
         except httpx.RequestError as e:
             return {"error": f"代理请求失败: {e}"}, 502
 
+    # 后台 Run 的事件订阅同样必须流式转发，否则通用代理会缓冲到生成结束。
+    @front.route("/v1/chat/runs/<run_id>/events", methods=["GET", "OPTIONS"])
+    def proxy_chat_run_events(run_id: str):
+        try:
+            req = proxy_client.build_request(
+                "GET",
+                f"/v1/chat/runs/{run_id}/events",
+                params=request.args,
+                headers=_forward_headers(),
+            )
+            upstream = proxy_client.send(req, stream=True)
+            return _stream_proxy_response(upstream)
+        except httpx.RequestError as e:
+            return {"error": f"代理请求失败: {e}"}, 502
+
     # VM 命令执行 SSE 流式端点
     @front.route("/v1/vm/<vm_id>/execute", methods=["POST", "OPTIONS"])
     def proxy_vm_execute(vm_id):

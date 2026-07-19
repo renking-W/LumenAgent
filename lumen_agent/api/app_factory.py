@@ -16,6 +16,7 @@ from lumen_agent.api.routers import (
     knowledge as knowledge_router,
     logs_router,
     mcp_servers as mcp_servers_router,
+    chat_runs as chat_runs_router,
     mcp_stdio as mcp_stdio_router,
     mcp_tools as mcp_tools_router,
     memories as memories_router,
@@ -99,6 +100,10 @@ async def lifespan(_app: FastAPI):
 
     yield
 
+    # 先停止仍在运行的后台对话，确保其 finally 完成消息和连接收尾。
+    from lumen_agent.infrastructure.chat_run_manager import get_chat_run_manager
+
+    await get_chat_run_manager().close_all()
     # ── 关闭调度器 ─────────────────────────────────────────
     if scheduler_enabled:
         from lumen_agent.infrastructure.scheduler.scheduler_service import SchedulerService
@@ -213,6 +218,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     application.include_router(chat_router.router)
+    application.include_router(chat_runs_router.router)
     application.include_router(sessions_router.router)
     application.include_router(tools_router.router)
     application.include_router(skills_router.router)

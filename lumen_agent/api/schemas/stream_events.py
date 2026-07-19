@@ -100,6 +100,20 @@ class AwaitingApprovalEvent(BaseModel):
     data: AwaitingApprovalData
 
 
+class ApprovalResultData(BaseModel):
+    """单个工具调用已经确认的审批结果。"""
+
+    tool_call_id: str
+    approved: bool
+
+
+class ApprovalResultEvent(BaseModel):
+    """供实时订阅和历史补放恢复审批卡片状态。"""
+
+    type: Literal["approval_result"] = "approval_result"
+    data: ApprovalResultData
+
+
 # ── 派发器 ────────────────────────────────────────────────────────────────────
 
 def _make_tool_calls_event(data: Any) -> BaseModel:
@@ -140,6 +154,12 @@ _EVENT_REGISTRY: dict[str, Callable[[Any], BaseModel]] = {
     "awaiting_approval": lambda d: AwaitingApprovalEvent(
         data=AwaitingApprovalData(tool_calls=d)
     ),
+    "approval_result": lambda d: ApprovalResultEvent(
+        data=ApprovalResultData(
+            tool_call_id=d.get("tool_call_id", ""),
+            approved=bool(d.get("approved", False)),
+        )
+    ),
     "tool_use": _make_tool_use_event,
     "tool_result": _make_tool_result_event,
     "done": lambda _: AssistantDoneEvent(),
@@ -151,8 +171,12 @@ class StreamEventDispatcher:
     """根据 kind 将 ``(kind, data)`` 转为对应的 SSE ``data: ...\\n\\n`` 行。"""
 
     @staticmethod
-    def dispatch(kind: str, data: str | dict | list) -> str:
-        """已注册的 kind 映射到对应 SSE 行；未注册 kind 降级为 ``text``。"""
+    def serialize(kind: str, data: str | dict | list) -> str:
+        """将内部事件序列化为纯 JSON，不添加 SSE 的 id/data 外壳。"""
         factory = _EVENT_REGISTRY.get(kind, _EVENT_REGISTRY["text"])
         event = factory(data)
-        return f"data: {event.model_dump_json()}\n\n"
+        return event.model_dump_json()
+
+    def dispatch(kind: str, data: str | dict | list) -> str:
+        """已注册的 kind 映射到对应 SSE 行；未注册 kind 降级为 ``text``。"""
+        return f"data: {StreamEventDispatcher.serialize(kind, data)}\n\n"
