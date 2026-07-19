@@ -22,6 +22,9 @@ _PROMPT_PATH = DirGuide.summary_prompt_path()
 _LONG_MEMORY_PROMPT_PATH = DirGuide.memory_refine_prompt_path()
 
 _ROLE_LABEL = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
+_SUMMARY_REQUIRED_PLACEHOLDERS = {"{{old_summary}}", "{{rounds_text}}"}
+_SUMMARY_ALLOWED_PLACEHOLDERS = _SUMMARY_REQUIRED_PLACEHOLDERS | {"{{new_summary}}"}
+_SUMMARY_PLACEHOLDER_RE = re.compile(r"{{[^{}]+}}")
 
 
 @lru_cache(maxsize=1)
@@ -60,13 +63,31 @@ def _format_rounds(messages: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _validate_summary_template(template: str) -> None:
+    """在插入对话内容前校验摘要模板的必需、未知和残缺占位符。"""
+    cleaned = _SUMMARY_PLACEHOLDER_RE.sub("", template)
+    if "{{" in cleaned or "}}" in cleaned:
+        raise ValueError("摘要模板存在格式不完整的占位符")
+
+    placeholders = set(_SUMMARY_PLACEHOLDER_RE.findall(template))
+    missing = _SUMMARY_REQUIRED_PLACEHOLDERS - placeholders
+    if missing:
+        raise ValueError(f"摘要模板缺少占位符: {sorted(missing)}")
+
+    unknown = placeholders - _SUMMARY_ALLOWED_PLACEHOLDERS
+    if unknown:
+        raise ValueError(f"摘要模板存在未知占位符: {sorted(unknown)}")
+
+
 def _render_summary_prompt(old_summary: str, rounds_text: str) -> str:
-    """用 ``str.replace`` 填充 prompt 三个占位符（``new_summary`` 置空待 LLM 生成）。"""
-    tpl = _load_prompt_template()
-    tpl = tpl.replace("{{old_summary}}", old_summary or "")
-    tpl = tpl.replace("{{rounds_text}}", rounds_text or "")
-    tpl = tpl.replace("{{new_summary}}", "")
-    return tpl
+    """校验原始模板后填充摘要和对话内容，避免正文占位符触发误判。"""
+    template = _load_prompt_template()
+    _validate_summary_template(template)
+    return (
+        template.replace("{{old_summary}}", old_summary or "")
+        .replace("{{rounds_text}}", rounds_text or "")
+        .replace("{{new_summary}}", "")
+    )
 
 
 def _find_complete_turns(
@@ -306,13 +327,6 @@ async def maybe_trigger_summary(
         # 渲染 prompt（含文件读取），放在 try 块内以确保异常可被捕获并记录
         prompt = _render_summary_prompt(session["summary"], rounds_text)
 
-        # 校验占位符已全部替换，防止模板文件字符异常时静默发送未渲染的 prompt
-        if "{{old_summary}}" in prompt or "{{rounds_text}}" in prompt:
-            logging.error(
-                f"session={session_id} prompt 模板占位符未完全替换，跳过摘要（请检查 summary.md 格式）"
-            )
-            return
-
         raw_summary = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
     except Exception:
         # 失败：不阻塞主响应，count 保持不变，等下一轮再尝试
@@ -428,10 +442,6 @@ async def force_compress_now(
         rounds_text = _format_rounds(to_compress_msgs)
         old_summary = session.get("summary") or ""
         prompt = _render_summary_prompt(old_summary, rounds_text)
-
-        if "{{" in prompt:
-            logging.error(f"[ForceCompress] session={session_id} prompt 模板未完全渲染，跳过")
-            return
 
         raw_summary = await llm.chat(
             [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
