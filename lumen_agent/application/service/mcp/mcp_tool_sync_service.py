@@ -129,18 +129,21 @@ class McpToolSyncService:
 
         # 1) 写入 SQLite
         saved = await self._tool_repo.upsert_batch(batch)
-        # 2) 写入 Chroma（与 SQLite id 对齐）
-        for item, saved_item in zip(batch, saved):
-            await self._rag.upsert_tool(
-                saved_item["id"],
-                item["search_doc"],
-                {
+        # 2) 仅对新增或检索文本变化的工具生成向量并写入 Chroma。
+        vector_items = [
+            {
+                "tool_id": saved_item["id"],
+                "search_doc": item["search_doc"],
+                "metadata": {
                     "tool_id": saved_item["id"],
                     "server_kind": server_kind,
                     "server_id": server_id,
                     "original_name": item["original_name"],
                 },
-            )
+            }
+            for item, saved_item in zip(batch, saved)
+        ]
+        embedded_count = await self._rag.upsert_tools(vector_items)
 
         # 3) 删除 list_tools 未返回的旧 tool（DB + 向量）
         stale_ids = await self._tool_repo.delete_stale(
@@ -150,10 +153,12 @@ class McpToolSyncService:
             self._rag.delete_tools(stale_ids)
 
         logger.info(
-            "MCP 工具索引同步完成：%s/%s tools=%s stale=%s",
+            "MCP 工具索引同步完成：%s/%s tools=%s embedded=%s skipped=%s stale=%s",
             server_kind,
             server_id,
             len(saved),
+            embedded_count,
+            len(saved) - embedded_count,
             len(stale_ids),
         )
         return len(saved)

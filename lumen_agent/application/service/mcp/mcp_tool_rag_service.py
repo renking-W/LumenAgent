@@ -34,23 +34,70 @@ class McpToolRagService:
             metadata={"hnsw:space": "cosine"},
         )
 
+    def _existing_hashes(self, tool_ids: list[str]) -> dict[str, str]:
+        """批量读取 Chroma 中工具向量对应的内容指纹。"""
+        if not tool_ids:
+            return {}
+        result = self._collection.get(ids=tool_ids, include=["metadatas"])
+        ids = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
+        return {
+            str(tool_id): str((metadata or {}).get("content_hash", ""))
+            for tool_id, metadata in zip(ids, metadatas)
+        }
+
+    async def upsert_tools(self, tools: list[dict[str, Any]]) -> int:
+        """仅向量化新增或内容指纹变化的工具，返回实际更新数量。"""
+        if not tools:
+            return 0
+
+        current_hashes = {
+            item["tool_id"]: self._embedding_client.content_hash(item["search_doc"])
+            for item in tools
+        }
+        existing_hashes = self._existing_hashes(list(current_hashes))
+        changed = [
+            item
+            for item in tools
+            if existing_hashes.get(item["tool_id"]) != current_hashes[item["tool_id"]]
+        ]
+        if not changed:
+            return 0
+
+        embeddings = await self._embedding_client.embed_documents_batched(
+            [item["search_doc"] for item in changed]
+        )
+        if len(embeddings) != len(changed):
+            raise RuntimeError("embedding response count does not match MCP tool count")
+
+        metadatas: list[dict[str, Any]] = []
+        for item in changed:
+            metadata = dict(item["metadata"])
+            metadata["content_hash"] = current_hashes[item["tool_id"]]
+            metadata["embedding_model"] = self._embedding_client.model_name
+            metadatas.append(metadata)
+
+        self._collection.upsert(
+            ids=[item["tool_id"] for item in changed],
+            documents=[item["search_doc"] for item in changed],
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
+        return len(changed)
+
     async def upsert_tool(
         self,
         tool_id: str,
         search_doc: str,
         metadata: dict[str, Any],
     ) -> None:
-        """写入或覆盖单条 tool 向量（id 与 SQLite mcp_tools.id 一致）。"""
-        embedding = await self._embedding_client.embed_query(search_doc)
-        self._collection.upsert(
-            ids=[tool_id],
-            documents=[search_doc],
-            metadatas=[metadata],
-            embeddings=[embedding],
+        """兼容单条写入入口；内容未变化时不会重复请求向量。"""
+        await self.upsert_tools(
+            [{"tool_id": tool_id, "search_doc": search_doc, "metadata": metadata}]
         )
 
     def delete_tools(self, tool_ids: list[str]) -> None:
-        """按 tool_id 删除向量（server 禁用/删除或 sync 清理 stale 时调用）。"""
+        """按 tool_id 删除向量（server 禁用或删除或 sync 清理 stale 时调用）。"""
         if not tool_ids:
             return
         self._collection.delete(ids=tool_ids)
@@ -85,7 +132,7 @@ class McpToolRagService:
 
         rows: list[dict[str, Any]] = []
         for doc, meta, dist in zip(documents, metadatas, distances):
-            # cosine distance → 相似度分数（0~1，越大越相似）
+            # cosine distance → 相似度分数（0~1，越大相似）
             score = max(0.0, 1.0 - float(dist))
             if score < similarity_threshold:
                 continue

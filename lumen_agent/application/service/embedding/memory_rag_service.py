@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -82,42 +83,95 @@ class MemoryRagService:
         )
         return rows
 
+    def _existing_hashes(self, entry_ids: list[str]) -> dict[str, str]:
+        """批量读取 Chroma 中记忆条目对应的内容指纹。"""
+        if not entry_ids:
+            return {}
+        result = self._collection.get(ids=entry_ids, include=["metadatas"])
+        ids = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
+        return {
+            str(entry_id): str((metadata or {}).get("content_hash", ""))
+            for entry_id, metadata in zip(ids, metadatas)
+        }
+
+    async def _upsert_entries(
+        self,
+        entries: list[tuple[str, str, dict[str, Any], str]],
+    ) -> int:
+        """批量向量化并覆盖写入已经确认发生变化的记忆条目。"""
+        if not entries:
+            return 0
+        embeddings = await self._embedding_client.embed_documents_batched(
+            [entry_text for _, entry_text, _, _ in entries]
+        )
+        if len(embeddings) != len(entries):
+            raise RuntimeError("embedding response count does not match memory entry count")
+
+        metadatas: list[dict[str, Any]] = []
+        for _, _, metadata, content_hash in entries:
+            stored_metadata = dict(metadata)
+            stored_metadata["content_hash"] = content_hash
+            stored_metadata["embedding_model"] = self._embedding_client.model_name
+            metadatas.append(stored_metadata)
+
+        self._collection.upsert(
+            ids=[entry_id for entry_id, _, _, _ in entries],
+            documents=[entry_text for _, entry_text, _, _ in entries],
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
+        return len(entries)
+
     async def index_entry(
         self,
         entry_text: str,
         entry_id: str,
         metadata: dict[str, Any],
     ) -> None:
-        """索引单条记忆条目到 ChromaDB。"""
-        embedding = await self._embedding_client.embed_query(entry_text)
-        self._collection.upsert(
-            ids=[entry_id],
-            documents=[entry_text],
-            metadatas=[metadata],
-            embeddings=[embedding],
+        """索引单条记忆；内容和模型未变化时直接复用已有向量。"""
+        content_hash = self._embedding_client.content_hash(entry_text)
+        existing_hash = self._existing_hashes([entry_id]).get(entry_id)
+        if existing_hash == content_hash:
+            return
+        await self._upsert_entries(
+            [(entry_id, entry_text, metadata, content_hash)]
         )
         self._logger.debug("记忆条目已索引：%s", entry_id)
 
-    _CHECKPOINT_VERSION = 1
+    _CHECKPOINT_VERSION = 2
 
     # ── Checkpoint 持久化 ─────────────────────────────────────────
 
+    def _empty_checkpoint(self) -> dict[str, Any]:
+        """返回与当前向量模型绑定的空 checkpoint。"""
+        return {
+            "version": self._CHECKPOINT_VERSION,
+            "embedding_model": self._embedding_client.model_name,
+            "files": {},
+        }
+
     def _load_checkpoint(self) -> dict[str, Any]:
-        """加载索引 checkpoint。"""
+        """加载索引 checkpoint；版本或向量模型变化时强制重新核对。"""
         path = self._base_dir / "memory_index_checkpoint.json"
         if not path.exists():
-            return {"version": self._CHECKPOINT_VERSION, "files": {}}
+            return self._empty_checkpoint()
         try:
             data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-            if data.get("version") != self._CHECKPOINT_VERSION:
-                return {"version": self._CHECKPOINT_VERSION, "files": {}}
+            if (
+                data.get("version") != self._CHECKPOINT_VERSION
+                or data.get("embedding_model") != self._embedding_client.model_name
+            ):
+                return self._empty_checkpoint()
             return data
         except (json.JSONDecodeError, OSError):
-            return {"version": self._CHECKPOINT_VERSION, "files": {}}
+            return self._empty_checkpoint()
 
     def _save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        """持久化索引 checkpoint。"""
+        """持久化文件内容指纹、条目 ID 和向量模型。"""
         path = self._base_dir / "memory_index_checkpoint.json"
+        checkpoint["version"] = self._CHECKPOINT_VERSION
+        checkpoint["embedding_model"] = self._embedding_client.model_name
         checkpoint["updated_at"] = datetime.now(timezone.utc).isoformat()
         try:
             path.write_text(
@@ -128,73 +182,98 @@ class MemoryRagService:
             self._logger.warning("无法写入记忆索引 checkpoint", exc_info=True)
 
     @staticmethod
-    def _file_signature(file_path: Path) -> dict[str, float | int] | None:
-        """返回文件的 mtime + size 签名，文件不存在时返回 None。"""
+    def _file_content_hash(file_path: Path) -> str | None:
+        """读取文件内容并计算 SHA256，文件不可读时返回 None。"""
         try:
-            stat = file_path.stat()
-            return {"mtime": stat.st_mtime, "size": stat.st_size}
+            return hashlib.sha256(file_path.read_bytes()).hexdigest()
         except OSError:
             return None
 
     async def index_all_memory_files(self, memory_utils: MemoryFileUtils) -> None:
-        """全量扫描所有每日记忆文件，通过 checkpoint 跳过未变更文件后索引到 ChromaDB。
-
-        利用 ChromaDB upsert 的幂等性：已存在的条目按相同 ID 覆盖（无副作用），
-        新条目自动补入。首次启动会全量索引，后续仅处理新增或修改过的文件。
-        """
+        """扫描每日记忆文件，仅向量化新增或内容发生变化的条目。"""
         memory_dir = memory_utils.memory_dir
         if not memory_dir.exists():
             self._logger.warning("记忆目录不存在：%s", memory_dir)
             return
 
-        md_files = sorted(memory_dir.glob("*.md"))
+        md_files = sorted(
+            path for path in memory_dir.glob("*.md") if path.name != "MEMORY.md"
+        )
         if not md_files:
             self._logger.info("没有找到每日记忆文件，跳过全量索引")
-            return
+
 
         checkpoint = self._load_checkpoint()
         file_records: dict[str, dict[str, Any]] = checkpoint.get("files", {})
-        changed = False
+        current_file_names = {path.name for path in md_files}
+        expected_entry_ids: set[str] = set()
 
-        indexed_count = 0
+        pending_entries: list[tuple[str, str, dict[str, Any], str]] = []
+        stale_entry_ids: list[str] = []
         skipped_entry_count = 0
         skipped_file_count = 0
+        records_changed = False
+
+        # 文件已经删除时，同步清理 checkpoint 和对应 Chroma 条目。
+        for removed_name in set(file_records) - current_file_names:
+            stale_entry_ids.extend(file_records[removed_name].get("entry_ids", []))
+            file_records.pop(removed_name, None)
+            records_changed = True
 
         for md_file in md_files:
-            if md_file.name == "MEMORY.md":
-                continue
-
-            sig = self._file_signature(md_file)
-            if sig is None:
+            file_hash = self._file_content_hash(md_file)
+            if file_hash is None:
                 continue
 
             last = file_records.get(md_file.name)
-            if last is not None and last.get("mtime") == sig["mtime"] and last.get("size") == sig["size"]:
+            if last is not None and last.get("content_hash") == file_hash:
+                expected_entry_ids.update(last.get("entry_ids", []))
                 skipped_file_count += 1
                 continue
 
-            # 文件有变更或新增 → 重新解析并索引
             content = md_file.read_text(encoding="utf-8")
-            date_str = md_file.stem
-            entries = self._parse_daily_file(content, date_str)
+            entries = self._parse_daily_file(content, md_file.stem)
+            current_entry_ids = [entry_id for entry_id, _, _ in entries]
+            expected_entry_ids.update(current_entry_ids)
+            existing_hashes = self._existing_hashes(current_entry_ids)
+
             for entry_id, entry_text, metadata in entries:
-                existing = self._collection.get(ids=[entry_id])
-                if existing and existing.get("ids") and existing["ids"]:
+                content_hash = self._embedding_client.content_hash(entry_text)
+                if existing_hashes.get(entry_id) == content_hash:
                     skipped_entry_count += 1
                     continue
-                await self.index_entry(entry_text, entry_id, metadata)
-                indexed_count += 1
+                pending_entries.append(
+                    (entry_id, entry_text, metadata, content_hash)
+                )
 
-            file_records[md_file.name] = sig  # type: ignore[assignment]
-            changed = True
+            previous_entry_ids = set((last or {}).get("entry_ids", []))
+            stale_entry_ids.extend(previous_entry_ids - set(current_entry_ids))
+            file_records[md_file.name] = {
+                "content_hash": file_hash,
+                "entry_ids": current_entry_ids,
+            }
+            records_changed = True
 
-        if changed:
+        # 以当前全部文件为准做一次本地 ID 对账，兼容 checkpoint 升级和文件全部删除。
+        existing_result = self._collection.get()
+        existing_entry_ids = {str(item) for item in (existing_result.get("ids") or [])}
+        stale_entry_ids.extend(existing_entry_ids - expected_entry_ids)
+
+        if stale_entry_ids:
+            self._collection.delete(ids=sorted(set(stale_entry_ids)))
+
+        indexed_count = await self._upsert_entries(pending_entries)
+
+        if records_changed:
             checkpoint["files"] = file_records
             self._save_checkpoint(checkpoint)
 
         self._logger.info(
-            "全量记忆索引完成：新增 %s 条，跳过 %s 条（已存在），跳过 %s 个文件（未变更）",
-            indexed_count, skipped_entry_count, skipped_file_count,
+            "记忆增量索引完成：新增或更新 %s 条，跳过 %s 条，跳过 %s 个未变更文件，删除 %s 条",
+            indexed_count,
+            skipped_entry_count,
+            skipped_file_count,
+            len(set(stale_entry_ids)),
         )
 
     @staticmethod

@@ -1,11 +1,14 @@
-"""阿里云 Embedding 客户端：`text-embedding-v4`。"""
+"""阿里云 Embedding 客户端：text-embedding-v4。"""
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from lumen_agent.config import Settings
 from lumen_agent.infrastructure.http_pool import get_http_pool
+
 
 class AlibabaEmbeddingClient:
     """阿里云 text-embedding-v4 客户端封装。"""
@@ -13,6 +16,20 @@ class AlibabaEmbeddingClient:
     def __init__(self, settings: Settings) -> None:
         # 保存配置，供后续拼接请求地址、鉴权和模型名称使用。
         self._settings = settings
+
+    @property
+    def model_name(self) -> str:
+        """返回当前向量模型名称，供索引指纹记录模型版本。"""
+        return self._settings.get("EMBEDDING_MODEL", "text-embedding-v4")
+
+    def content_hash(self, text: str) -> str:
+        """计算模型名称与原文共同决定的稳定向量内容指纹。"""
+        payload = json.dumps(
+            {"version": 1, "model": self.model_name, "text": text},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _headers(self) -> dict[str, str]:
         """构造 embedding 请求头。"""
@@ -30,9 +47,21 @@ class AlibabaEmbeddingClient:
         if not texts:
             return []
         # 按阿里云兼容接口要求组装请求体。
-        payload = {"model": self._settings.get("EMBEDDING_MODEL", "text-embedding-v4"), "input": texts}
+        payload = {"model": self.model_name, "input": texts}
         data = await self._post(payload)
         return self._extract_embeddings(data)
+
+    async def embed_documents_batched(self, texts: list[str]) -> list[list[float]]:
+        """按配置批次生成向量，避免逐条请求或单次超过接口限制。"""
+        if not texts:
+            return []
+        batch_size = max(1, int(self._settings.get("EMBEDDING_BATCH_SIZE", 10)))
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            embeddings.extend(
+                await self.embed_documents(texts[start : start + batch_size])
+            )
+        return embeddings
 
     async def embed_query(self, text: str) -> list[float]:
         """把单个 query 文本转换为向量。"""
@@ -43,9 +72,17 @@ class AlibabaEmbeddingClient:
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """发送 HTTP 请求到 embedding 服务。"""
-        url = self._settings.get("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings").rstrip("/")
+        url = self._settings.get(
+            "EMBEDDING_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+        ).rstrip("/")
         pool = get_http_pool()
-        response = await pool.send("POST", url, headers=self._headers(), json=payload)
+        response = await pool.send(
+            "POST",
+            url,
+            headers=self._headers(),
+            json=payload,
+        )
         response.raise_for_status()
         return response.json()
 

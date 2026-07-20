@@ -47,6 +47,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "EMBEDDING_API_KEY": "",
     "EMBEDDING_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
     "EMBEDDING_MODEL": "text-embedding-v4",
+    "EMBEDDING_BATCH_SIZE": 10,
     # ── RAG / 知识库 ──
     "RAG_COLLECTION_NAME": "knowledge_base",
     "RAG_CHUNK_SIZE": 500,
