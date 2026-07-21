@@ -1,5 +1,5 @@
 import { computed, reactive, ref } from "vue"
-import type { ChatBlock, ChatMessage } from "../types"
+import type { ChatBlock, ChatMessage, FileAttachment } from "../types"
 
 interface ContentBlock {
   type: string
@@ -11,6 +11,11 @@ interface ContentBlock {
   id?: string
   tool_use_id?: string
   image_url?: { url: string }
+  path?: string
+  extension?: string
+  size?: number
+  content_type?: string
+  url?: string
 }
 
 interface StoredMessage {
@@ -29,6 +34,7 @@ interface SendOptions {
   self_system?: string
   session_kind?: number
   image_urls?: string[]
+  file_attachments?: FileAttachment[]
 }
 
 interface ChatRun {
@@ -277,6 +283,21 @@ export function useChatStream(persistActiveSession = true) {
               expanded: true,
             }
           }
+          if (block.type === "file") {
+            return {
+              id: crypto.randomUUID(),
+              kind: "file",
+              title: block.name ?? "文件",
+              content: "",
+              expanded: true,
+              fileName: block.name ?? "未命名文件",
+              fileExtension: block.extension ?? "",
+              fileSize: block.size ?? 0,
+              filePath: block.path ?? "",
+              fileUrl: block.url ?? "",
+              fileContentType: block.content_type ?? "",
+            }
+          }
           return {
             id: crypto.randomUUID(),
             kind: "text",
@@ -401,20 +422,40 @@ export function useChatStream(persistActiveSession = true) {
 
   const send = async (text: string, options?: SendOptions) => {
     const content = text.trim()
-    if (!content || sending.value) return
+    const fileAttachments = options?.file_attachments ?? []
+    const hasImages = Boolean(options?.image_urls?.length)
+    if ((!content && !fileAttachments.length && !hasImages) || sending.value) return
     lastUserPrompt.value = content
     if (!sessionId.value) {
       sessionId.value = crypto.randomUUID()
       rememberSession(sessionId.value)
     }
 
-    addMessage("user").blocks.push({
-      id: crypto.randomUUID(),
-      kind: "text",
-      title: "用户输入",
-      content,
-      expanded: true,
-    })
+    const userMessage = addMessage("user")
+    if (content) {
+      userMessage.blocks.push({
+        id: crypto.randomUUID(),
+        kind: "text",
+        title: "用户输入",
+        content,
+        expanded: true,
+      })
+    }
+    for (const file of fileAttachments) {
+      userMessage.blocks.push({
+        id: crypto.randomUUID(),
+        kind: "file",
+        title: file.name,
+        content: "",
+        expanded: true,
+        fileName: file.name,
+        fileExtension: file.extension,
+        fileSize: file.size,
+        filePath: file.path,
+        fileUrl: file.url,
+        fileContentType: file.content_type,
+      })
+    }
     sending.value = true
     statusText.value = "启动生成..."
 
@@ -431,6 +472,7 @@ export function useChatStream(persistActiveSession = true) {
           self_system: options?.self_system,
           session_kind: options?.session_kind,
           image_urls: options?.image_urls?.length ? options.image_urls : undefined,
+          file_attachments: fileAttachments.length ? fileAttachments : undefined,
         }),
       })
       if (!response.ok) throw new Error(await response.text())

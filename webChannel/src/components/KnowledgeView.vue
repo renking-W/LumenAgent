@@ -179,7 +179,7 @@
           <div class="ingest-textarea-wrapper">
             <el-input v-model="ingestForm.text" type="textarea" :autosize="{ minRows: 6, maxRows: 16 }" placeholder="输入要入库的知识文本内容，或点击下方按钮选择文件…" />
             <div class="ingest-file-actions">
-              <input ref="fileInputRef" type="file" accept=".txt,.md,.json,.csv,.py,.js,.ts,.vue,.html,.css,.yaml,.yml,.toml,.ini,.cfg,.xml,.log" style="display: none" @change="onFileSelected" />
+              <input ref="fileInputRef" type="file" style="display: none" @change="onFileSelected" />
               <el-button type="default" @click="triggerFileSelect"><span class="btn-icon">📎</span> 选择文件</el-button>
               <span v-if="selectedFileName" class="ingest-file-name">已选择：{{ selectedFileName }}<el-button size="small" text type="info" @click="clearSelectedFile">清除</el-button></span>
             </div>
@@ -271,6 +271,7 @@ const ingesting = ref(false)
 const ingestFormRef = ref<FormInstance | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const selectedFileName = ref('')
+const selectedFile = ref<File | null>(null)
 
 const ingestForm = reactive({
   text: '',
@@ -284,6 +285,7 @@ const resetIngestForm = () => {
   ingestForm.source_name = ''
   ingestForm.knowledge_id = ''
   selectedFileName.value = ''
+  selectedFile.value = null
 }
 
 const triggerFileSelect = () => {
@@ -295,20 +297,15 @@ const onFileSelected = (e: Event) => {
   const file = input.files?.[0]
   if (!file) return
   selectedFileName.value = file.name
-  const reader = new FileReader()
-  reader.onload = () => {
-    const text = reader.result as string
-    if (text) {
-      ingestForm.text = text
-      if (!ingestForm.source_name) ingestForm.source_name = file.name
-    }
-  }
-  reader.onerror = () => ElMessage.error('文件读取失败')
-  reader.readAsText(file)
+  selectedFile.value = file
+  if (!ingestForm.source_name) ingestForm.source_name = file.name
   input.value = ''
 }
 
-const clearSelectedFile = () => { selectedFileName.value = '' }
+const clearSelectedFile = () => {
+  selectedFileName.value = ''
+  selectedFile.value = null
+}
 
 const searchDialogVisible = ref(false)
 const searching = ref(false)
@@ -370,11 +367,21 @@ const openIngestDialog = () => { resetIngestForm(); ingestDialogVisible.value = 
 const submitIngest = async () => {
   const valid = await ingestFormRef.value?.validate().catch(() => false)
   if (!valid) return
-  if (!ingestForm.text.trim()) { ElMessage.warning('请输入文本内容或选择文件'); return }
+  if (!ingestForm.text.trim() && !selectedFile.value) { ElMessage.warning('请输入文本内容或选择文件'); return }
   ingesting.value = true
   actionResult.value = null
   try {
-    const payload: Record<string, unknown> = { text: ingestForm.text }
+    const payload: Record<string, unknown> = {}
+    if (selectedFile.value) {
+      const formData = new FormData()
+      formData.append('file', selectedFile.value)
+      const uploadRes = await fetch('/v1/upload', { method: 'POST', body: formData })
+      if (!uploadRes.ok) throw new Error(await uploadRes.text())
+      const uploaded: { path: string } = await uploadRes.json()
+      payload.file_path = uploaded.path
+    } else {
+      payload.text = ingestForm.text
+    }
     if (ingestForm.source_name.trim()) payload.source_name = ingestForm.source_name
     if (ingestForm.knowledge_id.trim()) payload.knowledge_id = ingestForm.knowledge_id
     const res = await fetch('/v1/knowledge/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -387,7 +394,10 @@ const submitIngest = async () => {
       const err = await res.text()
       actionResult.value = { type: 'error', message: `入库失败: ${err}` }
     }
-  } catch { actionResult.value = { type: 'error', message: '网络错误，入库失败' } }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : '网络错误'
+    actionResult.value = { type: 'error', message: `入库失败：${detail}` }
+  }
   finally { ingesting.value = false }
 }
 

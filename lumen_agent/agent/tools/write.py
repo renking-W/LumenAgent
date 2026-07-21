@@ -45,6 +45,8 @@ class Write(BaseTool):
         "2）append 为 true：将 content 追加到文件末尾；"
         "3）提供 old_string 与 new_string：在已存在文件中唯一替换第一段 old_string。"
         "相对路径相对于 workspace；缺父目录会自动创建。"
+        "该工具不能修改 CSV、DOCX、XLSX、DOC、PPTX、PPT、PDF 等特殊文档的原格式；"
+        "若用户需要修改这类文件，只能创建新的 Markdown 文件，并明确告知用户输出格式已变为 Markdown。"
         "单次 content / old_string / new_string 均最多 2000 行、50KB（UTF-8），超出请分块写入。"
     )
     requires_approval = True

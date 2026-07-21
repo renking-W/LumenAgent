@@ -94,6 +94,9 @@ async def post_chat(
             body.session_id,
             body.message,
             settings,
+            file_attachments=[
+                item.model_dump() for item in body.file_attachments
+            ],
         )
     except _LLM_STREAM_FAILURES as e:
         raise HTTPException(
@@ -133,11 +136,17 @@ async def post_chat_stream(
             mcp_server_ids=body.mcp_server_ids,
             self_system=body.self_system,
             image_urls=body.image_urls,
+            file_attachments=[
+                item.model_dump() for item in body.file_attachments
+            ],
         )
     else:
         stream_it = reply_single_turn_stream(
             repo, llm, body.session_id, body.message, settings,
             on_connect=on_connect,
+            file_attachments=[
+                item.model_dump() for item in body.file_attachments
+            ],
         )
     agen = stream_it.__aiter__()
     try:

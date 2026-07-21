@@ -17,7 +17,12 @@ from lumen_agent.application.service.chat.summary_service import maybe_trigger_s
 from lumen_agent.application.service.chat.title_service import maybe_generate_title
 from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings, get_context_window
-from lumen_agent.domain.messages import image_block, text_message
+from lumen_agent.domain.messages import (
+    file_block,
+    file_block_to_text,
+    image_block,
+    text_message,
+)
 from lumen_agent.domain.ports import ConversationRepositoryPort
 from lumen_agent.model_adapters.base import ModelAdapter, StreamHandleCallback
 
@@ -89,21 +94,62 @@ async def merge_and_persist_messages(
         await repo.append_message(session_id, msg["role"], msg["content"], status=status)
 
 
+def _build_user_blocks(
+    user_message: str,
+    file_attachments: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """构造持久化用户内容：可见文本与结构化文件块分开保存。"""
+    blocks: list[dict[str, Any]] = []
+    if user_message.strip():
+        blocks.extend(text_message("user", user_message)["content"])
+    for attachment in file_attachments or []:
+        blocks.append(file_block(attachment))
+    return blocks
+
+
+def _build_file_prompt_blocks(
+    file_attachments: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """把本轮文件元数据转换成只发送给模型的路径说明。"""
+    return [
+        file_block_to_text(file_block(attachment))
+        for attachment in file_attachments or []
+    ]
+
+
+def _title_source(
+    user_message: str,
+    file_attachments: list[dict[str, Any]] | None,
+) -> str:
+    """文件单独发送时使用文件名作为标题生成输入。"""
+    if user_message.strip():
+        return user_message
+    return "、".join(
+        str(item.get("name") or "未命名文件")
+        for item in file_attachments or []
+    )
+
+
 async def reply_single_turn(
     repo: ConversationRepositoryPort,
     llm: ModelAdapter,
     session_id: str,
     user_message: str,
     settings: Settings,
+    file_attachments: list[dict[str, Any]] | None = None,
 ) -> str:
     """处理单轮会话请求——整体输出。"""
     # 1) 会话准备 + 用户消息落库（不增 count）
     await repo.ensure_session(session_id)
-    user_blocks = text_message("user", user_message)["content"]
+    user_blocks = _build_user_blocks(user_message, file_attachments)
     await repo.append_message(session_id, "user", user_blocks)
 
     # 异步生成会话标题（仅首次消息触发）
-    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
+    asyncio.create_task(
+        maybe_generate_title(
+            repo, llm, session_id, _title_source(user_message, file_attachments)
+        )
+    )
 
     # 2) 组装上下文（含 token 预算检查 / 强制压缩）
     counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))
@@ -115,6 +161,7 @@ async def reply_single_turn(
         user_message=user_message,
         counter=counter,
         context_window=context_window,
+        user_extra_blocks=_build_file_prompt_blocks(file_attachments) or None,
     )
     # 移除列表末尾自动追加的 user 消息（assemble_for_llm 已包含），直接使用
     messages = ctx.messages
@@ -145,6 +192,7 @@ async def reply_single_turn_stream(
     user_message: str,
     settings: Settings,
     on_connect: StreamHandleCallback | None = None,
+    file_attachments: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """处理单轮会话请求——流式输出，yield ``(kind, delta)``。
 
@@ -153,11 +201,15 @@ async def reply_single_turn_stream(
     """
     # 1) 会话准备 + 用户消息落库
     await repo.ensure_session(session_id)
-    user_blocks = text_message("user", user_message)["content"]
+    user_blocks = _build_user_blocks(user_message, file_attachments)
     await repo.append_message(session_id, "user", user_blocks)
 
     # 异步生成会话标题（仅首次消息触发）
-    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
+    asyncio.create_task(
+        maybe_generate_title(
+            repo, llm, session_id, _title_source(user_message, file_attachments)
+        )
+    )
 
     # 2) 组装上下文
     counter = get_token_counter(settings.get("LLM_MODEL", "deepseek-v4-flash"))
@@ -169,6 +221,7 @@ async def reply_single_turn_stream(
         user_message=user_message,
         counter=counter,
         context_window=context_window,
+        user_extra_blocks=_build_file_prompt_blocks(file_attachments) or None,
     )
     messages = ctx.messages
     logging.info(
@@ -273,6 +326,7 @@ async def reply_with_agent(
     mcp_server_ids: list[str] | None = None,
     self_system: str | None = None,
     image_urls: list[str] | None = None,
+    file_attachments: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
 
@@ -295,7 +349,7 @@ async def reply_with_agent(
 
     # 1) 会话准备 + 用户消息落库
     await repo.ensure_session(session_id, session_kind)
-    user_blocks = text_message("user", user_message)["content"]
+    user_blocks = _build_user_blocks(user_message, file_attachments)
     # 持久化时附带轻量图像引用（存 URL 路径，不存 data URI）
     if image_urls:
         for img_url in image_urls:
@@ -303,7 +357,11 @@ async def reply_with_agent(
     await repo.append_message(session_id, "user", user_blocks)
 
     # 异步生成会话标题（仅首次消息触发）
-    asyncio.create_task(maybe_generate_title(repo, llm, session_id, user_message))
+    asyncio.create_task(
+        maybe_generate_title(
+            repo, llm, session_id, _title_source(user_message, file_attachments)
+        )
+    )
 
     # 2) 构建 system 提示词（MCP 工具通过 mcp_search / mcp_call 按需使用，不再全量注入 MCPBridgeTool）
     all_tools = ToolRegistry.create_all_tools()
@@ -325,9 +383,9 @@ async def reply_with_agent(
     context_window = get_context_window(settings, settings.get("LLM_MODEL", "deepseek-v4-flash"))
 
     # 将图片即时转为 base64 data URI，随请求体内联发给 LLM（不入库）
-    image_extra_blocks: list[dict] | None = None
+    user_extra_blocks = _build_file_prompt_blocks(file_attachments)
     if image_urls:
-        image_extra_blocks = _build_data_uri_blocks(image_urls)
+        user_extra_blocks.extend(_build_data_uri_blocks(image_urls))
 
     ctx = await assemble_for_llm(
         repo, llm, settings,
@@ -336,7 +394,7 @@ async def reply_with_agent(
         user_message=user_message,
         counter=counter,
         context_window=context_window,
-        user_extra_blocks=image_extra_blocks,
+        user_extra_blocks=user_extra_blocks or None,
     )
     messages = ctx.messages
     logging.info(

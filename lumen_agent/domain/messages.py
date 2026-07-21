@@ -7,7 +7,7 @@ from typing import Any, TypedDict, cast
 
 
 class ContentBlock(TypedDict, total=False):
-    """统一内容块：text / thinking / tool_use / tool_result / image_url。"""
+    """统一内容块：text / thinking / tool_use / tool_result / image_url / file。"""
 
     type: str
     text: str
@@ -20,6 +20,11 @@ class ContentBlock(TypedDict, total=False):
     is_error: bool
     # 图像块：{"url": "https://..." 或 "data:image/...;base64,..."}
     image_url: dict[str, str]
+    path: str
+    extension: str
+    size: int
+    content_type: str
+    url: str
 
 
 class InternalMessage(TypedDict):
@@ -37,6 +42,37 @@ def text_message(role: str, text: str) -> InternalMessage:
 def image_block(url: str) -> ContentBlock:
     """构造图像内容块（url 可为 https:// 或 data URI）。"""
     return {"type": "image_url", "image_url": {"url": url}}
+
+
+def file_block(attachment: dict[str, Any]) -> ContentBlock:
+    """构造用于持久化和前端展示的文件内容块。"""
+    return {
+        "type": "file",
+        "name": str(attachment.get("name") or "未命名文件"),
+        "path": str(attachment.get("path") or ""),
+        "extension": str(attachment.get("extension") or ""),
+        "size": int(attachment.get("size") or 0),
+        "content_type": str(
+            attachment.get("content_type") or "application/octet-stream"
+        ),
+        "url": str(attachment.get("url") or ""),
+    }
+
+
+def file_block_to_text(block: dict[str, Any]) -> ContentBlock:
+    """将 UI 专用 file 块转换为模型可理解的路径说明。"""
+    name = str(block.get("name") or "未命名文件")
+    path = str(block.get("path") or "")
+    extension = str(block.get("extension") or "")
+    size = int(block.get("size") or 0)
+    text = (
+        "用户上传了一个本地文件：\n"
+        f"- 名称：{name}\n"
+        f"- 后缀：{extension or '未知'}\n"
+        f"- 大小：{size} 字节\n"
+        f"- 本地路径：{path}"
+    )
+    return {"type": "text", "text": text}
 
 
 def _parse_blocks(content: Any) -> list[ContentBlock]:

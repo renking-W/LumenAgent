@@ -5,6 +5,7 @@ from __future__ import annotations
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
 from lumen_agent.agent.tools.read import Read  # noqa: F401 – 触发 @ToolRegistry.register
+from lumen_agent.agent.tools.read_by_markdown import ReadByMarkdown  # noqa: F401
 from lumen_agent.agent.tools.write import Write  # noqa: F401
 from lumen_agent.agent.tools.bash import Bash  # noqa: F401
 from lumen_agent.agent.tools.web_search import WebSearch  # noqa: F401
@@ -20,7 +21,7 @@ from lumen_agent.agent.tools.mcp_call import McpCall  # noqa: F401
 
 __all__ = [
     "BaseTool", "ToolResult", "ToolRegistry",
-    "Read", "Write", "Bash", "WebSearch", "WebFetch",
+    "Read", "ReadByMarkdown", "Write", "Bash", "WebSearch", "WebFetch",
     "KnowledgeSearch", "KnowledgeInsert",
     "MemorySearch", "EnvEditor", "TaskScheduler",
     "VirtualMachineOperation", "McpSearch", "McpCall",

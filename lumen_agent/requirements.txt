@@ -48,3 +48,6 @@ mcp>=1.0.0
 
 # 文件上传支持（FastAPI UploadFile 依赖）
 python-multipart>=0.0.9
+
+# CSV、Office 文档与 PDF 转 Markdown
+markitdown[pdf,docx,pptx,xlsx,xls]>=0.1.6

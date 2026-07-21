@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import logging
 
 from lumen_agent.application.uitls.text_splitter import Chunk, split_text_into_chunks
+from lumen_agent.application.uitls.document_reader import (
+    MARKITDOWN_EXTENSIONS,
+    read_by_markitdown,
+)
 from lumen_agent.config import Settings, resolve_db_path, resolve_chroma_path
 from lumen_agent.model_adapters.client.chroma_client import ChromaKnowledgeStore
 from lumen_agent.model_adapters.client.embedding_client import AlibabaEmbeddingClient
@@ -100,9 +105,11 @@ class RagService:
         *,
         knowledge_id: str | None = None,
     ) -> IngestResult:
-        """读取文件后入库。"""
-        # 直接以 UTF-8 读取文件内容，后续如需支持更多文件格式可在这里扩展。
-        text = file_path.read_text(encoding="utf-8")
+        """读取文件后入库，特殊文档先通过 MarkItDown 转换。"""
+        if file_path.suffix.lower() in MARKITDOWN_EXTENSIONS:
+            text = await asyncio.to_thread(read_by_markitdown, file_path)
+        else:
+            text = file_path.read_text(encoding="utf-8")
         self._logger.info(
             "知识入库：文件读取完成，路径=%s，文件名=%s，内容长度=%s",
             str(file_path),

@@ -10,5 +10,6 @@ class UploadResponse(BaseModel):
 
     filename: str
     url: str
+    path: str
     content_type: str
     size: int

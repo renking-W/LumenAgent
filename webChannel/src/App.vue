@@ -222,7 +222,7 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
 import { onMounted, ref, watch, nextTick } from 'vue'
-import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage } from './types'
+import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage, FileAttachment } from './types'
 import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
 import ChatView from './components/ChatView.vue'
@@ -423,15 +423,16 @@ const loadSessionMessages = async (sessionId: string) => {
   chatViewRef.value?.scrollPaneToBottom()
 }
 
-const sendMessage = async (imageUrls: string[] = []) => {
+const sendMessage = async (imageUrls: string[] = [], fileAttachments: FileAttachment[] = []) => {
   const content = prompt.value.trim()
-  if (!content || sending.value) return
+  if ((!content && imageUrls.length === 0 && fileAttachments.length === 0) || sending.value) return
   prompt.value = ''
   // 用 composable 发送
   chat.send(content, {
     mode: useAgentMode.value ? 'agent' : 'simple',
     approval_mode: useAgentMode.value ? approvalMode.value : undefined,
     image_urls: useAgentMode.value && imageUrls.length ? imageUrls : undefined,
+    file_attachments: fileAttachments.length ? fileAttachments : undefined,
   })
   await nextTick()
   chatViewRef.value?.scrollPaneToBottom()

@@ -53,6 +53,24 @@
           />
         </div>
 
+        <!-- 文件附件卡片 -->
+        <div v-else-if="item.kind === 'single' && item.block.kind === 'file'" class="block block--file">
+          <div class="file-extension">{{ fileExtensionLabel(item.block) }}</div>
+          <div class="file-info">
+            <a
+              v-if="item.block.fileUrl"
+              class="file-name file-name--link"
+              :href="item.block.fileUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ item.block.fileName || '未命名文件' }}</a>
+            <span v-else class="file-name">{{ item.block.fileName || '未命名文件' }}</span>
+            <span class="file-meta">
+              {{ fileExtensionLabel(item.block) }} · {{ formatFileSize(item.block.fileSize) }}
+            </span>
+          </div>
+        </div>
+
         <!-- 文本块 → 用户消息纯文本，AI 消息 markdown 渲染 -->
         <div v-else-if="item.kind === 'single'" class="block block--text">
           <div v-if="message.role === 'user'" class="plain-text">{{ item.block.content }}</div>
@@ -187,6 +205,17 @@ const isCollapsible = (kind: string) =>
 const lightboxUrl = ref('')
 const openImagePreview = (url: string) => {
   lightboxUrl.value = url
+}
+
+const fileExtensionLabel = (block: ChatBlock) => {
+  const extension = block.fileExtension?.replace(/^\./, '').trim()
+  return extension ? extension.toUpperCase() : 'FILE'
+}
+
+const formatFileSize = (size = 0) => {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 // ── 合并 tool_use + tool_result + awaiting_approval 分组 ──
@@ -665,6 +694,56 @@ watch(
 .msg-image:hover {
   box-shadow: var(--shadow-md);
   transform: scale(1.02);
+}
+
+/* ── 文件附件 ── */
+.block--file {
+  width: min(360px, 100%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-color: var(--color-slate-200);
+  background: var(--color-slate-50);
+}
+.file-extension {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-slate-300);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--color-navy-700);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.file-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-name {
+  overflow: hidden;
+  color: var(--color-navy-800);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-name--link {
+  text-decoration: none;
+}
+.file-name--link:hover {
+  color: var(--color-indigo-600);
+  text-decoration: underline;
+}
+.file-meta {
+  color: var(--color-slate-500);
+  font-size: 0.75rem;
 }
 
 /* ── 灯箱 ── */

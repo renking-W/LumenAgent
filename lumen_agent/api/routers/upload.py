@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -14,22 +15,18 @@ from lumen_agent.application.uitls.dir_guide import DirGuide
 
 router = APIRouter(prefix="/v1", tags=["upload"])
 
-_ALLOWED_IMAGE_MIME_PREFIXES = ("image/jpeg", "image/png", "image/gif", "image/webp", "image/")
-
-_EXT_MAP: dict[str, str] = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-}
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 
-def _resolve_ext(content_type: str, original_filename: str) -> str:
-    """从 MIME 或原始文件名推断扩展名。"""
-    if content_type in _EXT_MAP:
-        return _EXT_MAP[content_type]
-    suffix = Path(original_filename).suffix
-    return suffix if suffix else ".bin"
+def _safe_filename(original_filename: str) -> str:
+    """保留可识别的原文件名，并移除路径与 Windows 非法字符。"""
+    basename = original_filename.replace(chr(92), "/").rsplit("/", 1)[-1]
+    path = Path(basename or "upload.bin")
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", path.stem).strip(" .")
+    suffix = re.sub(r"[^A-Za-z0-9.]", "", path.suffix)[:20]
+    safe_stem = (stem or "upload")[:100]
+    return f"{safe_stem}_{uuid.uuid4().hex[:8]}{suffix}"
 
 
 @router.post(
@@ -38,33 +35,38 @@ def _resolve_ext(content_type: str, original_filename: str) -> str:
     dependencies=[Depends(verify_api_key)],
 )
 async def upload_file(file: UploadFile) -> UploadResponse:
-    """上传文件（当前仅支持图片）并保存到 work_space/tmp/。
-
-    返回本地可访问的文件 URL，前端将其放入 ChatRequest.image_urls
-    交给 agent 流式入口时注入给 LLM。
-    """
-    content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"当前仅支持图片上传，收到的类型为：{content_type}",
-        )
+    """上传任意类型文件到 work_space/tmp/，单文件最大 100 MB。"""
+    content_type = file.content_type or "application/octet-stream"
 
     tmp_dir: Path = DirGuide.tmp_dir()
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    ext = _resolve_ext(content_type, file.filename or "")
-    filename = f"{uuid.uuid4().hex}{ext}"
+    filename = _safe_filename(file.filename or "")
     dest = tmp_dir / filename
 
-    data = await file.read()
-    dest.write_bytes(data)
+    size = 0
+    try:
+        with dest.open("wb") as output:
+            while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+                size += len(chunk)
+                if size > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="文件大小不能超过 100 MB",
+                    )
+                output.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
     return UploadResponse(
         filename=filename,
         url=f"/v1/files/{filename}",
+        path=str(dest.resolve()),
         content_type=content_type,
-        size=len(data),
+        size=size,
     )
 
 

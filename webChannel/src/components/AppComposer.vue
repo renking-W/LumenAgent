@@ -4,22 +4,25 @@
     <input
       ref="fileInputRef"
       type="file"
-      accept="image/*"
       multiple
       style="display:none"
       @change="onPick"
     />
 
-    <!-- 主卡片：图片预览 + 输入框 + 底部操作栏 -->
+    <!-- 主卡片：附件预览 + 输入框 + 底部操作栏 -->
     <div class="composer-card">
-      <!-- 图片附件预览区（在输入框上方，卡片内） -->
+      <!-- 附件预览区（在输入框上方，卡片内） -->
       <div v-if="attachments.length > 0" class="composer-attach-preview">
         <div
           v-for="(att, idx) in attachments"
           :key="att.url"
           class="attach-thumb"
+          :class="{ 'attach-thumb--file': !att.isImage }"
         >
-          <img :src="att.url" :alt="att.filename" class="attach-thumb-img" />
+          <img v-if="att.isImage" :src="att.url" :alt="att.name" class="attach-thumb-img" />
+          <div v-else class="attach-file" :title="att.name">
+            <span class="attach-file-name">{{ att.name }}</span>
+          </div>
           <button class="attach-thumb-del" @click="removeAttachment(idx)" title="移除">×</button>
         </div>
       </div>
@@ -43,7 +46,7 @@
           <button
             class="action-btn action-btn--plus"
             :disabled="sending || uploading"
-            :title="uploading ? '上传中...' : '添加图片'"
+            :title="uploading ? '上传中...' : '添加文件'"
             @click="fileInputRef?.click()"
           >
             {{ uploading ? '…' : '+' }}
@@ -102,6 +105,7 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FileAttachment } from '../types'
 
 const props = defineProps<{
   prompt: string
@@ -115,12 +119,14 @@ const emit = defineEmits<{
   'update:prompt': [value: string]
   'update:approval-mode': [value: 'none' | 'all' | 'dangerous']
   'update:useAgentMode': [value: boolean]
-  send: [imageUrls: string[]]
+  send: [imageUrls: string[], fileAttachments: FileAttachment[]]
   interrupt: []
 }>()
 
 // ── 附件状态 ──────────────────────────────────────
-interface Attachment { filename: string; url: string }
+interface Attachment extends FileAttachment {
+  isImage: boolean
+}
 const attachments = ref<Attachment[]>([])
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -135,21 +141,9 @@ const onPick = async (e: Event) => {
   input.value = ''
   if (!files.length) return
 
-  const rejected: string[] = []
-  const images = files.filter(f => {
-    if (f.type.startsWith('image/')) return true
-    rejected.push(f.name)
-    return false
-  })
-
-  if (rejected.length) {
-    ElMessage.warning(`当前仅支持图片上传，已跳过：${rejected.join('、')}`)
-  }
-  if (!images.length) return
-
   uploading.value = true
   try {
-    await Promise.all(images.map(async (file) => {
+    await Promise.all(files.map(async (file) => {
       const fd = new FormData()
       fd.append('file', file)
       const res = await fetch('/v1/upload', { method: 'POST', body: fd })
@@ -158,8 +152,23 @@ const onPick = async (e: Event) => {
         ElMessage.error(`上传失败：${detail}`)
         return
       }
-      const data: { filename: string; url: string } = await res.json()
-      attachments.value.push({ filename: data.filename, url: data.url })
+      const data: {
+        filename: string
+        url: string
+        path: string
+        content_type: string
+        size: number
+      } = await res.json()
+      const dotIndex = file.name.lastIndexOf('.')
+      attachments.value.push({
+        name: file.name,
+        url: data.url,
+        path: data.path,
+        extension: dotIndex > 0 ? file.name.slice(dotIndex).toLowerCase() : '',
+        size: data.size,
+        content_type: data.content_type,
+        isImage: data.content_type.startsWith('image/'),
+      })
     }))
   } catch {
     ElMessage.error('上传请求失败，请检查网络')
@@ -171,9 +180,19 @@ const onPick = async (e: Event) => {
 const handleSend = () => {
   if (!props.prompt.trim() && attachments.value.length === 0) return
   if (props.sending) return
-  const urls = attachments.value.map(a => a.url)
+  const imageUrls = attachments.value.filter(a => a.isImage).map(a => a.url)
+  const fileAttachments = attachments.value
+    .filter(a => !a.isImage)
+    .map(a => ({
+      name: a.name,
+      path: a.path,
+      extension: a.extension,
+      size: a.size,
+      content_type: a.content_type,
+      url: a.url,
+    }))
   attachments.value = []
-  emit('send', urls)
+  emit('send', imageUrls, fileAttachments)
 }
 
 // ── 审批模式 ──────────────────────────────────────
@@ -224,7 +243,7 @@ const insertNewline = (e: KeyboardEvent) => {
   box-shadow: 0 0 0 3px rgba(203, 213, 225, 0.3);
 }
 
-/* ── 图片预览区 ── */
+/* ── 附件预览区 ── */
 .composer-attach-preview {
   display: flex;
   flex-wrap: wrap;
@@ -237,6 +256,7 @@ const insertNewline = (e: KeyboardEvent) => {
   height: 64px;
   flex-shrink: 0;
 }
+.attach-thumb--file { width: 180px; }
 .attach-thumb-img {
   width: 64px;
   height: 64px;
@@ -244,6 +264,23 @@ const insertNewline = (e: KeyboardEvent) => {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-slate-200);
   display: block;
+}
+.attach-file {
+  width: 180px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--radius-md);
+  background: var(--color-slate-50);
+}
+.attach-file-name {
+  overflow: hidden;
+  color: var(--color-slate-700);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .attach-thumb-del {
   position: absolute;

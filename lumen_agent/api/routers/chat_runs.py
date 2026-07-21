@@ -102,6 +102,9 @@ async def _produce(
                 mcp_server_ids=body.mcp_server_ids,
                 self_system=body.self_system,
                 image_urls=body.image_urls,
+                file_attachments=[
+                    item.model_dump() for item in body.file_attachments
+                ],
             )
         else:
             stream = reply_single_turn_stream(
@@ -111,6 +114,9 @@ async def _produce(
                 body.message,
                 settings,
                 on_connect=on_connect,
+                file_attachments=[
+                    item.model_dump() for item in body.file_attachments
+                ],
             )
         async for item in stream:
             yield item

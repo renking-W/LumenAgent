@@ -22,8 +22,27 @@ from lumen_agent.agent.context import (
 from lumen_agent.agent.tokens import TokenCounter
 from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
+from lumen_agent.domain.messages import file_block_to_text
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_history_for_llm(messages: list[dict]) -> list[dict]:
+    """把数据库中的 UI 专用 file 块转换成模型兼容的文本块。"""
+    prepared: list[dict] = []
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            prepared.append(message)
+            continue
+        blocks = [
+            file_block_to_text(block)
+            if isinstance(block, dict) and block.get("type") == "file"
+            else block
+            for block in content
+        ]
+        prepared.append({**message, "content": blocks})
+    return prepared
 
 
 @dataclass
@@ -98,6 +117,7 @@ async def assemble_for_llm(
             tool_result_token_limit=settings.get("TOOL_RESULT_COMPRESS_TOKEN_LIMIT", 2000),
             head_tail_chars=settings.get("TOOL_RESULT_HEAD_TAIL_CHARS", 20),
         )
+        history_msgs = _prepare_history_for_llm(history_msgs)
 
         # 构建 messages：[system?] + [summary system?] + history + user
         messages: list[dict[str, Any]] = []
@@ -114,7 +134,9 @@ async def assemble_for_llm(
             )
 
         messages.extend(history_msgs)
-        user_content: list[dict] = [{"type": "text", "text": user_message}]
+        user_content: list[dict] = []
+        if user_message.strip():
+            user_content.append({"type": "text", "text": user_message})
         if user_extra_blocks:
             user_content.extend(user_extra_blocks)
         messages.append({"role": "user", "content": user_content})

@@ -17,6 +17,21 @@ export type ChatBlock = {
   title: string
   content: string
   expanded: boolean
+  fileName?: string
+  fileExtension?: string
+  fileSize?: number
+  filePath?: string
+  fileUrl?: string
+  fileContentType?: string
+}
+
+export type FileAttachment = {
+  name: string
+  path: string
+  extension: string
+  size: number
+  content_type: string
+  url: string
 }
 
 export type ChatMessage = {

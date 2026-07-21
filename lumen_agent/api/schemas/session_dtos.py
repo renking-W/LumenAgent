@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class FileAttachment(BaseModel):
+    """用户上传文件的结构化元数据。"""
+
+    name: str = Field(min_length=1, max_length=255)
+    path: str = Field(min_length=1)
+    extension: str = ""
+    size: int = Field(default=0, ge=0)
+    content_type: str = "application/octet-stream"
+    url: str = ""
 
 class ChatRequest(BaseModel):
     """``POST /v1/chat`` / ``POST /v1/chat/stream``。"""
 
-    message: str = Field(..., min_length=1)
+    message: str = ""
     session_id: str | None = Field(default=None, min_length=1)
     session_kind: int | None = None
     mode: Literal["simple", "agent"] = "agent"
@@ -26,6 +37,17 @@ class ChatRequest(BaseModel):
         default=None,
         description="本轮附带的图片 URL 列表（来自 /v1/upload 返回的 url），仅 agent 模式下生效",
     )
+    file_attachments: list[FileAttachment] = Field(
+        default_factory=list,
+        description="本轮上传文件的结构化元数据，供消息展示和 Agent 读取本地路径",
+    )
+
+    @model_validator(mode="after")
+    def validate_message_content(self) -> "ChatRequest":
+        """文字、图片和文件至少提供一种。"""
+        if not self.message.strip() and not self.image_urls and not self.file_attachments:
+            raise ValueError("message、image_urls 和 file_attachments 至少提供一个")
+        return self
 
 
 class ChatResponse(BaseModel):
@@ -58,6 +80,11 @@ class ContentBlock(BaseModel):
     content: str | None = None
     is_error: bool | None = None
     image_url: dict[str, str] | None = None
+    path: str | None = None
+    extension: str | None = None
+    size: int | None = None
+    content_type: str | None = None
+    url: str | None = None
 
 
 class StoredMessage(BaseModel):

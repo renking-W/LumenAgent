@@ -19,6 +19,7 @@ from lumen_agent.api.schemas.knowledge_dtos import (
     KnowledgeSearchResponse,
 )
 from lumen_agent.application.service.embedding.rag_service import RagService
+from lumen_agent.application.uitls.document_reader import DocumentReadError
 from lumen_agent.config import Settings
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
@@ -66,7 +67,10 @@ async def ingest_knowledge(
     )
     if body.file_path:
         # 文件路径场景：统一交给共享服务读取文件并完成入库。
-        result = await service.ingest_file(Path(body.file_path), knowledge_id=body.knowledge_id)
+        try:
+            result = await service.ingest_file(Path(body.file_path), knowledge_id=body.knowledge_id)
+        except (DocumentReadError, OSError, UnicodeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     else:
         # 文本场景：直接把用户输入交给共享服务处理。
         source_name = body.source_name or body.knowledge_id or "manual_input"

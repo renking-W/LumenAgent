@@ -13,6 +13,7 @@ dependencies = [
     "html2text>=2024.2.26",
     "httpx>=0.28.1",
     "mcp>=1.0.0",
+    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.6",
     "paramiko>=3.4.0",
     "pydantic-settings>=2.14.1",
     "pyyaml>=6.0.3",
