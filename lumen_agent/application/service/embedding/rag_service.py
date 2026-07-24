@@ -253,19 +253,20 @@ class RagService:
             file_name=file_name,
             chunks=chunk_rows,
         )
-        # 仅把 chunk 文本送去 embedding，元数据留给 Chroma 存储层。
-        texts = [chunk.text for chunk in chunks]
-        vectors = await self._embedding_client.embed_documents(texts)
-        self._logger.info(
-            "知识入库：开始写入向量库，来源=%s，文件名=%s，知识编号=%s，块数量=%s，集合=%s",
-            source_name,
-            file_name,
-            knowledge_id_value,
-            len(chunks),
-            self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
-        )
-        # 将 chunk、向量和元信息一次性 upsert 到向量库，避免多次 IO。
+        # Embedding 和 Chroma 写入属于同一入库阶段，任一步失败都标记文档失败。
         try:
+            # 大文档按配置分批请求，避免一次提交过多 chunk 被向量接口拒绝。
+            texts = [chunk.text for chunk in chunks]
+            vectors = await self._embedding_client.embed_documents_batched(texts)
+            self._logger.info(
+                "知识入库：开始写入向量库，来源=%s，文件名=%s，知识编号=%s，块数量=%s，集合=%s",
+                source_name,
+                file_name,
+                knowledge_id_value,
+                len(chunks),
+                self._settings.get("RAG_COLLECTION_NAME", "knowledge_base"),
+            )
+            # 将 chunk、向量和元信息一次性 upsert 到向量库，避免多次 IO。
             await self._store.upsert_chunks(
                 knowledge_id=knowledge_id_value,
                 source_name=source_name,

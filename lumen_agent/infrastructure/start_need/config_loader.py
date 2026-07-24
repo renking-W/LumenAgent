@@ -36,6 +36,14 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "PORT": 21675,
     "RELOAD": False,
     "CORS_ORIGINS": "http://127.0.0.1:5173,http://localhost:5173",
+    # ── 登录认证 ──
+    "AUTH_ENABLED": False,
+    "AUTH_JWT_SECRET": "",
+    "AUTH_JWT_EXPIRE_HOURS": 24,
+    "AUTH_JWT_REFRESH_BEFORE_HOURS": 8,
+    "AUTH_DAILY_QUOTA_TIMEZONE": "Asia/Shanghai",
+    "AUTH_INITIAL_ADMIN_USERNAME": "admin",
+    "AUTH_INITIAL_ADMIN_PASSWORD": "",
     # ── 会话 ──
     "CONVERSATION_DB_PATH": "data/conversations.db",
     "CONVERSATION_MAX_CONTEXT_MESSAGES": 5,
@@ -189,7 +197,9 @@ def load_and_merge() -> dict[str, Any]:
 
     # 1. 读 JSON
     try:
-        config: dict[str, Any] = json.loads(_CONFIG_JSON_PATH.read_text(encoding="utf-8"))
+        saved_config = json.loads(_CONFIG_JSON_PATH.read_text(encoding="utf-8"))
+        # 默认配置负责补齐后续版本新增字段，用户已有配置保持最高优先级。
+        config: dict[str, Any] = {**_DEFAULT_CONFIG, **saved_config}
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("config.json 读取失败，回退到默认值: %s", exc)
         config = dict(_DEFAULT_CONFIG)

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from lumen_agent.api.dependency import (
+    AuthContext,
     get_conversation_repo,
     get_llm_client,
     verify_api_key,
@@ -18,6 +20,11 @@ from lumen_agent.api.schemas.chat_run_dtos import (
     ChatRunResponse,
 )
 from lumen_agent.api.schemas.session_dtos import ChatRequest
+from lumen_agent.application.service.auth.chat_quota_service import (
+    DailyChatQuotaExceededError,
+    release_chat_turn,
+    reserve_chat_turn,
+)
 from lumen_agent.application.service.chat.chat_service import (
     reply_single_turn_stream,
     reply_with_agent,
@@ -37,6 +44,8 @@ from lumen_agent.infrastructure.chat_run_manager import (
     get_chat_run_manager,
 )
 from lumen_agent.model_adapters.base import ModelAdapter
+
+_logger = logging.getLogger(__name__)
 
 # ── 路由与 SSE 基础配置 ─────────────────────────────────────────
 router = APIRouter(
@@ -159,18 +168,48 @@ async def start_managed_run(
 @router.post("", response_model=ChatRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_chat_run(
     body: ChatRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
     llm: ModelAdapter = Depends(get_llm_client),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> ChatRunResponse:
     """启动一轮生成并立即返回运行标识，不等待模型完成。"""
-    run = await start_managed_run(
-        body,
-        settings,
-        llm,
-        repo,
-        get_chat_run_manager(),
-    )
+    context = getattr(request.state, "auth_context", None)
+    current_user = context.user if isinstance(context, AuthContext) else None
+    try:
+        reservation = await reserve_chat_turn(current_user, settings)
+    except DailyChatQuotaExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "DAILY_CHAT_LIMIT_EXCEEDED",
+                "message": "今日对话轮数已用完",
+                "limit": exc.limit,
+                "used_rounds": exc.limit,
+                "usage_date": exc.usage_date,
+                "reset_at": exc.reset_at,
+            },
+            headers={
+                "X-RateLimit-Limit": str(exc.limit),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": exc.reset_at,
+            },
+        ) from exc
+
+    try:
+        run = await start_managed_run(
+            body,
+            settings,
+            llm,
+            repo,
+            get_chat_run_manager(),
+        )
+    except Exception:
+        try:
+            await release_chat_turn(reservation, settings)
+        except Exception:
+            _logger.exception("ChatRun创建失败后的额度退还异常")
+        raise
     return _response(run)
 
 

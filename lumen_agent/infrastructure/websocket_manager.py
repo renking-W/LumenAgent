@@ -127,14 +127,20 @@ class WebSocketConnectionManager:
             logger.warning("WebSocket 收到非法 JSON: conn_id=%s", conn_id)
             return None
 
-    async def close(self, conn_id: str) -> None:
-        """关闭指定连接并清理资源。幂等。"""
+    async def close(
+        self,
+        conn_id: str,
+        *,
+        code: int = 1000,
+        reason: str = "",
+    ) -> None:
+        """使用指定关闭码关闭连接并清理资源。幂等。"""
         async with self._lock:
             state = self._connections.pop(conn_id, None)
         if state is None:
             return
         try:
-            await state.websocket.close()
+            await state.websocket.close(code=code, reason=reason)
         except Exception:
             pass  # 关闭时忽略异常
         logger.info("WebSocket 已断开: conn_id=%s", conn_id)

@@ -16,10 +16,12 @@ dependencies = [
     "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.6",
     "paramiko>=3.4.0",
     "pydantic-settings>=2.14.1",
+    "PyJWT>=2.10.1",
     "pyyaml>=6.0.3",
     "questionary>=2.1.1",
     "tiktoken>=0.7.0",
     "uvicorn>=0.47.0",
+    "tzdata>=2025.2",
     "python-multipart>=0.0.9",
 ]
 

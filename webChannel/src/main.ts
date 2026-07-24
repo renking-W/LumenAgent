@@ -2,6 +2,10 @@ import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import './styles.css'
-import App from './App.vue'
+import RootApp from './RootApp.vue'
+import { initializeAuth, installAuthenticatedFetch } from './services/auth'
 
-createApp(App).use(ElementPlus).mount('#app')
+installAuthenticatedFetch()
+void initializeAuth()
+
+createApp(RootApp).use(ElementPlus).mount('#app')

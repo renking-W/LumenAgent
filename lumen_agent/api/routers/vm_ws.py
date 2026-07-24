@@ -2,9 +2,10 @@
 
 订阅流程：
 1. 前端连接 WS → 后端 accept
-2. 前端发 {"type":"subscribe","vm_id":"xxx"} → 后端订阅 VmEventBus
-3. 后端持续转发 VM 事件到 WebSocket
-4. 前端发 {"type":"unsubscribe"} / 断连 → 后端清理订阅
+2. 认证开启时，前端先发送 auth 消息
+3. 前端发 {"type":"subscribe","vm_id":"xxx"} → 后端订阅 VmEventBus
+4. 后端持续转发 VM 事件到 WebSocket
+5. Token 刷新后发送 auth_refresh，断连时清理订阅
 """
 
 from __future__ import annotations
@@ -14,6 +15,15 @@ import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from lumen_agent.api.websocket_auth import (
+    WebSocketAuthenticationError,
+    authenticate_initial_message,
+    authenticated_receive_timeout,
+    ensure_websocket_admin_active,
+    refresh_websocket_auth,
+)
+from lumen_agent.config import get_settings
 
 from lumen_agent.infrastructure.vm_event_bus import get_vm_event_bus
 from lumen_agent.infrastructure.websocket_manager import get_ws_manager
@@ -28,6 +38,8 @@ async def vm_websocket(websocket: WebSocket):
     """WebSocket 端点：前端连接后订阅 VM 事件。"""
     mgr = get_ws_manager()
     conn_id = await mgr.accept(websocket)
+    settings = get_settings()
+    auth_context = None
 
     heartbeat_task: asyncio.Task | None = None
     relay_task: asyncio.Task | None = None
@@ -35,17 +47,43 @@ async def vm_websocket(websocket: WebSocket):
     current_vm_id: str | None = None
 
     try:
-        # 启动心跳
+        # 认证成功后再启动心跳
+        auth_context = await authenticate_initial_message(
+            mgr, conn_id, settings,
+        )
+
         heartbeat_task = asyncio.create_task(
             mgr.start_heartbeat(conn_id, interval=30),
         )
 
+        # 每轮接收前复查管理员状态，并把等待时长限制在 Token 剩余寿命内。
         while True:
-            msg = await mgr.receive_json(conn_id, timeout=60)
+            if auth_context is not None:
+                auth_context = await ensure_websocket_admin_active(
+                    auth_context, settings,
+                )
+            timeout = authenticated_receive_timeout(auth_context)
+            msg = await mgr.receive_json(conn_id, timeout=timeout)
             if msg is None:
                 continue  # 超时无消息，重试（heartbeat 任务负责保活）
 
             msg_type = msg.get("type")
+
+            # 认证控制消息只更新连接身份，不进入 VM 订阅业务。
+            if msg_type == "auth_refresh":
+                if auth_context is None:
+                    await mgr.send_json(conn_id, {
+                        "type": "error",
+                        "message": "当前连接未启用认证",
+                    })
+                    continue
+                auth_context = await refresh_websocket_auth(
+                    mgr,
+                    conn_id,
+                    msg,
+                    settings,
+                )
+                continue
 
             if msg_type == "subscribe":
                 current_vm_id = msg.get("vm_id", "")
@@ -92,6 +130,21 @@ async def vm_websocket(websocket: WebSocket):
             elif msg_type == "pong":
                 await mgr.update_pong(conn_id)
 
+    # 认证错误先通知前端，再使用约定的 4401/4403/4408 关闭连接。
+    except WebSocketAuthenticationError as exc:
+        logger.warning("VM WebSocket 认证失败: conn_id=%s detail=%s", conn_id, exc.detail)
+        try:
+            await mgr.send_json(conn_id, {
+                "type": "auth_error",
+                "message": exc.detail,
+            })
+        except (ConnectionError, WebSocketDisconnect):
+            pass
+        await mgr.close(
+            conn_id,
+            code=exc.code,
+            reason="authentication failed",
+        )
     except WebSocketDisconnect:
         logger.info("VM WebSocket 客户端断开: conn_id=%s", conn_id)
     except Exception:

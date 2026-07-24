@@ -9,11 +9,13 @@
 
   <div class="message-row" :class="message.role">
     <img v-if="message.role === 'assistant'" class="msg-avatar" src="/logo.svg" alt="AI" />
-    <article
-      class="message"
-      :class="{ streaming: isStreaming }"
-      ref="msgRef"
-    >
+    <div class="message-stack">
+      <article
+        v-if="hasBubbleContent"
+        class="message"
+        :class="{ streaming: isStreaming }"
+        ref="msgRef"
+      >
       <div class="message-meta">
         <span class="role-badge">{{ message.roleLabel }}</span>
         <el-tag
@@ -24,7 +26,7 @@
         >已中断</el-tag>
       </div>
       <div class="message-content">
-      <template v-for="item in groupedBlocks" :key="item.id">
+      <template v-for="item in bubbleGroupedBlocks" :key="item.id">
         <!-- 可折叠块：思考、错误 -->
         <details v-if="item.kind === 'single' && isCollapsible(item.block.kind)" class="block block--collapsible" :open="item.block.expanded">
           <summary class="block-summary">
@@ -171,10 +173,49 @@
       <!-- 流式光标 -->
       <span v-if="isStreaming" class="streaming-cursor">▍</span>
     </div>
-    <div class="message-footer">
-      <span class="time">{{ message.time }}</span>
+        <div v-if="message.role === 'assistant'" class="message-footer">
+          <span class="time">{{ message.time }}</span>
+        </div>
+      </article>
+
+      <!-- 用户附件独立展示，不放入聊天气泡 -->
+      <div v-if="userAttachmentBlocks.length" class="user-attachments">
+        <div
+          v-for="block in userAttachmentBlocks"
+          :key="block.id"
+          class="user-attachment-item"
+        >
+          <div v-if="block.kind === 'image'" class="block block--image">
+            <img
+              :src="block.content"
+              class="msg-image"
+              alt="图片"
+              @click="openImagePreview(block.content)"
+            />
+          </div>
+          <div v-else class="block block--file">
+            <div class="file-extension">{{ fileExtensionLabel(block) }}</div>
+            <div class="file-info">
+              <a
+                v-if="block.fileUrl"
+                class="file-name file-name--link"
+                :href="block.fileUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+              >{{ block.fileName || '未命名文件' }}</a>
+              <span v-else class="file-name">{{ block.fileName || '未命名文件' }}</span>
+              <span class="file-meta">
+                {{ fileExtensionLabel(block) }} · {{ formatFileSize(block.fileSize) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="message.role === 'user'" class="message-footer message-footer--outside">
+        <span class="time">{{ message.time }}</span>
+      </div>
     </div>
-  </article>
   <img v-if="message.role === 'user'" class="msg-avatar" src="/user.svg" alt="User" />
 </div>
 </template>
@@ -291,6 +332,24 @@ const groupedBlocks = computed<RenderItem[]>(() => {
   return items
 })
 
+const bubbleGroupedBlocks = computed(() => {
+  if (props.message.role !== 'user') return groupedBlocks.value
+  return groupedBlocks.value.filter(item =>
+    !(item.kind === 'single' && ['image', 'file'].includes(item.block.kind))
+  )
+})
+
+const userAttachmentBlocks = computed(() => {
+  if (props.message.role !== 'user') return []
+  return props.message.blocks.filter(block => ['image', 'file'].includes(block.kind))
+})
+
+const hasBubbleContent = computed(() =>
+  props.message.role === 'assistant' ||
+  bubbleGroupedBlocks.value.length > 0 ||
+  props.isStreaming
+)
+
 // ── 复制按钮注入 ─────────────────────────────────────
 const injectCopyButtons = () => {
   if (!msgRef.value) return
@@ -343,8 +402,20 @@ watch(
   align-self: flex-end;
 }
 
-.message {
+.message-stack {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.message-row.user .message-stack {
+  align-items: flex-end;
+}
+
+.message {
+  width: 100%;
   min-width: 0;
   padding: var(--space-5);
   border-radius: var(--radius-xl);
@@ -412,6 +483,12 @@ watch(
 }
 .message-row.user .message-footer {
   border-top-color: rgba(234, 179, 8, 0.12);
+}
+.message-footer--outside {
+  width: 100%;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 .time {
   color: var(--color-slate-400);
@@ -744,6 +821,17 @@ watch(
 .file-meta {
   color: var(--color-slate-500);
   font-size: 0.75rem;
+}
+
+.user-attachments {
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.user-attachment-item {
+  max-width: 100%;
 }
 
 /* ── 灯箱 ── */

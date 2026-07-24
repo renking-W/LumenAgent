@@ -221,7 +221,7 @@
 
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
-import { onMounted, ref, watch, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage, FileAttachment } from './types'
 import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
@@ -467,6 +467,10 @@ const refreshCapabilities = async () => {
 onMounted(async () => {
   await refreshCapabilities()
   await chat.restoreLastSession()
+})
+
+onUnmounted(() => {
+  chat.detachSubscription()
 })
 
 // 切换界面时自动刷新对应数据

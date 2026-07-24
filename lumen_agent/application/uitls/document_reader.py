@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import logging
 from pathlib import Path
 
 
 MARKITDOWN_EXTENSIONS = frozenset(
     {".csv", ".docx", ".xlsx", ".doc", ".pptx", ".ppt", ".pdf"}
 )
+
+
+class _MissingFontBBoxFilter(logging.Filter):
+    """过滤 PDF 字体描述缺失产生的非致命 pdfminer 警告。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith(
+            "Could not get FontBBox from font descriptor because"
+        )
+
+
+# 只过滤这一条已知的非致命警告，保留 pdfminer 其他诊断日志。
+logging.getLogger("pdfminer.pdffont").addFilter(_MissingFontBBoxFilter())
 
 
 class DocumentReadError(RuntimeError):

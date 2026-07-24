@@ -17,12 +17,22 @@
       <el-button plain @click="emit('open-api-keys')">
         🔑 API Key
       </el-button>
+      <div v-if="authState.enabled.value && authState.user.value" class="account">
+        <span class="account-name">{{ authState.user.value.username }}</span>
+        <span class="account-role">
+          {{ authState.user.value.role === 'admin' ? '管理员' : '用户' }}
+        </span>
+      </div>
+      <el-button v-if="authState.enabled.value" plain @click="logout">
+        退出
+      </el-button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { authState, logout } from '../services/auth'
 
 const props = defineProps<{
   activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'
@@ -80,5 +90,29 @@ const pageSubtitle = computed(() => {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.account {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-left: 1px solid var(--color-slate-200);
+  color: var(--color-navy-700);
+}
+
+.account-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.account-role {
+  color: #6b7e69;
+  font-size: 0.72rem;
 }
 </style>
