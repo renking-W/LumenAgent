@@ -10,7 +10,9 @@ assemble_for_llm() 是所有入口（单轮 / 流式 / Agent）的统一历史�
 
 from __future__ import annotations
 
+import base64
 import logging
+import mimetypes
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +22,7 @@ from lumen_agent.agent.context import (
     turns_to_messages,
 )
 from lumen_agent.agent.tokens import TokenCounter
+from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import Settings
 from lumen_agent.domain.ports import ConversationRepositoryPort, LLMClientPort
 from lumen_agent.domain.messages import file_block_to_text
@@ -27,20 +30,55 @@ from lumen_agent.domain.messages import file_block_to_text
 logger = logging.getLogger(__name__)
 
 
+def _prepare_image_block_for_llm(block: dict[str, Any]) -> dict[str, Any] | None:
+    """将数据库中的本地图片引用转换成模型可直接读取的 Data URI。"""
+    image_url = block.get("image_url")
+    url = str(image_url.get("url") or "") if isinstance(image_url, dict) else ""
+    if not url.startswith("/v1/files/"):
+        return block
+
+    filename = url.removeprefix("/v1/files/")
+    # 本地图片名称只允许单层文件名，避免越权读取其他路径。
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        logger.warning("跳过非法图片路径：%s", url)
+        return None
+
+    file_path = DirGuide.tmp_dir() / filename
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        logger.warning("图片文件不存在或不可读，已跳过：%s", file_path)
+        return None
+
+    mime = mimetypes.guess_type(str(file_path))[0] or "image/jpeg"
+    encoded = base64.b64encode(data).decode("ascii")
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{mime};base64,{encoded}"},
+    }
+
+
 def _prepare_history_for_llm(messages: list[dict]) -> list[dict]:
-    """把数据库中的 UI 专用 file 块转换成模型兼容的文本块。"""
+    """把数据库内容块转换成模型兼容格式，不修改持久化原始数据。"""
     prepared: list[dict] = []
     for message in messages:
         content = message.get("content")
         if not isinstance(content, list):
             prepared.append(message)
             continue
-        blocks = [
-            file_block_to_text(block)
-            if isinstance(block, dict) and block.get("type") == "file"
-            else block
-            for block in content
-        ]
+
+        blocks: list[dict[str, Any]] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "file":
+                blocks.append(file_block_to_text(block))
+            elif block.get("type") == "image_url":
+                image_block = _prepare_image_block_for_llm(block)
+                if image_block is not None:
+                    blocks.append(image_block)
+            else:
+                blocks.append(block)
         prepared.append({**message, "content": blocks})
     return prepared
 
@@ -72,10 +110,8 @@ async def assemble_for_llm(
     *,
     session_id: str,
     system_content: str | None,
-    user_message: str,
     counter: TokenCounter,
     context_window: int,
-    user_extra_blocks: list[dict] | None = None,
 ) -> AssembledContext:
     """组装本轮 LLM 输入消息，含 token 预算检查与强制压缩。
 
@@ -86,7 +122,6 @@ async def assemble_for_llm(
     settings        应用配置
     session_id      当前会话 ID
     system_content  系统提示词字符串（None 表示不注入 system 消息）
-    user_message    本轮用户输入（已落库，不再重复写入）
     counter         TokenCounter 实例
     context_window  当前模型的上下文窗口（token 数）
 
@@ -108,7 +143,7 @@ async def assemble_for_llm(
         # list_recent_messages 从末尾截取，首轮可能残缺，丢弃
         if turns and turns[0][0].get("role") != "user":
             turns.pop(0)
-        # 将 turns 中所有缺少 assistant 回复的轮次补成完整格式
+        # 修复历史中的残缺轮次；最后一条 User 消息由 verify_message 保持未完成状态。
         complete_turns = verify_message(turns)
         # 压缩 tool_result.content 超长内容
         history_msgs = compress_tool_blocks(
@@ -119,7 +154,7 @@ async def assemble_for_llm(
         )
         history_msgs = _prepare_history_for_llm(history_msgs)
 
-        # 构建 messages：[system?] + [summary system?] + history + user
+        # 构建 messages：[system?] + [summary system?] + 数据库消息
         messages: list[dict[str, Any]] = []
 
         if system_content:
@@ -134,12 +169,6 @@ async def assemble_for_llm(
             )
 
         messages.extend(history_msgs)
-        user_content: list[dict] = []
-        if user_message.strip():
-            user_content.append({"type": "text", "text": user_message})
-        if user_extra_blocks:
-            user_content.extend(user_extra_blocks)
-        messages.append({"role": "user", "content": user_content})
 
         total_tokens = counter.count_messages(messages)
 
@@ -187,15 +216,24 @@ def verify_message(turns: list[list[dict]]) -> list[list[dict]]:
         }
 
     complete_turns: list[list[dict]] = []
-    for turn in turns:
+    for turn_index, turn in enumerate(turns):
         fixed_turn: list[dict] = []
         for idx, msg in enumerate(turn):
             fixed_turn.append(msg)
             is_last = idx == len(turn) - 1
+            is_final_user = (
+                turn_index == len(turns) - 1
+                and is_last
+                and msg.get("role") == "user"
+            )
             next_is_assistant = (
                 not is_last and turn[idx + 1].get("role") == "assistant"
             )
-            if msg.get("role") == "user" and (is_last or not next_is_assistant):
+            if (
+                msg.get("role") == "user"
+                and (is_last or not next_is_assistant)
+                and not is_final_user
+            ):
                 fixed_turn.append(_empty_assistant())
         complete_turns.append(fixed_turn)
     return complete_turns

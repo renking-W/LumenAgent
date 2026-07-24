@@ -214,31 +214,36 @@ def _load_text_if_exists(path: Path) -> str:
 async def _write_daily_memory_append(
     session_id: str,
     count_summary: str,
+    *,
+    entry_id: str,
 ) -> None:
-    """将 count_summary 追加写入当天的记忆文档，同时写入向量索引库。"""
-    result = _MEMORY_UTILS.append_daily_summary(session_id, count_summary)
+    """按稳定区间 ID 写入当日记忆，并以相同 ID 更新向量索引。"""
+    result = _MEMORY_UTILS.append_daily_summary(
+        session_id,
+        count_summary,
+        entry_id=entry_id,
+    )
     if result is not None:
         file_path, ts = result
-        logging.info("session=%s 当日记忆已追加到 %s", session_id, file_path)
-        # 同步写入 ChromaDB 向量索引（异步任务，失败不阻塞主流程）
+        logging.info("session=%s 当日记忆已写入 %s entry_id=%s", session_id, file_path, entry_id)
+        # 同步写入 ChromaDB 向量索引；失败不影响已持久化的 Markdown。
         try:
             body = (count_summary or "").strip()
-            header = f"## {ts}  session={session_id}\n\n"
+            header = f"## {ts}  session={session_id}  entry_id={entry_id}\n\n"
             entry_text = header + body
-            ts_safe = ts.replace(":", "-").replace(" ", "_")
-            entry_id = f"daily:{ts[:10]}:{ts_safe}:{session_id}"
             metadata = {
                 "source": "daily",
                 "date": ts[:10],
                 "session_id": session_id,
                 "timestamp": ts,
+                "entry_id": entry_id,
             }
             from lumen_agent.application.service.embedding.memory_rag_service import MemoryRagService
             from lumen_agent.config import get_settings
 
             service = MemoryRagService(get_settings())
             await service.index_entry(entry_text, entry_id, metadata)
-            logging.info("session=%s 记忆向量索引完成", session_id)
+            logging.info("session=%s 记忆向量索引完成 entry_id=%s", session_id, entry_id)
         except Exception:
             logging.exception("session=%s 记忆向量索引失败，不影响文件写入", session_id)
 
@@ -246,15 +251,24 @@ async def _write_daily_memory_append(
 def _write_memory_file(
     session_id: str,
     messages: list[dict[str, Any]],
+    *,
+    entry_id: str,
 ) -> None:
-    """将被强制截断的消息追加写入按日期命名的记忆文件（``YYYY-MM-DD.md``）。"""
+    """按稳定区间 ID 将强制截断消息写入当日记忆文件。"""
     file_path = _MEMORY_UTILS.append_message_backup(
         session_id=session_id,
         messages=messages,
         role_label_map=_ROLE_LABEL,
         message_to_text_fn=_message_to_text,
+        entry_id=entry_id,
     )
-    logging.info(f"session={session_id} 截断记录已写入 {file_path}")
+    logging.info(
+        "session=%s 截断记录已写入 %s entry_id=%s",
+        session_id,
+        file_path,
+        entry_id,
+    )
+
 
 async def maybe_trigger_summary(
     repo: ConversationRepositoryPort,
@@ -262,99 +276,128 @@ async def maybe_trigger_summary(
     session_id: str,
     settings: Settings,
 ) -> None:
-    """若当前 ``count`` 已达阈值，则压缩前 K 轮为新摘要并把 ``count`` 重置为 ``keep_turns``。
-
-    失败不抛：仅记录日志、保持原状态，等下一轮再尝试（与指南边界约定一致）。
-    """
+    """达到阈值后，原子抢占并压缩尚未处理的固定消息区间。"""
     threshold = settings.get("SUMMARY_THRESHOLD_TURNS", 6)
-    compress_turns = settings.get("SUMMARY_COMPRESS_TURNS", 4)
     keep_turns = settings.get("SUMMARY_KEEP_TURNS", 2)
+    stale_seconds = settings.get("SUMMARY_COMPACTION_STALE_SECONDS", 1800)
 
+    # 先做无锁快速判断，未达到阈值时避免额外写事务。
     session = await repo.get_session(session_id)
-    if session is None:
+    if session is None or int(session["count"]) < threshold:
         return
 
-    count = int(session["count"])
-
-    # ── 兜底：摘要持续失败，count 到达 threshold*2 ──────────────────────────
-    # 将溢出的轮次写入记忆文件，然后强制重置 count，防止上下文无限膨胀
-    if count >= threshold * 2:
-        logging.warning(
-            f"session={session_id} 摘要持续失败 count={count}，"
-            f"触发强制截断，溢出内容写入记忆文件"
-        )
-        # 取当前窗口全部消息，提取完整轮次
-        all_window = await repo.list_recent_messages(session_id, count * 2)
-        turns = _find_complete_turns(all_window)
-        # 保留最近 keep_turns 轮，其余写入记忆文件
-        lost_turns = turns[:-keep_turns] if len(turns) > keep_turns else []
-        if lost_turns:
-            lost_msgs = turns_to_messages(lost_turns)
-            try:
-                _write_memory_file(
-                    session_id,
-                    lost_msgs,
-                )
-            except Exception:
-                logging.exception(f"session={session_id} 写入记忆文件失败，跳过")
-        await repo.update_summary(
-            session_id,
-            new_summary=session["summary"],
-            new_count=keep_turns,
-        )
+    claim = await repo.claim_summary_compaction(
+        session_id,
+        stale_after_seconds=stale_seconds,
+    )
+    if claim is None:
+        logging.debug("session=%s 已有摘要任务运行，跳过重复触发", session_id)
         return
 
-    if count < threshold:
+    started_at = claim.get("compaction_started_at")
+    if not isinstance(started_at, str):
+        logging.error("session=%s 摘要任务缺少抢占时间，跳过", session_id)
         return
 
-    # ── 正常摘要触发 ─────────────────────────────────────────────────────────
+    completed = False
     try:
-        # 取当前会话全部消息，按完整 (user, assistant) 轮次切片，避免在轮次中间截断
-        all_msgs = await repo.list_messages(session_id)
-        turns = _find_complete_turns(all_msgs)
+        count = int(claim["count"])
+        if count < threshold:
+            return
 
+        start_seq = int(claim["summary_cursor_seq"]) + 1
+        pending_messages = await repo.list_messages_range(
+            session_id,
+            start_seq=start_seq,
+        )
+        turns = _find_complete_turns(pending_messages)
         if len(turns) < threshold:
             logging.warning(
-                f"session={session_id} 触发摘要但完整轮次不足"
-                f"（expect={threshold} got={len(turns)}），跳过"
+                "session=%s 触发摘要但游标后的完整轮次不足（expect=%s got=%s），跳过",
+                session_id,
+                threshold,
+                len(turns),
             )
             return
 
-        # 从后往前数，跳过保留的 keep_turns 轮，其余压缩为摘要
-        to_compress = turns_to_messages(turns[:-keep_turns]) if keep_turns > 0 else turns_to_messages(turns)
+        # 摘要持续失败时直接备份溢出原文，并推进游标防止上下文无限膨胀。
+        if count >= threshold * 2:
+            to_compress_turns = turns[:-keep_turns] if keep_turns > 0 else turns
+            to_compress = turns_to_messages(to_compress_turns)
+            end_seq = max(int(message["seq"]) for message in to_compress)
+            entry_id = f"session:{session_id}:seq:{start_seq}-{end_seq}"
+            _write_memory_file(
+                session_id,
+                to_compress,
+                entry_id=f"{entry_id}:backup",
+            )
+            completed = await repo.complete_summary_compaction(
+                session_id,
+                compaction_started_at=started_at,
+                new_summary=claim["summary"],
+                summary_cursor_seq=end_seq,
+                compressed_turns=len(to_compress_turns),
+            )
+            if completed:
+                logging.warning(
+                    "session=%s 摘要持续失败，已备份并跳过 %s 轮，cursor=%s",
+                    session_id,
+                    len(to_compress_turns),
+                    end_seq,
+                )
+            return
+
+        to_compress_turns = turns[:-keep_turns] if keep_turns > 0 else turns
+        if not to_compress_turns:
+            return
+        to_compress = turns_to_messages(to_compress_turns)
+        end_seq = max(int(message["seq"]) for message in to_compress)
+        entry_id = f"session:{session_id}:seq:{start_seq}-{end_seq}"
         rounds_text = _format_rounds(to_compress)
+        prompt = _render_summary_prompt(claim["summary"], rounds_text)
+        raw_summary = await llm.chat(
+            [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        )
+        new_summary, count_summary = _parse_summary_payload(raw_summary)
+        if not new_summary and not count_summary:
+            logging.warning("session=%s 摘要 LLM 返回空，跳过更新", session_id)
+            return
 
-        # 渲染 prompt（含文件读取），放在 try 块内以确保异常可被捕获并记录
-        prompt = _render_summary_prompt(session["summary"], rounds_text)
+        await _write_daily_memory_append(
+            session_id,
+            count_summary,
+            entry_id=entry_id,
+        )
+        completed = await repo.complete_summary_compaction(
+            session_id,
+            compaction_started_at=started_at,
+            new_summary=new_summary,
+            summary_cursor_seq=end_seq,
+            compressed_turns=len(to_compress_turns),
+        )
+        if not completed:
+            logging.warning("session=%s 摘要任务所有权已失效，放弃提交", session_id)
+            return
 
-        raw_summary = await llm.chat([{"role": "user", "content": [{"type": "text", "text": prompt}]}])
+        try:
+            asyncio.create_task(_maybe_refine_long_memory(llm))
+        except Exception:
+            logging.exception("长期记忆整理任务创建失败")
+        logging.info(
+            "session=%s 摘要更新成功 compressed_turns=%s cursor=%s summary_len=%s",
+            session_id,
+            len(to_compress_turns),
+            end_seq,
+            len(new_summary),
+        )
     except Exception:
-        # 失败：不阻塞主响应，count 保持不变，等下一轮再尝试
-        logging.exception(f"session={session_id} 摘要生成过程异常，跳过本次更新")
-        return
-
-    new_summary, count_summary = _parse_summary_payload(raw_summary)
-    if not new_summary and not count_summary:
-        logging.warning(f"session={session_id} 摘要 LLM 返回空，跳过更新")
-        return
-
-    try:
-        await _write_daily_memory_append(session_id, count_summary)
-    except Exception:
-        logging.exception(f"session={session_id} 追加当日记忆失败")
-
-    await repo.update_summary(
-        session_id,
-        new_summary=new_summary,
-        new_count=keep_turns,
-    )
-    try:
-        asyncio.create_task(_maybe_refine_long_memory(llm))
-    except Exception:
-        logging.exception("长期记忆整理任务创建失败")
-    logging.info(
-        f"session={session_id} 摘要更新成功 count_reset={keep_turns} summary_len={len(new_summary)}"
-    )
+        logging.exception("session=%s 摘要生成过程异常，保持原状态", session_id)
+    finally:
+        if not completed:
+            await repo.release_summary_compaction(
+                session_id,
+                compaction_started_at=started_at,
+            )
 
 
 async def _maybe_refine_long_memory(llm: LLMClientPort) -> None:
@@ -395,77 +438,87 @@ async def force_compress_now(
     session_id: str,
     keep_last_turn: bool = True,
 ) -> None:
-    """将「除最后一轮以外」的全部历史强制压缩进 summary，重置 count 为 1。
+    """原子压缩游标后的历史，仅保留最后一轮或压缩全部完整轮次。"""
+    stale_seconds = settings.get("SUMMARY_COMPACTION_STALE_SECONDS", 1800)
+    claim = await repo.claim_summary_compaction(
+        session_id,
+        stale_after_seconds=stale_seconds,
+    )
+    if claim is None:
+        logging.info("[ForceCompress] session=%s 已有压缩任务运行，跳过", session_id)
+        return
 
-    步骤：
-    1. 取全部消息，按完整轮次切分。
-    2. 若历史只有 0–1 轮，无需压缩，直接返回。
-    3. 把需压缩的轮次文本喂 LLM 生成新 summary（追加到当前 summary 后）。
-    4. 将原文备份写入 memory/YYYY-MM-DD.md。
-    5. 更新 sessions.summary 并把 count 重置为 1（仅保留最后 1 轮）。
+    started_at = claim.get("compaction_started_at")
+    if not isinstance(started_at, str):
+        logging.error("[ForceCompress] session=%s 缺少抢占时间，跳过", session_id)
+        return
 
-    失败不抛异常：仅记录 ERROR，保持原状，让调用方决定是否重试。
-    """
+    completed = False
     try:
-        session = await repo.get_session(session_id)
-        if session is None:
-            logging.warning(f"[ForceCompress] session={session_id} 不存在，跳过")
+        start_seq = int(claim["summary_cursor_seq"]) + 1
+        pending_messages = await repo.list_messages_range(
+            session_id,
+            start_seq=start_seq,
+        )
+        turns = _find_complete_turns(pending_messages)
+        retained_turns = 1 if keep_last_turn else 0
+        if len(turns) <= retained_turns:
+            logging.info("[ForceCompress] session=%s 可压缩轮次不足，跳过", session_id)
             return
 
-        all_msgs = await repo.list_messages(session_id)
-        turns = _find_complete_turns(all_msgs)
+        to_compress_turns = turns[:-1] if keep_last_turn else turns
+        to_compress = turns_to_messages(to_compress_turns)
+        end_seq = max(int(message["seq"]) for message in to_compress)
+        entry_id = f"session:{session_id}:seq:{start_seq}-{end_seq}"
 
-        if len(turns) <= 1:
-            logging.info(f"[ForceCompress] session={session_id} 轮次不足 2，无需强制压缩")
-            return
-
-        if keep_last_turn:
-            to_compress_turns = turns[:-1]
-            # 最后一轮保留，count 重置为 1
-            new_count = 1
-        else:
-            to_compress_turns = turns
-            new_count = 0
-
-        to_compress_msgs = turns_to_messages(to_compress_turns)
-
-        # 备份原文到 memory 文件
-        try:
-            _write_memory_file(
-                session_id,
-                to_compress_msgs,
-            )
-        except Exception:
-            logging.exception(f"[ForceCompress] session={session_id} 写入 memory 文件失败，继续摘要")
-
-        # 生成新摘要
-        rounds_text = _format_rounds(to_compress_msgs)
-        old_summary = session.get("summary") or ""
-        prompt = _render_summary_prompt(old_summary, rounds_text)
-
+        # 强制压缩保留原文备份，重试同一区间时会覆盖同一条目。
+        _write_memory_file(
+            session_id,
+            to_compress,
+            entry_id=f"{entry_id}:backup",
+        )
+        rounds_text = _format_rounds(to_compress)
+        prompt = _render_summary_prompt(claim["summary"], rounds_text)
         raw_summary = await llm.chat(
             [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
         )
         new_summary, count_summary = _parse_summary_payload(raw_summary)
         if not new_summary and not count_summary:
-            logging.warning(f"[ForceCompress] session={session_id} 摘要 LLM 返回空，跳过更新")
+            logging.warning("[ForceCompress] session=%s 摘要 LLM 返回空，跳过更新", session_id)
             return
 
-        try:
-            await _write_daily_memory_append(session_id, count_summary)
-        except Exception:
-            logging.exception(f"[ForceCompress] session={session_id} 追加当日记忆失败")
+        await _write_daily_memory_append(
+            session_id,
+            count_summary,
+            entry_id=entry_id,
+        )
+        completed = await repo.complete_summary_compaction(
+            session_id,
+            compaction_started_at=started_at,
+            new_summary=new_summary,
+            summary_cursor_seq=end_seq,
+            compressed_turns=len(to_compress_turns),
+        )
+        if not completed:
+            logging.warning("[ForceCompress] session=%s 任务所有权已失效，放弃提交", session_id)
+            return
 
-        await repo.update_summary(session_id, new_summary=new_summary, new_count=new_count)
-        # 异步任务，不阻塞主进程
         try:
             asyncio.create_task(_maybe_refine_long_memory(llm))
         except Exception:
             logging.exception("长期记忆整理任务创建失败")
         logging.info(
-            f"[ForceCompress] session={session_id} 强制压缩完成 "
-            f"count_reset={new_count} summary_len={len(new_summary)}"
+            "[ForceCompress] session=%s 强制压缩完成 compressed_turns=%s cursor=%s summary_len=%s",
+            session_id,
+            len(to_compress_turns),
+            end_seq,
+            len(new_summary),
         )
-
     except Exception:
-        logging.exception(f"[ForceCompress] session={session_id} 强制压缩异常，保持原状")
+        logging.exception("[ForceCompress] session=%s 强制压缩异常，保持原状", session_id)
+    finally:
+        if not completed:
+            await repo.release_summary_compaction(
+                session_id,
+                compaction_started_at=started_at,
+            )

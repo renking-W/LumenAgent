@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +39,10 @@ class SqliteConversationRepository:
                 count INTEGER NOT NULL DEFAULT 0,
                 summary TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
-                kind INTEGER NOT NULL DEFAULT 0
+                kind INTEGER NOT NULL DEFAULT 0,
+                compaction_in_progress INTEGER NOT NULL DEFAULT 0,
+                compaction_started_at TEXT,
+                summary_cursor_seq INTEGER NOT NULL DEFAULT -1
             );
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,7 +230,8 @@ class SqliteConversationRepository:
             await self._prepare(db)
             cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at, count, summary, title, kind
+                SELECT id, created_at, updated_at, count, summary, title, kind,
+                       compaction_in_progress, compaction_started_at, summary_cursor_seq
                 FROM sessions WHERE id = ?
                 """,
                 (session_id,),
@@ -243,7 +247,54 @@ class SqliteConversationRepository:
             "summary": row["summary"] or "",
             "title": row["title"] or "",
             "kind": int(row["kind"]) if row["kind"] is not None else 0,
+            "compaction_in_progress": int(row["compaction_in_progress"]),
+            "compaction_started_at": row["compaction_started_at"],
+            "summary_cursor_seq": int(row["summary_cursor_seq"]),
         }
+
+    async def list_messages_range(
+        self,
+        session_id: str,
+        *,
+        start_seq: int,
+        end_seq: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """查询指定 ``seq`` 闭区间内的有效消息，供摘要任务固定处理边界。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            if end_seq is None:
+                cursor = await db.execute(
+                    """
+                    SELECT seq, role, content, created_at, updated_at, status
+                    FROM messages
+                    WHERE session_id = ? AND status = 1 AND seq >= ?
+                    ORDER BY seq ASC
+                    """,
+                    (session_id, start_seq),
+                )
+            else:
+                cursor = await db.execute(
+                    """
+                    SELECT seq, role, content, created_at, updated_at, status
+                    FROM messages
+                    WHERE session_id = ? AND status = 1 AND seq BETWEEN ? AND ?
+                    ORDER BY seq ASC
+                    """,
+                    (session_id, start_seq, end_seq),
+                )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "seq": int(row["seq"]),
+                "role": row["role"],
+                "content": ensure_blocks(row["content"]),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "status": int(row["status"]),
+            }
+            for row in rows
+        ]
 
     async def list_recent_messages(
         self,
@@ -314,6 +365,120 @@ class SqliteConversationRepository:
             )
             await db.commit()
 
+    async def claim_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        stale_after_seconds: int,
+    ) -> SessionFullRow | None:
+        """通过条件更新原子抢占压缩任务，并允许回收超时未释放的任务。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc)
+        started_at = now.isoformat()
+        stale_before = (now - timedelta(seconds=max(1, stale_after_seconds))).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                """
+                UPDATE sessions
+                SET compaction_in_progress = 1, compaction_started_at = ?
+                WHERE id = ? AND (
+                    compaction_in_progress = 0
+                    OR compaction_started_at IS NULL
+                    OR compaction_started_at <= ?
+                )
+                """,
+                (started_at, session_id, stale_before),
+            )
+            if cursor.rowcount != 1:
+                await db.commit()
+                return None
+            row_cursor = await db.execute(
+                """
+                SELECT id, created_at, updated_at, count, summary, title, kind,
+                       compaction_in_progress, compaction_started_at, summary_cursor_seq
+                FROM sessions WHERE id = ?
+                """,
+                (session_id,),
+            )
+            row = await row_cursor.fetchone()
+            await db.commit()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "count": int(row["count"]),
+            "summary": row["summary"] or "",
+            "title": row["title"] or "",
+            "kind": int(row["kind"]) if row["kind"] is not None else 0,
+            "compaction_in_progress": int(row["compaction_in_progress"]),
+            "compaction_started_at": row["compaction_started_at"],
+            "summary_cursor_seq": int(row["summary_cursor_seq"]),
+        }
+
+    async def release_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        compaction_started_at: str,
+    ) -> None:
+        """仅由持有相同开始时间的任务释放状态，避免旧任务释放新任务。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            await db.execute(
+                """
+                UPDATE sessions
+                SET compaction_in_progress = 0, compaction_started_at = NULL
+                WHERE id = ? AND compaction_started_at = ?
+                """,
+                (session_id, compaction_started_at),
+            )
+            await db.commit()
+
+    async def complete_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        compaction_started_at: str,
+        new_summary: str,
+        summary_cursor_seq: int,
+        compressed_turns: int,
+    ) -> bool:
+        """原子提交摘要、游标和剩余轮次，并释放本次压缩任务。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        now = _utc_now()
+        deducted_turns = max(0, compressed_turns)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                """
+                UPDATE sessions
+                SET summary = ?,
+                    summary_cursor_seq = ?,
+                    count = MAX(count - ?, 0),
+                    compaction_in_progress = 0,
+                    compaction_started_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                  AND compaction_started_at = ?
+                  AND summary_cursor_seq < ?
+                """,
+                (
+                    new_summary,
+                    summary_cursor_seq,
+                    deducted_turns,
+                    now,
+                    session_id,
+                    compaction_started_at,
+                    summary_cursor_seq,
+                ),
+            )
+            await db.commit()
+        return cursor.rowcount == 1
+
     async def increment_round_counter(self, session_id: str) -> int:
         """``count += 1`` 并返回新值；助手消息成功落库后调用。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,8 +536,6 @@ class SqliteConversationRepository:
         Returns:
             删除的会话数量
         """
-        from datetime import datetime, timezone, timedelta
-
         threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:

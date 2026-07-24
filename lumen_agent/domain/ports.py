@@ -24,6 +24,9 @@ class SessionFullRow(TypedDict):
     summary: str
     title: str
     kind: int
+    compaction_in_progress: int
+    compaction_started_at: str | None
+    summary_cursor_seq: int
 
 
 @runtime_checkable
@@ -121,6 +124,46 @@ class ConversationRepositoryPort(Protocol):
 
     async def increment_round_counter(self, session_id: str) -> int:
         """轮次 +1（助手落库后调用），返回新的 ``count``。"""
+        ...
+
+    async def claim_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        stale_after_seconds: int,
+    ) -> SessionFullRow | None:
+        """原子抢占会话压缩任务；已有有效任务时返回 ``None``。"""
+        ...
+
+    async def release_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        compaction_started_at: str,
+    ) -> None:
+        """释放当前任务持有的会话压缩状态。"""
+        ...
+
+    async def complete_summary_compaction(
+        self,
+        session_id: str,
+        *,
+        compaction_started_at: str,
+        new_summary: str,
+        summary_cursor_seq: int,
+        compressed_turns: int,
+    ) -> bool:
+        """提交固定区间的压缩结果，并按实际压缩轮数扣减计数。"""
+        ...
+
+    async def list_messages_range(
+        self,
+        session_id: str,
+        *,
+        start_seq: int,
+        end_seq: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 ``seq`` 查询闭区间内的有效消息。"""
         ...
 
     async def delete_session(self, session_id: str) -> bool:

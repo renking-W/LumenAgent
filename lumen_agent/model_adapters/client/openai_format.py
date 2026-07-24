@@ -145,7 +145,7 @@ def to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             else:
                 # 收集图像块，过滤掉本地文件引用（以 "/" 开头的相对路径）
                 # 这类引用是 DB 存储格式，不能直接发给外部 LLM
-                # 真正要送给 LLM 的图像（data URI 或 https://）来自 user_extra_blocks
+                # 上下文组装阶段已将本地图片引用转换为 data URI，远程图片保持 https URL。
                 image_blocks = [
                     b for b in content
                     if b.get("type") == "image_url"

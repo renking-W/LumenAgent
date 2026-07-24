@@ -308,9 +308,13 @@ class MemoryRagService:
             timestamp = m.group(1)
             session_id = m.group(2)
 
-            # 构建唯一 ID：daily:{date}:{timestamp_safe}:{session_id}
-            ts_safe = timestamp.replace(":", "-").replace(" ", "_")
-            entry_id = f"daily:{date_str}:{ts_safe}:{session_id}"
+            # 新条目优先复用消息区间稳定 ID，旧条目继续使用时间戳兼容读取。
+            stable_id_match = re.search(r"\bentry_id=(\S+)", header)
+            if stable_id_match:
+                entry_id = stable_id_match.group(1)
+            else:
+                ts_safe = timestamp.replace(":", "-").replace(" ", "_")
+                entry_id = f"daily:{date_str}:{ts_safe}:{session_id}"
             metadata: dict[str, Any] = {
                 "source": "daily",
                 "date": date_str,
