@@ -5,23 +5,32 @@
     width="680px"
     destroy-on-close
     :close-on-click-modal="false"
-    @open="fetchKeys"
+    @open="handleOpen"
   >
+    <AccessDeniedState
+      v-if="!canManage"
+      title="API Key 管理仅限管理员"
+      message="当前账号可以使用 Agent，但不能创建、停用或删除系统 API Key。"
+      :username="username"
+      :compact="true"
+      :show-back="false"
+    />
+
     <!-- 操作结果提示 -->
-    <div v-if="actionResult" class="ak-result" :class="actionResult.type">
+    <div v-if="canManage && actionResult" class="ak-result" :class="actionResult.type">
       {{ actionResult.message }}
     </div>
 
     <!-- 加载 / 空状态 -->
-    <div v-if="loading && !keys.length" class="ak-loading">加载中...</div>
-    <div v-else-if="!keys.length" class="ak-empty">
+    <LoadingState v-if="canManage && loading && !keys.length" label="正在加载 API Key" detail="读取可用凭证与启用状态" size="compact" />
+    <div v-else-if="canManage && !keys.length" class="ak-empty">
       <div class="ak-empty-icon">🔑</div>
       <h3>暂无 API Key</h3>
       <p>点击下方按钮创建你的第一个 API Key</p>
     </div>
 
     <!-- Key 列表表格 -->
-    <template v-else>
+    <template v-else-if="canManage">
       <div class="ak-table-wrap">
         <table class="ak-table">
           <thead>
@@ -71,10 +80,10 @@
     <!-- 底部操作栏 -->
     <template #footer>
       <div class="ak-footer">
-        <span v-if="keys.length > 0" class="ak-footer-count">共 {{ keys.length }} 个 Key</span>
+        <span v-if="canManage && keys.length > 0" class="ak-footer-count">共 {{ keys.length }} 个 Key</span>
         <div class="ak-footer-actions">
           <el-button @click="visible = false">关闭</el-button>
-          <el-button type="primary" :loading="creating" @click="openCreateDialog">
+          <el-button v-if="canManage" type="primary" :loading="creating" @click="openCreateDialog">
             ＋ 新建 API Key
           </el-button>
         </div>
@@ -151,14 +160,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
+import AccessDeniedState from './AccessDeniedState.vue'
+import LoadingState from './LoadingState.vue'
 import type { ApiKeyItem, ApiKeyCreatedResponse } from '../types'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
-}>()
+  authorized: boolean
+  username?: string
+}>(), {
+  username: '',
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -171,6 +186,8 @@ const keys = ref<ApiKeyItem[]>([])
 const actionResult = ref<{ type: string; message: string } | null>(null)
 const togglingId = ref<string | null>(null)
 const creating = ref(false)
+const forbidden = ref(false)
+const canManage = computed(() => props.authorized && !forbidden.value)
 
 // 同步 visible ↔ modelValue
 watch(() => props.modelValue, (val) => { visible.value = val })
@@ -184,6 +201,11 @@ const createdKey = ref<ApiKeyCreatedResponse | null>(null)
 const copied = ref(false)
 
 // ── 获取列表 ──────────────────────────────────────
+const handleOpen = () => {
+  forbidden.value = false
+  if (props.authorized) fetchKeys()
+}
+
 const fetchKeys = async () => {
   loading.value = true
   actionResult.value = null
@@ -192,6 +214,8 @@ const fetchKeys = async () => {
     if (res.ok) {
       const data = await res.json()
       keys.value = data.keys || []
+    } else if (res.status === 403) {
+      forbidden.value = true
     } else {
       ElMessage.error('获取 API Key 列表失败')
     }

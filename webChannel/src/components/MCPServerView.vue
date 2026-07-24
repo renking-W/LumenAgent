@@ -32,7 +32,7 @@
       </div>
     </div>
 
-    <div v-if="loading && !servers.length" class="empty-state"><p>加载中...</p></div>
+    <LoadingState v-if="loading && !servers.length" label="正在加载 MCP 服务" detail="同步 HTTP 与 Stdio 连接配置" />
     <div v-else-if="!servers.length" class="empty-state">
       <div class="empty-icon">🔌</div>
       <h3>暂无 MCP 服务器</h3>
@@ -239,6 +239,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import type { MCPUnifiedServer, MCPServerInfo, MCPStdioServerInfo, MCPServerTestResult } from '../types'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import LoadingState from './LoadingState.vue'
 
 const loading = ref(false)
 const submitting = ref(false)

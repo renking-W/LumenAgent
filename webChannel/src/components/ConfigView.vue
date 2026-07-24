@@ -34,9 +34,11 @@
     </div>
 
     <!-- ======== 加载 / 空 / 错误状态 ======== -->
-    <div v-if="loading && !basicItems.length && !advancedItems.length" class="config-empty">
-      <p>加载配置中...</p>
-    </div>
+    <LoadingState
+      v-if="loading && !basicItems.length && !advancedItems.length"
+      label="正在加载系统配置"
+      detail="读取可编辑的运行参数"
+    />
 
     <div v-else-if="fetchError" class="config-empty">
       <div class="config-empty-icon">⚠️</div>
@@ -285,6 +287,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { ConfigItem, ConfigListResponse, UpdateConfigResponse } from '../types'
 import { ElMessage } from 'element-plus'
+import LoadingState from './LoadingState.vue'
 
 // ── 状态 ──────────────────────────────────────────
 const loading = ref(false)

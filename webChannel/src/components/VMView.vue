@@ -40,7 +40,7 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-if="loading && !vms.length" class="empty-state"><p>加载中...</p></div>
+      <LoadingState v-if="loading && !vms.length" label="正在加载虚拟机" detail="同步主机连接与运行状态" />
       <div v-else-if="!vms.length" class="empty-state">
         <div class="empty-icon">🖥️</div>
         <h3>暂无虚拟机</h3>
@@ -260,6 +260,7 @@
 
 <script setup lang="ts">
 import MiniChatPanel from './MiniChatPanel.vue'
+import LoadingState from './LoadingState.vue'
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import type { VMListResponseItem, VMRegisterRequest } from '../types'
 import { ElMessage } from 'element-plus'

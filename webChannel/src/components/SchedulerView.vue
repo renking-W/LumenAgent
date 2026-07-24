@@ -35,7 +35,7 @@
     </div>
 
     <!-- ======== 加载 / 空状态 ======== -->
-    <div v-if="loading && !jobs.length" class="empty-state"><p>加载中...</p></div>
+    <LoadingState v-if="loading && !jobs.length" label="正在加载定时任务" detail="同步调度状态与执行计划" />
     <div v-else-if="!jobs.length" class="empty-state">
       <div class="empty-icon">⏰</div>
       <h3>暂无定时任务</h3>
@@ -404,6 +404,7 @@ import type {
 } from '../types'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import LoadingState from './LoadingState.vue'
 
 // ── 状态 ──────────────────────────────────────────
 const loading = ref(false)

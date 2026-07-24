@@ -22,8 +22,14 @@
       </div>
     </div>
 
+    <LoadingState
+      v-if="loading && tools.length === 0"
+      label="正在加载工具"
+      detail="同步 Agent 可调用的能力"
+    />
+
     <!-- 空状态 -->
-    <div v-if="tools.length === 0" class="empty-state">
+    <div v-else-if="tools.length === 0" class="empty-state">
       <div class="empty-icon">🛠️</div>
       <h3>暂无可用工具</h3>
       <p>当前没有可用的工具定义，请检查后端服务是否正常运行</p>
@@ -79,10 +85,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ToolInfo } from '../types'
+import LoadingState from './LoadingState.vue'
 
 defineProps<{
   tools: ToolInfo[]
   connected: boolean
+  loading: boolean
 }>()
 
 const toolDialogVisible = ref(false)

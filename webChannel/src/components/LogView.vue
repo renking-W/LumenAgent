@@ -33,7 +33,7 @@
     </div>
 
     <div class="log-container" ref="logContainerRef" @scroll="onScroll">
-      <div v-if="loading && logs.length === 0" class="log-empty">加载中...</div>
+      <LoadingState v-if="loading && logs.length === 0" label="正在加载日志" detail="读取最新的系统运行记录" />
       <div v-else-if="logs.length === 0" class="log-empty">
         <div class="log-empty-icon">📋</div>
         <h3>暂无日志</h3>
@@ -68,6 +68,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onUnmounted } from 'vue'
+import LoadingState from './LoadingState.vue'
 
 interface LogEntry {
   timestamp: string

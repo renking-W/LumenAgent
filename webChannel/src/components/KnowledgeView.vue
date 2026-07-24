@@ -45,9 +45,11 @@
     </div>
 
     <!-- ======== 加载 / 空状态 ======== -->
-    <div v-if="loading && !documents.length" class="empty-state">
-      <p>加载中...</p>
-    </div>
+    <LoadingState
+      v-if="loading && !documents.length"
+      label="正在加载知识库"
+      detail="同步文档、切片与集合"
+    />
     <div v-else-if="!documents.length" class="empty-state">
       <div class="empty-icon">📚</div>
       <h3>暂无知识文档</h3>
@@ -248,6 +250,7 @@ import type {
 } from '../types'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import LoadingState from './LoadingState.vue'
 
 const loading = ref(false)
 const documents = ref<KnowledgeDocumentSummary[]>([])

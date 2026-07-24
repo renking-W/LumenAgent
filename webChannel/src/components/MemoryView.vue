@@ -38,8 +38,14 @@
       {{ reindexResult.message }}
     </div>
 
+    <LoadingState
+      v-if="loading && !memories.length"
+      label="正在加载记忆"
+      detail="读取长期记忆与每日记录"
+    />
+
     <!-- 空状态 -->
-    <div v-if="!memories.length" class="empty-state">
+    <div v-else-if="!memories.length" class="empty-state">
       <div class="empty-icon">🧠</div>
       <h3>暂无记忆文件</h3>
       <p>AI 尚未记录任何记忆，持续使用后记忆文件将自动生成</p>
@@ -157,9 +163,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { MemoryFileItem } from '../types'
+import LoadingState from './LoadingState.vue'
 
 const props = defineProps<{
   memories: MemoryFileItem[]
+  loading: boolean
 }>()
 
 const longTermMemories = computed(() => props.memories.filter((item) => item.type === 'long_term'))

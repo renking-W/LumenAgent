@@ -161,13 +161,19 @@
           :active-view="activeView"
           @scroll-to-bottom="scrollToBottom"
           @refresh="refreshCapabilities"
-          @open-api-keys="apiKeyDialogVisible = true"
+          @open-api-keys="openApiKeys"
         />
       </el-header>
 
       <el-main ref="mainContent" class="main-content" @scroll="onMainScroll">
+        <LoadingState
+          v-if="activeView === 'chat' && chatRestoring"
+          label="正在恢复会话"
+          detail="同步历史消息与运行状态"
+          size="page"
+        />
         <ChatView
-          v-if="activeView === 'chat'"
+          v-else-if="activeView === 'chat'"
           ref="chatViewRef"
           :messages="messages"
           :active-session-id="activeSessionId"
@@ -184,11 +190,23 @@
           @approve-tool="(blockId, toolId) => handleToolApproval(blockId, toolId, true)"
           @reject-tool="(blockId, toolId) => handleToolApproval(blockId, toolId, false)"
         />
-        <ToolView    v-else-if="activeView === 'tools'"     :tools="tools" :connected="connected" />
-        <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" />
-        <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" />
+        <ToolView    v-else-if="activeView === 'tools'"     :tools="tools" :connected="connected" :loading="capabilitiesLoading" />
+        <SkillView   v-else-if="activeView === 'skills'"   :skills="skills" :loading="capabilitiesLoading" />
+        <MemoryView  v-else-if="activeView === 'memories'" :memories="memories" :loading="capabilitiesLoading" />
         <MCPServerView v-else-if="activeView === 'mcp'" />
+        <AccessDeniedState
+          v-else-if="activeView === 'vm' && !isAdmin"
+          title="虚拟机终端仅限管理员"
+          message="远程终端可以执行主机命令，因此仅向管理员账号开放。"
+          :username="authState.user.value?.username"
+          @back="activeView = 'chat'"
+        />
         <VMView v-else-if="activeView === 'vm'" />
+        <AccessDeniedState
+          v-else-if="activeView === 'config' && !isAdmin"
+          :username="authState.user.value?.username"
+          @back="activeView = 'chat'"
+        />
         <ConfigView v-else-if="activeView === 'config'" />
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
@@ -215,13 +233,13 @@
     </el-container>
 
     <!-- ======== API Key 管理弹窗 ======== -->
-    <ApiKeyManager v-model="apiKeyDialogVisible" />
+    <ApiKeyManager v-model="apiKeyDialogVisible" :authorized="isAdmin" :username="authState.user.value?.username" />
   </el-container>
 </template>
 
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
-import { onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage, FileAttachment } from './types'
 import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
@@ -238,6 +256,9 @@ import LogView from './components/LogView.vue'
 import ConfigView from './components/ConfigView.vue'
 import AppComposer from './components/AppComposer.vue'
 import ApiKeyManager from './components/ApiKeyManager.vue'
+import LoadingState from './components/LoadingState.vue'
+import AccessDeniedState from './components/AccessDeniedState.vue'
+import { authState } from './services/auth'
 
 // ── 聊天流 ─────────────────────────────────────────
 const chat = useChatStream()
@@ -261,9 +282,16 @@ const apiKeyDialogVisible = ref(false)
 const mainContent = ref<HTMLElement | null>(null)
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 const connected = ref(false)
+const capabilitiesLoading = ref(true)
+const chatRestoring = ref(true)
 const tools = ref<ToolInfo[]>([])
 const skills = ref<SkillInfo[]>([])
 const memories = ref<MemoryFileItem[]>([])
+const isAdmin = computed(() => !authState.enabled.value || authState.user.value?.role === 'admin')
+
+const openApiKeys = () => {
+  apiKeyDialogVisible.value = true
+}
 
 // ── 游标分页 ──────────────────────────────────────
 const beforeSeq = ref<number | undefined>(undefined)
@@ -442,6 +470,7 @@ const sendMessage = async (imageUrls: string[] = [], fileAttachments: FileAttach
 // ── 功能刷新 ────────────────────────────────────────
 
 const refreshCapabilities = async () => {
+  capabilitiesLoading.value = true
   let ok = true
   try {
     const toolRes = await fetch('/v1/tools')
@@ -461,12 +490,17 @@ const refreshCapabilities = async () => {
     } else ok = false
   } catch { ok = false }
   connected.value = ok
+  capabilitiesLoading.value = false
 }
 
 // ── lifecycle ──────────────────────────────────────
 onMounted(async () => {
   await refreshCapabilities()
-  await chat.restoreLastSession()
+  try {
+    await chat.restoreLastSession()
+  } finally {
+    chatRestoring.value = false
+  }
 })
 
 onUnmounted(() => {

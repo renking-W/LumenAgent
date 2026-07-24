@@ -24,8 +24,14 @@
       </div>
     </div>
 
+    <LoadingState
+      v-if="loading && skills.length === 0"
+      label="正在加载技能"
+      detail="检查技能定义与运行环境"
+    />
+
     <!-- 空状态 -->
-    <div v-if="skills.length === 0" class="empty-state">
+    <div v-else-if="skills.length === 0" class="empty-state">
       <div class="empty-icon">🎯</div>
       <h3>暂无可用技能</h3>
       <p>当前没有注册的 Skill，去添加 SKILL 配置吧~</p>
@@ -137,9 +143,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { SkillInfo } from '../types'
+import LoadingState from './LoadingState.vue'
 
 const props = defineProps<{
   skills: SkillInfo[]
+  loading: boolean
 }>()
 
 const availableSkills = computed(() => props.skills.filter((item) => item.available))
