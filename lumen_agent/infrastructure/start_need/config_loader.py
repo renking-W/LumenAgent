@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 # ── 路径定位 ───────────────────────────────────────────────────
 _CONFIG_JSON_PATH = DirGuide.config_json_path()
 _ENV_PATH = DirGuide.env_path()
+_AUTH_JWT_SECRET_KEY = "AUTH_JWT_SECRET"
 
 # ── 默认配置 ─────────────────────────────────────────────────────
 _DEFAULT_CONFIG: dict[str, Any] = {
@@ -129,8 +131,13 @@ def _ensure_config_json() -> bool:
     if _CONFIG_JSON_PATH.exists():
         return False
     _CONFIG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # JWT Secret 只在首次创建配置文件时生成，后续启动始终复用落盘值。
+    initial_config = {
+        **_DEFAULT_CONFIG,
+        _AUTH_JWT_SECRET_KEY: secrets.token_urlsafe(48),
+    }
     _CONFIG_JSON_PATH.write_text(
-        json.dumps(_DEFAULT_CONFIG, ensure_ascii=False, indent=2),
+        json.dumps(initial_config, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     logger.info("已生成默认配置文件：%s", _CONFIG_JSON_PATH)
@@ -182,6 +189,9 @@ def _merge_env_into_config(config: dict[str, Any], env: dict[str, str]) -> dict[
     merged = dict(config)
     for key, value in env.items():
         upper_key = key.upper()
+        # 空环境变量视为未配置，避免覆盖 config.json 中自动生成的 Secret。
+        if upper_key == _AUTH_JWT_SECRET_KEY and not value.strip():
+            continue
         if upper_key in merged:
             merged[upper_key] = _coerce_type(value, merged[upper_key])
         else:

@@ -20,6 +20,7 @@ _CONFIG_JSON_PATH = DirGuide.config_json_path()
 
 # ── 系统保护键：前端不可见也不可编辑 ────────────────────────────
 _SYSTEM_PROTECTED_KEYS: frozenset[str] = frozenset({
+    "AUTH_JWT_SECRET",
     "CONVERSATION_DB_PATH",
     "RAG_COLLECTION_NAME",
     "RAG_CHROMA_PATH",
