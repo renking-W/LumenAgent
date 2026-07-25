@@ -38,11 +38,13 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         - task_name: str
         - prompt: str
         - trigger_type: str       — "cron" / "interval" / "date"
+        - owner_id: str           — 创建该任务的用户 ID
     """
     task_id = kwargs.get("task_id", "?")
     task_name = kwargs.get("task_name", "")
     prompt = kwargs.get("prompt", "")
     trigger_type = kwargs.get("trigger_type", "")
+    owner_id = kwargs.get("owner_id")
     session_id = f"job-{uuid.uuid4()}"
     logger.info(
         "[ScheduledTask] 触发执行: task_id=%s name=%s prompt=%.80s",
@@ -66,13 +68,14 @@ async def execute_scheduled_agent_task(**kwargs: Any) -> dict[str, Any]:
         # 预创建会话（kind=1 定时任务），reply_with_agent 内部
         # ensure_session 使用 INSERT OR IGNORE，不会覆盖已存在的行
         # MCP：不按任务绑定，执行时使用全部已启用 MCP（chat_service 内加载）
-        await repo.ensure_session(session_id, kind=1)
+        await repo.ensure_session(session_id, kind=1, owner_id=owner_id)
         await repo.update_session_title(session_id, task_name)
 
         final_text = ""
         async for kind, data in reply_with_agent(
             repo, llm, session_id, 1, prompt, settings,
             approval_mode="none",
+            owner_id=owner_id,
         ):
             if kind == "done":
                 final_text = data

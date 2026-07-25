@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from lumen_agent.api.dependency import get_settings
+from lumen_agent.api.dependency import get_current_user, get_settings
 from lumen_agent.api.schemas.scheduler_dtos import (
     CreateJobRequest,
     CreateJobResponse,
@@ -62,9 +62,15 @@ async def create_job(
     body: CreateJobRequest,
     repo: SqliteSchedulerRepository = Depends(_get_repo),
     settings: Settings = Depends(get_settings),
+    current_user: dict = Depends(get_current_user),
 ) -> CreateJobResponse:
     try:
-        return await svc_create_job(repo, settings, body)
+        return await svc_create_job(
+            repo,
+            settings,
+            body,
+            creator_id=str(current_user["id"]),
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except RuntimeError as e:

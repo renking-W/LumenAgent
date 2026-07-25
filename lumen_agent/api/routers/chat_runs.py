@@ -13,6 +13,7 @@ from lumen_agent.api.dependency import (
     AuthContext,
     get_conversation_repo,
     get_llm_client,
+    get_session_owner_id,
     verify_api_key,
 )
 from lumen_agent.api.schemas.chat_run_dtos import (
@@ -94,6 +95,7 @@ async def _produce(
     llm: ModelAdapter,
     repo: ConversationRepositoryPort,
     on_connect: ConnectCallback,
+    owner_id: str | None,
 ) -> AsyncIterator[tuple[str, str | dict | list]]:
     """运行简单对话或 Agent 流，并在任务结束时清理会话级资源。"""
     try:
@@ -114,6 +116,7 @@ async def _produce(
                 file_attachments=[
                     item.model_dump() for item in body.file_attachments
                 ],
+                owner_id=owner_id,
             )
         else:
             stream = reply_single_turn_stream(
@@ -126,6 +129,7 @@ async def _produce(
                 file_attachments=[
                     item.model_dump() for item in body.file_attachments
                 ],
+                owner_id=owner_id,
             )
         async for item in stream:
             yield item
@@ -141,6 +145,7 @@ async def start_managed_run(
     llm: ModelAdapter,
     repo: ConversationRepositoryPort,
     manager: ChatRunManager,
+    owner_id: str | None,
 ) -> ChatRun:
     """校验请求并交给 Manager 启动后台生成。"""
     _require_llm_key(settings)
@@ -148,7 +153,7 @@ async def start_managed_run(
 
     def producer(on_connect: ConnectCallback):
         # producer 只负责构造异步事件流；Task 的所有权属于 ChatRunManager。
-        return _produce(body, settings, llm, repo, on_connect)
+        return _produce(body, settings, llm, repo, on_connect, owner_id)
 
     try:
         return await manager.start(body.session_id, producer)
@@ -176,6 +181,7 @@ async def start_chat_run(
     """启动一轮生成并立即返回运行标识，不等待模型完成。"""
     context = getattr(request.state, "auth_context", None)
     current_user = context.user if isinstance(context, AuthContext) else None
+    owner_id = get_session_owner_id(request)
     try:
         reservation = await reserve_chat_turn(current_user, settings)
     except DailyChatQuotaExceededError as exc:
@@ -203,6 +209,7 @@ async def start_chat_run(
             llm,
             repo,
             get_chat_run_manager(),
+            owner_id,
         )
     except Exception:
         try:

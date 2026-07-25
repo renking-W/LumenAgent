@@ -9,6 +9,7 @@ from typing import Any
 
 from lumen_agent.agent.tools.base import BaseTool, ToolResult
 from lumen_agent.agent.tools.registry import ToolRegistry
+from lumen_agent.application.service.chat.user_context import get_current_user_id
 from lumen_agent.config import get_settings, resolve_db_path
 
 
@@ -92,6 +93,11 @@ class TaskScheduler(BaseTool):
                 "创建任务缺少必要参数：trigger_type、trigger_expr、task_name、prompt 均不能为空。"
             )
 
+        # 定时任务必须继承发起当前 Agent 会话的登录用户。
+        creator_id = get_current_user_id()
+        if not creator_id:
+            return ToolResult.error("当前会话缺少登录用户，无法创建定时任务。")
+
         # ── 1. 生成 ID ─────────────────────────────────────────
         task_id = f"scheduled_{uuid.uuid4().hex[:8]}"
 
@@ -121,10 +127,10 @@ class TaskScheduler(BaseTool):
                 name=task_name,
                 kwargs={
                     "task_id": task_id,
-                    "session_id": f"__scheduled__{task_id}",
                     "task_name": task_name,
                     "prompt": prompt,
                     "trigger_type": trigger_type,
+                    "owner_id": creator_id,
                 },
                 replace_existing=False,
             )
@@ -148,8 +154,7 @@ class TaskScheduler(BaseTool):
                 "trigger_expr": trigger_expr,
                 "timezone": settings.get("SCHEDULER_TIMEZONE", "Asia/Shanghai"),
                 "enabled": True,
-                "created_by": "agent",
-                "session_id": f"__scheduled__{task_id}",
+                "created_by": creator_id,
             })
         except Exception as exc:
             self._logger.warning("持久化任务元数据失败（不影响调度）: %s", exc)

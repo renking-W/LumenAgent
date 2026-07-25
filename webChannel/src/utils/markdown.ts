@@ -17,7 +17,7 @@ const renderer: Partial<import('marked').MarkedExtension['renderer']> = {
     const langClass = language ? ` language-${language}` : ''
     return `<pre class="hljs-pre"><code class="hljs${langClass}">${highlighted}</code></pre>`
   },
-  link({ href, title, text }: { href: string; title?: string; text: string }) {
+  link({ href, title, text }: import('marked').Tokens.Link) {
     const titleAttr = title ? ` title="${title}"` : ''
     return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`
   },

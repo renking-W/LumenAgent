@@ -1,6 +1,12 @@
 <template>
   <section class="access-denied" :class="{ 'access-denied--compact': compact }" role="alert">
     <div class="access-denied__code" aria-hidden="true">403</div>
+    <div class="access-denied__brand">
+      <span class="access-denied__brand-mark" aria-hidden="true">
+        <img src="/logo.svg" alt="" />
+      </span>
+      <span>LumenAgent</span>
+    </div>
     <div class="access-denied__rule" aria-hidden="true"></div>
     <p class="access-denied__eyebrow">Restricted area</p>
     <h2>{{ title }}</h2>
@@ -69,6 +75,30 @@ defineEmits<{ back: [] }>()
   pointer-events: none;
 }
 
+.access-denied__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: var(--color-navy-800, #244a42);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.access-denied__brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #eab308;
+}
+
+.access-denied__brand-mark img {
+  width: 27px;
+  height: 27px;
+}
+
 .access-denied__rule {
   width: 42px;
   height: 3px;
@@ -116,6 +146,20 @@ defineEmits<{ back: [] }>()
 .access-denied__role {
   padding-left: 9px;
   border-left: 1px solid var(--color-slate-200, #dce4df);
+}
+
+.access-denied--compact .access-denied__brand {
+  margin-bottom: 14px;
+}
+
+.access-denied--compact .access-denied__brand-mark {
+  width: 36px;
+  height: 36px;
+}
+
+.access-denied--compact .access-denied__brand-mark img {
+  width: 23px;
+  height: 23px;
 }
 
 @media (max-width: 640px) {

@@ -13,6 +13,10 @@ from lumen_agent.application.common.context_assembly import assemble_for_llm
 from lumen_agent.application.service.mcp.mcp_lookup import load_enabled_mcp_servers_for_prompt
 from lumen_agent.application.service.chat.summary_service import maybe_trigger_summary
 from lumen_agent.application.service.chat.title_service import maybe_generate_title
+from lumen_agent.application.service.chat.user_context import (
+    reset_current_user_id,
+    set_current_user_id,
+)
 from lumen_agent.config import Settings, get_context_window
 from lumen_agent.domain.messages import (
     file_block,
@@ -126,10 +130,11 @@ async def reply_single_turn(
     user_message: str,
     settings: Settings,
     file_attachments: list[dict[str, Any]] | None = None,
+    owner_id: str | None = None,
 ) -> str:
     """处理单轮会话请求——整体输出。"""
     # 1) 会话准备 + 用户消息落库（不增 count）
-    await repo.ensure_session(session_id)
+    await repo.ensure_session(session_id, owner_id=owner_id)
     user_blocks = _build_user_blocks(user_message, file_attachments)
     await repo.append_message(session_id, "user", user_blocks)
 
@@ -178,6 +183,7 @@ async def reply_single_turn_stream(
     user_message: str,
     settings: Settings,
     on_connect: StreamHandleCallback | None = None,
+    owner_id: str | None = None,
     file_attachments: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """处理单轮会话请求——流式输出，yield ``(kind, delta)``。
@@ -186,7 +192,7 @@ async def reply_single_turn_stream(
         on_connect: 连接建立后的回调，传递 ``StreamHandle`` 供注册到中断注册表。
     """
     # 1) 会话准备 + 用户消息落库
-    await repo.ensure_session(session_id)
+    await repo.ensure_session(session_id, owner_id=owner_id)
     user_blocks = _build_user_blocks(user_message, file_attachments)
     await repo.append_message(session_id, "user", user_blocks)
 
@@ -275,6 +281,7 @@ async def reply_with_agent(
     self_system: str | None = None,
     image_urls: list[str] | None = None,
     file_attachments: list[dict[str, Any]] | None = None,
+    owner_id: str | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """用 Agent 工具循环处理会话请求——流式输出，yield ``(kind, data)``。
 
@@ -296,7 +303,11 @@ async def reply_with_agent(
     init_tools()
 
     # 1) 会话准备 + 用户消息落库
-    await repo.ensure_session(session_id, session_kind)
+    effective_owner_id = await repo.ensure_session(
+        session_id,
+        session_kind,
+        owner_id=owner_id,
+    )
     user_blocks = _build_user_blocks(user_message, file_attachments, image_urls)
     await repo.append_message(session_id, "user", user_blocks)
 
@@ -375,21 +386,26 @@ async def reply_with_agent(
                 )
             raise
 
-    async for kind, data in persistable_events():
-        if kind == "new_messages":
-            await merge_and_persist_messages(repo, session_id, data, status=persist_status)  # type: ignore[arg-type]
-            # status=0 表示本轮被显式中断，前端仍可展示但不计正常轮次。
-        elif kind == "error" and data == "stream_interrupted":
-            persist_status = 0
-            yield (kind, data)
-        elif kind == "done":
-            final_text = data  # type: ignore[assignment]
-            yield (kind, data)
-        elif kind == "text":
-            final_text += data  # type: ignore[operator]
-            yield (kind, data)
-        else:
-            yield (kind, data)
+    # Agent 工具通过 ContextVar 读取当前用户，异步任务之间的身份互不影响。
+    user_context_token = set_current_user_id(effective_owner_id)
+    try:
+        async for kind, data in persistable_events():
+            if kind == "new_messages":
+                await merge_and_persist_messages(repo, session_id, data, status=persist_status)  # type: ignore[arg-type]
+                # status=0 表示本轮被显式中断，前端仍可展示但不计正常轮次。
+            elif kind == "error" and data == "stream_interrupted":
+                persist_status = 0
+                yield (kind, data)
+            elif kind == "done":
+                final_text = data  # type: ignore[assignment]
+                yield (kind, data)
+            elif kind == "text":
+                final_text += data  # type: ignore[operator]
+                yield (kind, data)
+            else:
+                yield (kind, data)
+    finally:
+        reset_current_user_id(user_context_token)
 
     # 6) 轮次 +1
     if final_text.strip() and persist_status == 1:

@@ -4,7 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from lumen_agent.api.dependency import get_conversation_repo
+from lumen_agent.api.dependency import (
+    get_conversation_repo,
+    get_current_user,
+    require_admin,
+)
 from lumen_agent.api.schemas.session_dtos import (
     AppendMessageRequest,
     SessionSummary,
@@ -24,11 +28,30 @@ async def list_sessions(
     limit: int = 50,
     offset: int = 0,
     kind: int | None = None,
+    _admin: dict | None = Depends(require_admin),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> list[SessionSummary]:
-    """分页列出会话摘要。kind 可选：0=normal, 1=scheduled。"""
+    """分页列出全部会话摘要，仅供管理员使用。"""
     rows = await repo.list_sessions(limit=limit, offset=offset, kind=kind)
     return [SessionSummary.model_validate(r) for r in rows]
+
+
+@router.get("/user", response_model=list[SessionSummary])
+async def list_session_user(
+    limit: int = 50,
+    offset: int = 0,
+    kind: int | None = None,
+    current_user: dict = Depends(get_current_user),
+    repo: ConversationRepositoryPort = Depends(get_conversation_repo),
+) -> list[SessionSummary]:
+    """分页列出当前登录用户拥有的会话。"""
+    rows = await repo.list_sessions_by_owner(
+        str(current_user["id"]),
+        limit=limit,
+        offset=offset,
+        kind=kind,
+    )
+    return [SessionSummary.model_validate(row) for row in rows]
 
 
 @router.get("/{session_id}/messages", response_model=list[StoredMessage])

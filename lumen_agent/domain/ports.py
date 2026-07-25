@@ -12,6 +12,7 @@ class SessionRow(TypedDict):
     updated_at: str
     title: str
     kind: int
+    owner_id: str | None
 
 
 class SessionFullRow(TypedDict):
@@ -24,6 +25,7 @@ class SessionFullRow(TypedDict):
     summary: str
     title: str
     kind: int
+    owner_id: str | None
     compaction_in_progress: int
     compaction_started_at: str | None
     summary_cursor_seq: int
@@ -59,8 +61,13 @@ class LLMClientPort(Protocol):
 class ConversationRepositoryPort(Protocol):
     """会话与消息的持久化端口（实现可为 SQLite 等）。"""
 
-    async def ensure_session(self, session_id: str, kind: int = 0) -> None:
-        """若不存在则创建会话行（幂等）。kind: 0=normal, 1=scheduled。"""
+    async def ensure_session(
+        self,
+        session_id: str,
+        kind: int = 0,
+        owner_id: str | None = None,
+    ) -> str:
+        """若不存在则创建会话行，并返回本次调用使用的所有者 ID。"""
         ...
 
     async def list_messages(
@@ -93,6 +100,17 @@ class ConversationRepositoryPort(Protocol):
         """分页列出会话元数据（通常按更新时间倒序）。kind 可选，按类型筛选。"""
         ...
 
+    async def list_sessions_by_owner(
+        self,
+        owner_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        kind: int | None = None,
+    ) -> list[SessionRow]:
+        """分页列出指定用户拥有的会话，供普通用户会话列表使用。"""
+        ...
+
     async def get_session(self, session_id: str) -> SessionFullRow | None:
         """查询单个会话完整状态（含 ``count`` / ``summary``）。"""
         ...
@@ -108,7 +126,7 @@ class ConversationRepositoryPort(Protocol):
         每条含 ``role`` / ``content`` / ``created_at`` / ``updated_at``。
 
         参数:
-            is_all: True(默认)=筛选仅有效消息; False=返回全部(含中断消息)。
+            is_all: 当前为兼容参数；无论取值如何，都会返回全部消息（含中断消息）。
         """
         ...
 

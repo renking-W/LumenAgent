@@ -128,6 +128,15 @@ async def get_current_user(
     """返回已认证用户，供不关心 JWT 时间信息的接口使用。"""
     return context.user
 
+
+def get_session_owner_id(request: Request) -> str | None:
+    """JWT 返回当前用户 ID；API Key 返回空，由 Session 仓储默认归属管理员。"""
+    context = getattr(request.state, "auth_context", None)
+    if isinstance(context, AuthContext):
+        return str(context.user["id"])
+    return None
+
+
 async def require_admin(
     request: Request,
     settings: Settings = Depends(get_settings),

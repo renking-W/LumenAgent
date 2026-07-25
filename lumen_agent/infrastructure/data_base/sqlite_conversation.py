@@ -40,6 +40,7 @@ class SqliteConversationRepository:
                 summary TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
                 kind INTEGER NOT NULL DEFAULT 0,
+                owner_id TEXT REFERENCES users(id),
                 compaction_in_progress INTEGER NOT NULL DEFAULT 0,
                 compaction_started_at TEXT,
                 summary_cursor_seq INTEGER NOT NULL DEFAULT -1
@@ -57,6 +58,8 @@ class SqliteConversationRepository:
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session_seq
             ON messages(session_id, seq);
+            CREATE INDEX IF NOT EXISTS idx_sessions_owner_updated
+            ON sessions(owner_id, updated_at DESC);
             """
         )
         # Migration: 为旧数据库补加 created_at / updated_at 字段
@@ -69,24 +72,52 @@ class SqliteConversationRepository:
                 pass  # 字段已存在
         await db.commit()
 
-    async def ensure_session(self, session_id: str, kind: int = 0) -> None:
-        """保证 ``sessions`` 中存在该 ``session_id``（不存在则插入）。
-        kind: 0=normal, 1=scheduled。
+    async def ensure_session(
+        self,
+        session_id: str,
+        kind: int = 0,
+        owner_id: str | None = None,
+    ) -> str:
+        """保证会话存在，并返回当前调用使用的所有者 ID。
+
+        JWT 和定时任务显式传入用户 ID；API Key 调用不传时自动归属系统管理员。
         """
-        # 确保有文件目录，不存在则创建
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         now = _utc_now()
-        # 连接 db
         async with aiosqlite.connect(self._db_path) as db:
             await self._prepare(db)
             await db.execute("BEGIN")
             try:
-                # 不存在插入，存在忽略
+                effective_owner_id = owner_id.strip() if owner_id else ""
+                if not effective_owner_id:
+                    # API Key 没有独立用户身份，统一归属最早创建且启用的管理员。
+                    cursor = await db.execute(
+                        """
+                        SELECT id
+                        FROM users
+                        WHERE role = 'admin' AND enabled = 1
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        """
+                    )
+                    admin = await cursor.fetchone()
+                    if admin is None:
+                        raise RuntimeError(
+                            "没有已启用的管理员，无法为 API Key 会话确定 owner"
+                        )
+                    effective_owner_id = str(admin["id"])
+
+                # 会话已存在时保持原归属，但仍返回本次请求对应的用户身份。
                 await db.execute(
-                    "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, kind) VALUES (?, ?, ?, ?)",
-                    (session_id, now, now, kind),
+                    """
+                    INSERT OR IGNORE INTO sessions
+                        (id, created_at, updated_at, kind, owner_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (session_id, now, now, kind, effective_owner_id),
                 )
                 await db.commit()
+                return effective_owner_id
             except Exception:
                 await db.rollback()
                 raise
@@ -230,7 +261,7 @@ class SqliteConversationRepository:
             await self._prepare(db)
             cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at, count, summary, title, kind,
+                SELECT id, created_at, updated_at, count, summary, title, kind, owner_id,
                        compaction_in_progress, compaction_started_at, summary_cursor_seq
                 FROM sessions WHERE id = ?
                 """,
@@ -247,6 +278,7 @@ class SqliteConversationRepository:
             "summary": row["summary"] or "",
             "title": row["title"] or "",
             "kind": int(row["kind"]) if row["kind"] is not None else 0,
+            "owner_id": row["owner_id"],
             "compaction_in_progress": int(row["compaction_in_progress"]),
             "compaction_started_at": row["compaction_started_at"],
             "summary_cursor_seq": int(row["summary_cursor_seq"]),
@@ -305,7 +337,7 @@ class SqliteConversationRepository:
     ) -> list[dict[str, Any]]:
         """按 ``seq`` 倒序取最近 ``n_messages`` 条消息，返回时已反转为时间正序。
 
-        is_all: True=仅有效消息(status=1); False=全部含中断消息。
+        is_all: 当前为兼容参数；无论取值如何，都会返回全部消息（含 status=0 中断消息）。
         """
         if n_messages <= 0:
             return []
@@ -395,7 +427,7 @@ class SqliteConversationRepository:
                 return None
             row_cursor = await db.execute(
                 """
-                SELECT id, created_at, updated_at, count, summary, title, kind,
+                SELECT id, created_at, updated_at, count, summary, title, kind, owner_id,
                        compaction_in_progress, compaction_started_at, summary_cursor_seq
                 FROM sessions WHERE id = ?
                 """,
@@ -413,6 +445,7 @@ class SqliteConversationRepository:
             "summary": row["summary"] or "",
             "title": row["title"] or "",
             "kind": int(row["kind"]) if row["kind"] is not None else 0,
+            "owner_id": row["owner_id"],
             "compaction_in_progress": int(row["compaction_in_progress"]),
             "compaction_started_at": row["compaction_started_at"],
             "summary_cursor_seq": int(row["summary_cursor_seq"]),
@@ -565,7 +598,7 @@ class SqliteConversationRepository:
             if kind is not None:
                 cursor = await db.execute(
                     """
-                    SELECT id, created_at, updated_at, title, kind FROM sessions
+                    SELECT id, created_at, updated_at, title, kind, owner_id FROM sessions
                     WHERE kind = ?
                     ORDER BY updated_at DESC
                     LIMIT ? OFFSET ?
@@ -575,7 +608,7 @@ class SqliteConversationRepository:
             else:
                 cursor = await db.execute(
                     """
-                    SELECT id, created_at, updated_at, title, kind FROM sessions
+                    SELECT id, created_at, updated_at, title, kind, owner_id FROM sessions
                     ORDER BY updated_at DESC
                     LIMIT ? OFFSET ?
                     """,
@@ -584,11 +617,59 @@ class SqliteConversationRepository:
             rows = await cursor.fetchall()
         return [
             {
-                "id": r["id"],
-                "created_at": r["created_at"],
-                "updated_at": r["updated_at"],
-                "title": r["title"] or "",
-                "kind": int(r["kind"]) if r["kind"] is not None else 0,
+                "id": row["id"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "title": row["title"] or "",
+                "kind": int(row["kind"]) if row["kind"] is not None else 0,
+                "owner_id": row["owner_id"],
             }
-            for r in rows
+            for row in rows
+        ]
+
+    async def list_sessions_by_owner(
+        self,
+        owner_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        kind: int | None = None,
+    ) -> list[SessionRow]:
+        """分页返回指定用户拥有的会话，按更新时间倒序。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            if kind is not None:
+                cursor = await db.execute(
+                    """
+                    SELECT id, created_at, updated_at, title, kind, owner_id
+                    FROM sessions
+                    WHERE owner_id = ? AND kind = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (owner_id, kind, limit, offset),
+                )
+            else:
+                cursor = await db.execute(
+                    """
+                    SELECT id, created_at, updated_at, title, kind, owner_id
+                    FROM sessions
+                    WHERE owner_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (owner_id, limit, offset),
+                )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "title": row["title"] or "",
+                "kind": int(row["kind"]) if row["kind"] is not None else 0,
+                "owner_id": row["owner_id"],
+            }
+            for row in rows
         ]

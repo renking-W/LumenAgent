@@ -5,10 +5,15 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from lumen_agent.api.dependency import get_conversation_repo, get_llm_client, verify_api_key
+from lumen_agent.api.dependency import (
+    get_conversation_repo,
+    get_llm_client,
+    get_session_owner_id,
+    verify_api_key,
+)
 from lumen_agent.api.schemas.approval_dtos import ApproveRequest, ApproveResponse
 from lumen_agent.api.schemas.session_dtos import ChatRequest, ChatResponse, InterruptRequest
 from lumen_agent.api.schemas.stream_events import (
@@ -79,12 +84,14 @@ def _resolve_session(body: ChatRequest | None) -> ChatRequest:
 @router.post("/chat", response_model=ChatResponse)
 async def post_chat(
     body: ChatRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
     llm: ModelAdapter = Depends(get_llm_client),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
 ) -> ChatResponse:
     """整段对话：落库 user/assistant，返回 ``ChatResponse``（含 ``session_id``）。"""
     body = _resolve_session(body)
+    owner_id = get_session_owner_id(request)
     logging.info(f"接受到整体对话请求：{body.message}，session_id:{body.session_id}")
     _require_api_key(settings)
     try:
@@ -97,6 +104,7 @@ async def post_chat(
             file_attachments=[
                 item.model_dump() for item in body.file_attachments
             ],
+            owner_id=owner_id,
         )
     except _LLM_STREAM_FAILURES as e:
         raise HTTPException(
@@ -111,6 +119,7 @@ async def post_chat(
 @router.post("/chat/stream")
 async def post_chat_stream(
     body: ChatRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
     llm: ModelAdapter = Depends(get_llm_client),
     repo: ConversationRepositoryPort = Depends(get_conversation_repo),
@@ -118,6 +127,7 @@ async def post_chat_stream(
     """SSE 流式对话：首包前失败走 HTTP；流中失败发 ``error`` 事件；``X-Session-Id`` 在响应头回传。"""
     _require_api_key(settings)
     body = _resolve_session(body)
+    owner_id = get_session_owner_id(request)
     logging.info(f"接受到流式对话请求：{body.message}，session_id:{body.session_id}")
 
     response_headers = {**_SSE_HEADERS, "X-Session-Id": body.session_id}
@@ -139,6 +149,7 @@ async def post_chat_stream(
             file_attachments=[
                 item.model_dump() for item in body.file_attachments
             ],
+            owner_id=owner_id,
         )
     else:
         stream_it = reply_single_turn_stream(
@@ -147,6 +158,7 @@ async def post_chat_stream(
             file_attachments=[
                 item.model_dump() for item in body.file_attachments
             ],
+            owner_id=owner_id,
         )
     agen = stream_it.__aiter__()
     try:

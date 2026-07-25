@@ -415,9 +415,7 @@ export function useChatStream() {
       if (!res.ok) return
       const stored: StoredMsg[] = await res.json()
       sessionId.value = sid
-      const isScheduled = sid.startsWith('__scheduled__')
-      const filtered = isScheduled ? stored.filter(s => s.seq !== 0) : stored
-      const parsed = filtered.map(sm => {
+      const parsed = stored.map(sm => {
         const pad = (n: number) => String(n).padStart(2, '0')
         const d = new Date(sm.created_at)
         return {

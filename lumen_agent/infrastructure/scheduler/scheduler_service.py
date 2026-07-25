@@ -136,10 +136,10 @@ class SchedulerService:
                     name=task["name"],
                     kwargs={
                         "task_id": task["id"],
-                        "session_id": task.get("session_id", f"__scheduled__{task['id']}"),
                         "task_name": task["name"],
                         "prompt": task["prompt"],
                         "trigger_type": task["trigger_type"],
+                        "owner_id": task["created_by"],
                     },
                     replace_existing=True,
                 )

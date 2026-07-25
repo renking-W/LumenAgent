@@ -15,7 +15,7 @@ from lumen_agent.api.schemas.scheduler_dtos import (
     SchedulerJobList,
     UpdatePromptResponse,
 )
-from lumen_agent.config import Settings, resolve_db_path
+from lumen_agent.config import Settings
 from lumen_agent.infrastructure.data_base.sqlite_scheduler import (
     SqliteSchedulerRepository,
 )
@@ -95,8 +95,9 @@ async def create_job(
     repo: SqliteSchedulerRepository,
     settings: Settings,
     body: CreateJobRequest,
+    creator_id: str,
 ) -> CreateJobResponse:
-    """创建定时任务：校验 → 触发器构建 → 注册调度器 → 持久化 DB → 创建会话。
+    """创建定时任务：校验 → 触发器构建 → 注册调度器 → 持久化 DB。
 
     Raises:
         ValueError: 字段校验失败或不支持的触发器类型。
@@ -125,10 +126,10 @@ async def create_job(
             name=name,
             kwargs={
                 "task_id": task_id,
-                "session_id": f"__scheduled__{task_id}",
                 "task_name": name,
                 "prompt": prompt,
                 "trigger_type": trigger_type,
+                "owner_id": creator_id,
             },
             replace_existing=False,
         )
@@ -146,18 +147,8 @@ async def create_job(
         "trigger_expr": trigger_expr,
         "timezone": timezone,
         "enabled": True,
-        "created_by": "api",
-        "session_id": f"__scheduled__{task_id}",
+        "created_by": creator_id,
     })
-
-    # 创建对应的会话（kind=1 定时任务）
-    from lumen_agent.infrastructure.data_base.sqlite_conversation import (
-        SqliteConversationRepository,
-    )
-
-    conv_repo = SqliteConversationRepository(resolve_db_path(settings))
-    await conv_repo.ensure_session(f"__scheduled__{task_id}", kind=1)
-    await conv_repo.update_session_title(f"__scheduled__{task_id}", name)
 
     logger.info("API 创建定时任务: id=%s name=%s trigger=%s/%s",
                  task_id, name, trigger_type, trigger_expr)
@@ -265,10 +256,10 @@ async def update_job_prompt(
                 name=task["name"],
                 kwargs={
                     "task_id": job_id,
-                    "session_id": task.get("session_id", f"__scheduled__{job_id}"),
                     "task_name": task["name"],
                     "prompt": prompt,
                     "trigger_type": task["trigger_type"],
+                    "owner_id": task["created_by"],
                 },
                 replace_existing=True,
             )

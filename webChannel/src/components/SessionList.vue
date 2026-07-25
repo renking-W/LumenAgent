@@ -102,6 +102,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import { authState } from '../services/auth'
 
 const props = defineProps<{
   activeSessionId: string
@@ -123,7 +124,11 @@ const sessionKind = ref<number>(0)
 const fetchSessions = async () => {
   loading.value = true
   try {
-    const res = await fetch(`/v1/sessions?limit=50&kind=${sessionKind.value}`)
+    // 管理员保留全量列表；普通用户只加载自己创建的会话。
+    const listPath = !authState.enabled.value || authState.user.value?.role === 'admin'
+      ? '/v1/sessions'
+      : '/v1/sessions/user'
+    const res = await fetch(`${listPath}?limit=50&kind=${sessionKind.value}`)
     if (res.ok) sessions.value = await res.json()
   } catch {
     // ignore

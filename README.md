@@ -555,9 +555,9 @@ Agent → 调用 task_scheduler (action=create, trigger_type=cron,
   └─ 返回任务 ID
 
 到达触发时间：
-  ┌─ 使用独立 session (__scheduled__{id})
+  ┌─ 每次执行创建独立 session (job-{uuid})
   ├─ 执行一轮完整的 Agent 工具循环
-  ├─ 结果落库到 scheduled_executions 表
+  ├─ 结果落库到 scheduled_task_executions 表
   └─ 可被前端 SchedulerView 查看
 ```
 

@@ -28,6 +28,7 @@ class SqliteSchedulerRepository:
 
     async def _prepare(self, db: aiosqlite.Connection) -> None:
         db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("PRAGMA journal_mode = WAL")
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
@@ -38,8 +39,7 @@ class SqliteSchedulerRepository:
                 trigger_expr TEXT NOT NULL DEFAULT '',
                 timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
                 enabled INTEGER NOT NULL DEFAULT 1,
-                created_by TEXT NOT NULL DEFAULT 'agent',
-                session_id TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL REFERENCES users(id),
                 system_prompt TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -84,9 +84,9 @@ class SqliteSchedulerRepository:
                 """
                 INSERT INTO scheduled_tasks
                     (id, name, prompt, trigger_type, trigger_expr, timezone,
-                     enabled, created_by, session_id, system_prompt,
+                     enabled, created_by, system_prompt,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -96,8 +96,7 @@ class SqliteSchedulerRepository:
                     task.get("trigger_expr", ""),
                     task.get("timezone", "Asia/Shanghai"),
                     1 if task.get("enabled", True) else 0,
-                    task.get("created_by", "agent"),
-                    task.get("session_id", ""),
+                    task["created_by"],
                     task.get("system_prompt", ""),
                     now,
                     now,
