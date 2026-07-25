@@ -194,7 +194,37 @@ npm run build
 
 构建产物输出到 `webChannel/dist/`，FastAPI 启动后通过唯一前端路由提供静态文件和页面回退，访问 `http://127.0.0.1:21675` 即可。
 
-### 7️⃣ CLI 模式（可选）
+### 7️⃣ Docker 部署
+
+Docker 镜像只运行一个 FastAPI/Uvicorn 服务，不需要 Compose 或容器内 Nginx：
+
+```bash
+docker build -t lumen-agent:latest .
+
+docker run -d \
+  --name lumen-agent \
+  --restart unless-stopped \
+  -p 1675:1675 \
+  -e LLM_API_KEY=replace-with-your-api-key \
+  -e AUTH_ENABLED=true \
+  -e AUTH_JWT_SECRET=replace-with-a-long-random-secret \
+  -e AUTH_INITIAL_ADMIN_USERNAME=admin \
+  -e AUTH_INITIAL_ADMIN_PASSWORD=replace-with-a-strong-password \
+  -v lumen-agent-data:/app/lumen_agent/data \
+  -v lumen-agent-workspace:/app/work_space \
+  -v lumen-agent-logs:/app/log \
+  lumen-agent:latest
+```
+
+Dockerfile 默认设置 `HOST=0.0.0.0`、`PORT=1675`，部署后访问 `http://服务器IP:1675`。数据库、向量索引、工作区和日志通过命名卷持久化；SQLite 与进程内 Chroma 只适合运行一个后端容器副本。
+
+| 运行方式 | 访问地址 | 说明 |
+|----------|----------|------|
+| 本机生产模式 | `http://127.0.0.1:21675` | FastAPI 同时提供前端和后端 |
+| 前端开发模式 | `http://127.0.0.1:5173` | Vite 将 `/v1` 和 WebSocket 代理到 `21675` |
+| Docker 部署 | `http://服务器IP:1675` | 容器对外只开放一个 FastAPI 端口 |
+
+### 8️⃣ CLI 模式（可选）
 
 ```bash
 # 自动同时启动 HTTP 服务
