@@ -99,8 +99,8 @@ async def get_current_auth_context(
     settings: Settings = Depends(get_settings),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> AuthContext:
-    # HTTP 中间件已经认证过时直接复用；直接调用依赖时再自行校验请求头。
     """校验前端 JWT，并从数据库读取用户的实时状态与权限。"""
+    # 同一请求已认证时直接复用，避免多个路由依赖重复解析 Token 和查询用户。
     existing = getattr(request.state, "auth_context", None)
     if isinstance(existing, AuthContext):
         return existing
@@ -119,7 +119,10 @@ async def get_current_auth_context(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await authenticate_access_token(token, settings)
+    context = await authenticate_access_token(token, settings)
+    # Session owner、额度与定时任务等后续逻辑统一从请求状态读取当前身份。
+    request.state.auth_context = context
+    return context
 
 
 async def get_current_user(
@@ -127,6 +130,21 @@ async def get_current_user(
 ) -> dict:
     """返回已认证用户，供不关心 JWT 时间信息的接口使用。"""
     return context.user
+
+
+async def require_authenticated(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> AuthContext | None:
+    """认证开启时要求有效登录用户；关闭时保持本地开发兼容。"""
+    if not settings.get("AUTH_ENABLED", False):
+        return None
+    return await get_current_auth_context(
+        request=request,
+        settings=settings,
+        authorization=authorization,
+    )
 
 
 def get_session_owner_id(request: Request) -> str | None:
@@ -167,7 +185,7 @@ async def verify_api_key(
 ) -> None:
     """API Key 认证依赖。"""
 
-    # ChatRun 等路由已由 JWT 中间件认证时，无需再把 JWT 当成 API Key 校验。
+    # Router 前置依赖已完成 JWT 认证时，无需再把 JWT 当成 API Key 校验。
     context = getattr(request.state, "auth_context", None)
     if isinstance(context, AuthContext):
         return

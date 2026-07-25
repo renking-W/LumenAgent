@@ -1,14 +1,17 @@
 /**
  * useVMWebSocket — VM 实时事件 WebSocket 连接管理。
  *
- * 直连 FastAPI（ws://127.0.0.1:21675/v1/vm/ws），绕开 Flask 代理。
+ * 使用当前页面的主机和协议连接 FastAPI，兼容本地代理与 HTTPS 部署。
  * 自动管理连接生命周期：subscribe、事件转发、心跳、断线重连。
  */
 
 import { onUnmounted, ref } from 'vue'
 import type { VMWebSocketEvent } from '../types'
+import { getAccessToken } from '../services/auth'
 
-const WS_BASE = 'ws://127.0.0.1:21675/v1/vm/ws'
+// HTTPS 页面必须使用 WSS，主机和端口始终跟随当前页面。
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const WS_BASE = `${WS_PROTOCOL}//${window.location.host}/v1/vm/ws`
 
 export function useVMWebSocket() {
   const connected = ref(false)
@@ -98,17 +101,30 @@ export function useVMWebSocket() {
     }
 
     ws.onopen = () => {
-      console.log('[VM WS] 已连接, 订阅:', vmId)
+      console.log('[VM WS] 已连接:', vmId)
       connected.value = true
       manualDisconnect = false
       reconnectAttempts = 0
-      ws?.send(JSON.stringify({ type: 'subscribe', vm_id: vmId }))
+      const token = getAccessToken()
+      if (token) {
+        // 浏览器 WebSocket 无法设置 Authorization，登录态通过首帧发送。
+        ws?.send(JSON.stringify({ type: 'auth', token }))
+      } else {
+        ws?.send(JSON.stringify({ type: 'subscribe', vm_id: vmId }))
+      }
       _startHeartbeat()
     }
 
     ws.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data)
+        if (data.type === 'auth_ok') {
+          const activeVmId = currentVmId.value
+          if (activeVmId) {
+            ws?.send(JSON.stringify({ type: 'subscribe', vm_id: activeVmId }))
+          }
+          return
+        }
         // 忽略系统消息
         if (data.type === 'subscribed') {
           console.log('[VM WS] 订阅确认:', data.vm_id)
@@ -165,10 +181,21 @@ export function useVMWebSocket() {
     connected.value = false
   }
 
+  function _handleTokenRefreshed(event: Event) {
+    const token = (event as CustomEvent<{ token?: string }>).detail?.token
+    if (token && ws?.readyState === WebSocket.OPEN) {
+      // HTTP 刷新成功后同步更新长连接身份，避免旧 Token 到期时断开。
+      ws.send(JSON.stringify({ type: 'auth_refresh', token }))
+    }
+  }
+
+  window.addEventListener('lumen:token-refreshed', _handleTokenRefreshed)
+
   // ── 生命周期清理（组件卸载时） ──
   onUnmounted(() => {
     disconnect()
     eventHandlers.clear()
+    window.removeEventListener('lumen:token-refreshed', _handleTokenRefreshed)
   })
 
   return {

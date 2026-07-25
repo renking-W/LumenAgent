@@ -14,7 +14,6 @@ from lumen_agent.api.dependency import (
     get_conversation_repo,
     get_llm_client,
     get_session_owner_id,
-    verify_api_key,
 )
 from lumen_agent.api.schemas.chat_run_dtos import (
     ChatRunInterruptResponse,
@@ -52,7 +51,6 @@ _logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/v1/chat/runs",
     tags=["chat-runs"],
-    dependencies=[Depends(verify_api_key)],
 )
 
 _SSE_HEADERS = {

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 from pathlib import Path
 from typing import Any
@@ -219,6 +220,13 @@ def load_and_merge() -> dict[str, Any]:
 
     # 3. 合并
     merged = _merge_env_into_config(config, env_data)
+    # 系统环境变量优先级最高，供 Docker 等运行环境注入配置。
+    system_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in merged
+    }
+    merged = _merge_env_into_config(merged, system_env)
 
     # 4. 摘要窗口校验（仅 WARNING，不阻塞）
     compress = merged.get("SUMMARY_COMPRESS_TURNS")

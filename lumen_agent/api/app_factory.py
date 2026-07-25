@@ -6,8 +6,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from lumen_agent.api.routers import (
     admin_users as admin_users_router,
@@ -30,13 +31,42 @@ from lumen_agent.api.routers import (
     vm as vm_router,
     vm_ws as vm_ws_router,
 )
-from lumen_agent.api.dependency import require_admin
-from lumen_agent.api.middleware.authentication import AuthenticationMiddleware
+from lumen_agent.api.dependency import require_admin, require_authenticated
 from lumen_agent.application.uitls.dir_guide import DirGuide
 from lumen_agent.config import get_settings, resolve_cors_origins, resolve_db_path
 from lumen_agent.infrastructure.start_need.workspace import init_workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _register_frontend_route(application: FastAPI) -> None:
+    """注册唯一前端路由，负责静态文件和 Vue 页面回退。"""
+    dist_dir = DirGuide.web_channel_dist_dir()
+    index_path = dist_dir / "index.html"
+    if not index_path.is_file():
+        logger.warning("前端构建产物不存在：%s", dist_dir)
+
+    @application.get("/{frontend_path:path}", include_in_schema=False)
+    async def frontend(frontend_path: str) -> FileResponse:
+        """返回前端文件；Vue 客户端路由统一回退到 index.html。"""
+        if frontend_path == "v1" or frontend_path.startswith("v1/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        if not index_path.is_file():
+            raise HTTPException(
+                status_code=503,
+                detail="Frontend assets are not built",
+            )
+
+        requested_path = (dist_dir / frontend_path).resolve()
+        try:
+            requested_path.relative_to(dist_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not Found") from None
+
+        if requested_path.is_file():
+            return FileResponse(requested_path)
+        return FileResponse(index_path)
 
 
 @asynccontextmanager
@@ -245,9 +275,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
-    # Starlette 后注册的中间件位于外层：先注册认证，再注册 CORS，
-    # 这样认证失败的 401/403 响应也会带上浏览器需要的跨域响应头。
-    application.add_middleware(AuthenticationMiddleware)
+    # CORS 是唯一全局中间件，负责浏览器跨域响应头。
     application.add_middleware(
         CORSMiddleware,
         allow_origins=resolve_cors_origins(settings),
@@ -261,31 +289,36 @@ def create_app() -> FastAPI:
         """存活探针，不依赖外部服务。"""
         return {"status": "ok"}
 
-    # AuthenticationMiddleware 负责“是否已登录”，这里的依赖负责“是否为管理员”。
-    # 未附加 admin_dependencies 的业务路由仍需通过全局 JWT 认证。
-
-    # 旧 Chat API 使用 API Key；Auth 路由包含公开登录接口和需 JWT 的身份接口。
+    # 路由依赖在端点业务执行前完成认证，静态资源和公开路由无需额外排除。
+    user_dependencies = [Depends(require_authenticated)]
     admin_dependencies = [Depends(require_admin)]
+
+    # 旧 Chat API 使用 API Key；Auth 内部区分公开端点和 JWT 身份端点。
     application.include_router(chat_router.router)
     application.include_router(auth_router.router)
     # 登录用户可访问的业务路由。
-    application.include_router(chat_runs_router.router)
-    application.include_router(sessions_router.router)
-    application.include_router(tools_router.router)
-    application.include_router(skills_router.router)
-    application.include_router(knowledge_router.router)
-    application.include_router(memories_router.router)
-    application.include_router(mcp_servers_router.router)
-    application.include_router(mcp_stdio_router.router)
-    application.include_router(mcp_tools_router.router)
-    application.include_router(scheduler_router.router)
+    application.include_router(chat_runs_router.router, dependencies=user_dependencies)
+    application.include_router(sessions_router.router, dependencies=user_dependencies)
+    application.include_router(tools_router.router, dependencies=user_dependencies)
+    application.include_router(skills_router.router, dependencies=user_dependencies)
+    application.include_router(knowledge_router.router, dependencies=user_dependencies)
+    application.include_router(memories_router.router, dependencies=user_dependencies)
+    application.include_router(mcp_servers_router.router, dependencies=user_dependencies)
+    application.include_router(mcp_stdio_router.router, dependencies=user_dependencies)
+    application.include_router(mcp_tools_router.router, dependencies=user_dependencies)
+    application.include_router(scheduler_router.router, dependencies=user_dependencies)
     # 管理员后台、API Key 与系统配置管理要求管理员角色。
     application.include_router(admin_users_router.router, dependencies=admin_dependencies)
     application.include_router(api_keys_router.router, dependencies=admin_dependencies)
     application.include_router(configs_router.router, dependencies=admin_dependencies)
-    # 其余 HTTP 路由只要求登录；WebSocket 在端点内部执行独立认证。
-    application.include_router(logs_router.router)
-    application.include_router(upload_router.router)
-    application.include_router(vm_router.router)
+    application.include_router(logs_router.router, dependencies=user_dependencies)
+    application.include_router(upload_router.router, dependencies=user_dependencies)
+    application.include_router(vm_router.router, dependencies=user_dependencies)
+
+    # WebSocket 通过连接后的首帧执行独立 JWT 认证。
     application.include_router(vm_ws_router.router)
+
+    # 唯一前端路由必须最后注册，避免覆盖 API、健康检查和文档端点。
+    _register_frontend_route(application)
+
     return application

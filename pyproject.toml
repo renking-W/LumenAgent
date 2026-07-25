@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "lumenagent"
 version = "0.1.0"
@@ -9,7 +13,6 @@ dependencies = [
     "chromadb>=1.5.9",
     "ddgs>=0.5.0",
     "fastapi>=0.136.1",
-    "flask>=3.0.0",
     "html2text>=2024.2.26",
     "httpx>=0.28.1",
     "mcp>=1.0.0",
@@ -27,3 +30,6 @@ dependencies = [
 
 [project.scripts]
 lumen-cli = "lumen_agent.application.chat_in_cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lumen_agent*"]
