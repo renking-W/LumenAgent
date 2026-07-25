@@ -105,3 +105,39 @@ class SqliteDailyChatUsageRepository:
             except Exception:
                 await db.rollback()
                 raise
+    async def list_by_date(
+        self,
+        usage_date: str,
+        user_ids: list[str],
+    ) -> dict[str, int]:
+        """批量返回指定日期、指定用户的已用轮次。"""
+        if not user_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in user_ids)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                f"""
+                SELECT user_id, used_rounds
+                FROM daily_chat_usage
+                WHERE usage_date = ? AND user_id IN ({placeholders})
+                """,
+                [usage_date, *user_ids],
+            )
+            rows = await cursor.fetchall()
+        return {str(row["user_id"]): int(row["used_rounds"]) for row in rows}
+
+    async def total_by_date(self, usage_date: str) -> int:
+        """统计指定日期全部用户消耗的对话轮次。"""
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                """
+                SELECT COALESCE(SUM(used_rounds), 0) AS total
+                FROM daily_chat_usage
+                WHERE usage_date = ?
+                """,
+                (usage_date,),
+            )
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0

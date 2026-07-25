@@ -1,4 +1,5 @@
 import { computed, readonly, ref } from 'vue'
+import { clearRememberedChatSession } from './chatSessionStorage'
 
 export interface AuthUser {
   id: string
@@ -236,10 +237,16 @@ export const login = async (username: string, password: string) => {
     throw new Error(await responseDetail(response, '登录失败，请检查账号和密码'))
   }
   const nextSession = await response.json() as AuthSession
+  // 每次重新登录都从空白会话开始，避免恢复上一位用户的活动 Session。
+  clearRememberedChatSession()
   saveSession(nextSession)
 }
 
-export const logout = () => clearSession()
+export const logout = () => {
+  // 主动退出时清理活动 Session；Token 自动刷新不会进入这里。
+  clearRememberedChatSession()
+  clearSession()
+}
 
 export const authState = {
   enabled: readonly(authEnabled),

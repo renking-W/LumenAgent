@@ -1,5 +1,9 @@
 import { computed, reactive, ref } from "vue"
 import type { ChatBlock, ChatMessage, FileAttachment } from "../types"
+import {
+  readRememberedChatSession,
+  rememberChatSession,
+} from "../services/chatSessionStorage"
 
 interface ContentBlock {
   type: string
@@ -49,7 +53,6 @@ interface StreamEvent {
   data?: any
 }
 
-const LAST_SESSION_KEY = "lumen:last-session-id"
 const RECONNECT_DELAY_MS = 600
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -80,8 +83,7 @@ export function useChatStream(persistActiveSession = true) {
 
   const rememberSession = (sid: string) => {
     if (!persistActiveSession) return
-    if (sid) localStorage.setItem(LAST_SESSION_KEY, sid)
-    else localStorage.removeItem(LAST_SESSION_KEY)
+    rememberChatSession(sid)
   }
 
   const pretty = (value: unknown) => JSON.stringify(value, null, 2)
@@ -552,7 +554,7 @@ export function useChatStream(persistActiveSession = true) {
 
   const restoreLastSession = async () => {
     if (!persistActiveSession) return
-    const sid = localStorage.getItem(LAST_SESSION_KEY)
+    const sid = readRememberedChatSession()
     if (sid) await loadSession(sid)
   }
 

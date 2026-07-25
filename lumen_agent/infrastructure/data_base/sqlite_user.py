@@ -128,3 +128,129 @@ class SqliteUserRepository:
                 (now, now, user_id),
             )
             await db.commit()
+    async def list_users(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        query: str = "",
+        enabled: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """分页查询用户，可按用户名和启用状态筛选。"""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if query:
+            conditions.append("username LIKE ? COLLATE NOCASE")
+            params.append(f"%{query.strip()}%")
+        if enabled is not None:
+            conditions.append("enabled = ?")
+            params.append(1 if enabled else 0)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                f"""
+                SELECT id, username, role, daily_round_limit, unlimited,
+                       enabled, created_at, updated_at, last_login_at
+                FROM users
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params,
+            )
+            rows = await cursor.fetchall()
+        return [self._to_dict(row) or {} for row in rows]
+
+    async def count_users(
+        self,
+        *,
+        query: str = "",
+        enabled: bool | None = None,
+    ) -> int:
+        """统计符合筛选条件的用户数量。"""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if query:
+            conditions.append("username LIKE ? COLLATE NOCASE")
+            params.append(f"%{query.strip()}%")
+        if enabled is not None:
+            conditions.append("enabled = ?")
+            params.append(1 if enabled else 0)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                f"SELECT COUNT(*) AS total FROM users {where}",
+                params,
+            )
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0
+
+    async def count_enabled_users(self) -> int:
+        """统计当前已启用的用户数量。"""
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS total FROM users WHERE enabled = 1"
+            )
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0
+
+    async def count_unlimited_users(self) -> int:
+        """统计当前拥有无限额度的用户数量。"""
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS total FROM users WHERE unlimited = 1"
+            )
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0
+
+    async def update_user(
+        self,
+        user_id: str,
+        updates: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """更新允许管理员调整的用户配置。"""
+        allowed = {"role", "daily_round_limit", "unlimited", "enabled"}
+        fields: list[str] = []
+        values: list[Any] = []
+        for key, value in updates.items():
+            if key not in allowed:
+                continue
+            fields.append(f"{key} = ?")
+            if key in {"unlimited", "enabled"}:
+                values.append(1 if value else 0)
+            else:
+                values.append(value)
+        if not fields:
+            return await self.get_by_id(user_id)
+
+        fields.append("updated_at = ?")
+        values.extend([_utc_now(), user_id])
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                f"UPDATE users SET {', '.join(fields)} WHERE id = ?",
+                values,
+            )
+            await db.commit()
+            if cursor.rowcount != 1:
+                return None
+        return await self.get_by_id(user_id)
+
+    async def update_password(self, user_id: str, password_hash: str) -> bool:
+        """替换用户密码哈希，不维护服务端登录会话。"""
+        now = _utc_now()
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (password_hash, now, user_id),
+            )
+            await db.commit()
+            return cursor.rowcount == 1

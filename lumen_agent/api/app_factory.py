@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from lumen_agent.api.routers import (
+    admin_users as admin_users_router,
     api_keys as api_keys_router,
     auth as auth_router,
     chat as chat_router,
@@ -278,7 +279,8 @@ def create_app() -> FastAPI:
     application.include_router(mcp_stdio_router.router)
     application.include_router(mcp_tools_router.router)
     application.include_router(scheduler_router.router)
-    # 仅 API Key 与系统配置管理要求管理员角色。
+    # 管理员后台、API Key 与系统配置管理要求管理员角色。
+    application.include_router(admin_users_router.router, dependencies=admin_dependencies)
     application.include_router(api_keys_router.router, dependencies=admin_dependencies)
     application.include_router(configs_router.router, dependencies=admin_dependencies)
     # 其余 HTTP 路由只要求登录；WebSocket 在端点内部执行独立认证。

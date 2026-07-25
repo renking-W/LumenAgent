@@ -31,7 +31,7 @@ class DailyChatQuotaExceededError(Exception):
         self.reset_at = reset_at
 
 
-def _quota_window(settings: Settings) -> tuple[str, str]:
+def get_quota_window(settings: Settings) -> tuple[str, str]:
     timezone_name = str(
         settings.get("AUTH_DAILY_QUOTA_TIMEZONE", "Asia/Shanghai")
     )
@@ -51,7 +51,7 @@ async def reserve_chat_turn(
         return None
 
     limit = max(0, int(user.get("daily_round_limit", 3)))
-    usage_date, reset_at = _quota_window(settings)
+    usage_date, reset_at = get_quota_window(settings)
     repo = SqliteDailyChatUsageRepository(resolve_db_path(settings))
     used_rounds = await repo.reserve(
         usage_date=usage_date,

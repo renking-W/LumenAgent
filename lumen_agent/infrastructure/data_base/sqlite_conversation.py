@@ -673,3 +673,37 @@ class SqliteConversationRepository:
             }
             for row in rows
         ]
+    async def count_sessions_by_owners(
+        self,
+        owner_ids: list[str],
+    ) -> dict[str, int]:
+        """批量统计指定用户拥有的会话数量。"""
+        if not owner_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in owner_ids)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                f"""
+                SELECT owner_id, COUNT(*) AS total
+                FROM sessions
+                WHERE owner_id IN ({placeholders})
+                GROUP BY owner_id
+                """,
+                owner_ids,
+            )
+            rows = await cursor.fetchall()
+        return {str(row["owner_id"]): int(row["total"]) for row in rows}
+
+    async def count_sessions_by_owner(self, owner_id: str) -> int:
+        """统计指定用户拥有的会话数量。"""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiosqlite.connect(self._db_path) as db:
+            await self._prepare(db)
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS total FROM sessions WHERE owner_id = ?",
+                (owner_id,),
+            )
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0
