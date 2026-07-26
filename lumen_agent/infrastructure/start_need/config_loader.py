@@ -40,7 +40,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "RELOAD": False,
     "CORS_ORIGINS": "http://127.0.0.1:5173,http://localhost:5173",
     # ── 登录认证 ──
-    "AUTH_ENABLED": False,
+    "AUTH_ENABLED": True,
     "AUTH_JWT_SECRET": "",
     "AUTH_JWT_EXPIRE_HOURS": 24,
     "AUTH_JWT_REFRESH_BEFORE_HOURS": 8,

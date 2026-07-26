@@ -139,6 +139,11 @@ EMBEDDING_MODEL=text-embedding-v4
 HOST=127.0.0.1
 PORT=21675
 
+# ── 登录认证（默认开启）──
+AUTH_ENABLED=true
+AUTH_INITIAL_ADMIN_USERNAME=admin
+AUTH_INITIAL_ADMIN_PASSWORD=change-this-password
+
 # ── Web JWT 认证（可选）──
 AUTH_ENABLED=true
 AUTH_INITIAL_ADMIN_USERNAME=admin
