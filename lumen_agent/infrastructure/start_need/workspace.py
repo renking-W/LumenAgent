@@ -15,8 +15,22 @@ _DOCS_DIR = DirGuide.docs_dir()
 _WORKSPACE_SEED_FILES = ["ME.md", "MEMORY.md", "RULE.md", "USER.md"]
 
 
+def _ensure_runtime_dirs() -> None:
+    """创建项目启动依赖的运行时目录。"""
+    for directory in (
+        DirGuide.data_dir(),
+        DirGuide.chroma_dir(),
+        DirGuide.agent_log_path().parent,
+        DirGuide.machine_log_dir(),
+        DirGuide.tmp_dir(),
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+
+
 def init_workspace() -> None:
-    """初始化工作区：work_space 不存在时自动创建目录结构并拷贝模板文件。"""
+    """初始化 Agent 工作区和项目运行所需目录。"""
+    _ensure_runtime_dirs()
+
     workspace = DirGuide.workspace_dir()
     if workspace.exists():
         return

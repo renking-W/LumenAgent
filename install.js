@@ -10,7 +10,7 @@ const VENV_DIR = path.join(ROOT, ".venv");
 const PY_NEEDED = "3.11";
 
 // ── Node.js 版本校验 ────────────────────────────────
-const NODE_MIN = 18;
+const NODE_MIN = 22;
 const nodeVer = process.version; // e.g. "v20.19.0"
 const parts = nodeVer.slice(1).split(".").map(Number);
 if (parts[0] < NODE_MIN) {

@@ -42,6 +42,7 @@ webChannel/dist/
 .codegraph/
 
 # Project-specific
+/AGENTS.md
 /会话摘要开发指南.md
 uv.lock
 target.md

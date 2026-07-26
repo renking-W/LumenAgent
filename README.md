@@ -94,7 +94,7 @@ LumenAgent/
 
 ### 0️⃣ 一行命令启动（推荐）
 
-确保已安装 [Node.js ≥ 18](https://nodejs.org/) 和 [Python 3.10–3.12](https://www.python.org/) 后：
+确保已安装 [Node.js ≥ 22](https://nodejs.org/) 和 [Python 3.10–3.12](https://www.python.org/) 后：
 
 ```bash
 # 一键安装 + 启动（自动装 Python/Node 依赖、构建前端、启动服务）
@@ -116,7 +116,7 @@ npx lumen-start
 ### 1️⃣ 环境要求
 
 - Python ≥ 3.10 且 < 3.13
-- Node.js ≥ 18
+- Node.js ≥ 22
 - 一个 **DeepSeek API Key**（或其他兼容的 OpenAI API）
 - 一个 **阿里云 DashScope API Key**（仅知识库 RAG + 记忆向量检索需要，纯对话可不配）
 
