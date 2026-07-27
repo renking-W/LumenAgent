@@ -642,6 +642,8 @@ emoji: 🔧                # 可选：显示图标
 
 > Web UI 使用 JWT Bearer Token；旧 `/v1/chat`、`/v1/chat/stream` 等兼容接口仍可使用 API Key。开启认证后，普通用户接口会按当前用户过滤 Session 和定时任务。
 
+第三方系统接入、完整 Agent 能力说明、SSE 事件与审批示例请参阅 [API 接入文档](API.md)。
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/health` | 健康检查 |
