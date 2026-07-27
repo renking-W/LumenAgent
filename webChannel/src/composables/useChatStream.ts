@@ -7,6 +7,7 @@
 
 import { computed, nextTick, reactive, ref } from 'vue'
 import type { ChatBlock, ChatMessage } from '../types'
+import { createUuid } from '../utils/uuid'
 
 /** 后端返回的 content block 格式 */
 interface CB {
@@ -77,7 +78,7 @@ export function useChatStream() {
 
   const addMessage = (role: 'user' | 'assistant') => {
     const msg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       role,
       roleLabel: role === 'user' ? 'User' : 'Assistant',
       time: nowStamp(),
@@ -95,7 +96,7 @@ export function useChatStream() {
 
   const pushBlock = (kind: string, title: string, content: string, expanded = true) => {
     const msg = getOrCreateAssistant()
-    const block: ChatBlock = { id: crypto.randomUUID(), kind, title, content, expanded }
+    const block: ChatBlock = { id: createUuid(), kind, title, content, expanded }
     msg.blocks.push(block)
     pushPendingBlock(block)
     return block
@@ -108,7 +109,7 @@ export function useChatStream() {
       existing.content += content
       return existing
     }
-    const block: ChatBlock = { id: crypto.randomUUID(), kind, title, content, expanded }
+    const block: ChatBlock = { id: createUuid(), kind, title, content, expanded }
     msg.blocks.push(block)
     pushPendingBlock(block)
     return block
@@ -357,7 +358,7 @@ export function useChatStream() {
     statusText.value = '发送中...'
 
     addMessage('user').blocks.push({
-      id: crypto.randomUUID(), kind: 'text', title: '用户输入', content, expanded: true,
+      id: createUuid(), kind: 'text', title: '用户输入', content, expanded: true,
     })
 
     try {
@@ -419,16 +420,16 @@ export function useChatStream() {
         const pad = (n: number) => String(n).padStart(2, '0')
         const d = new Date(sm.created_at)
         return {
-          id: crypto.randomUUID(),
+          id: createUuid(),
           role: sm.role as 'user' | 'assistant',
           roleLabel: sm.role === 'user' ? 'User' : 'Assistant',
           time: `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
           blocks: sm.content.map((cb: CB): ChatBlock => {
-            if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
-            if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
-            if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
-            if (cb.type === 'image_url') return { id: crypto.randomUUID(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
-            return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
+            if (cb.type === 'thinking') return { id: createUuid(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
+            if (cb.type === 'tool_use') return { id: createUuid(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
+            if (cb.type === 'tool_result') return { id: createUuid(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
+            if (cb.type === 'image_url') return { id: createUuid(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
+            return { id: createUuid(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
           }),
           seq: sm.seq,
         }

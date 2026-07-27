@@ -1,5 +1,6 @@
 import { computed, reactive, ref } from "vue"
 import type { ChatBlock, ChatMessage, FileAttachment } from "../types"
+import { createUuid } from "../utils/uuid"
 import {
   readRememberedChatSession,
   rememberChatSession,
@@ -91,7 +92,7 @@ export function useChatStream(persistActiveSession = true) {
 
   const addMessage = (role: "user" | "assistant") => {
     const message: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       role,
       roleLabel: role === "user" ? "User" : "Assistant",
       time: nowStamp(),
@@ -122,7 +123,7 @@ export function useChatStream(persistActiveSession = true) {
     expanded = true,
   ) => {
     const block: ChatBlock = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       kind,
       title,
       content,
@@ -235,7 +236,7 @@ export function useChatStream(persistActiveSession = true) {
     return stored.map(item => {
       const date = new Date(item.created_at)
       return {
-        id: crypto.randomUUID(),
+        id: createUuid(),
         role: item.role as "user" | "assistant",
         roleLabel: item.role === "user" ? "User" : "Assistant",
         time:
@@ -251,7 +252,7 @@ export function useChatStream(persistActiveSession = true) {
         blocks: item.content.map((block): ChatBlock => {
           if (block.type === "thinking") {
             return {
-              id: crypto.randomUUID(),
+              id: createUuid(),
               kind: "thinking",
               title: "思考",
               content: block.thinking ?? "",
@@ -260,7 +261,7 @@ export function useChatStream(persistActiveSession = true) {
           }
           if (block.type === "tool_use") {
             return {
-              id: crypto.randomUUID(),
+              id: createUuid(),
               kind: "tool_use",
               title: block.name ?? "工具调用",
               content: pretty(block.input ?? {}),
@@ -269,7 +270,7 @@ export function useChatStream(persistActiveSession = true) {
           }
           if (block.type === "tool_result") {
             return {
-              id: crypto.randomUUID(),
+              id: createUuid(),
               kind: "tool_result",
               title: "工具结果",
               content: block.content ?? "",
@@ -278,7 +279,7 @@ export function useChatStream(persistActiveSession = true) {
           }
           if (block.type === "image_url") {
             return {
-              id: crypto.randomUUID(),
+              id: createUuid(),
               kind: "image",
               title: "图片",
               content: block.image_url?.url ?? "",
@@ -287,7 +288,7 @@ export function useChatStream(persistActiveSession = true) {
           }
           if (block.type === "file") {
             return {
-              id: crypto.randomUUID(),
+              id: createUuid(),
               kind: "file",
               title: block.name ?? "文件",
               content: "",
@@ -301,7 +302,7 @@ export function useChatStream(persistActiveSession = true) {
             }
           }
           return {
-            id: crypto.randomUUID(),
+            id: createUuid(),
             kind: "text",
             title: "正文",
             content: block.text ?? "",
@@ -429,14 +430,14 @@ export function useChatStream(persistActiveSession = true) {
     if ((!content && !fileAttachments.length && !hasImages) || sending.value) return
     lastUserPrompt.value = content
     if (!sessionId.value) {
-      sessionId.value = crypto.randomUUID()
+      sessionId.value = createUuid()
       rememberSession(sessionId.value)
     }
 
     const userMessage = addMessage("user")
     if (content) {
       userMessage.blocks.push({
-        id: crypto.randomUUID(),
+        id: createUuid(),
         kind: "text",
         title: "用户输入",
         content,
@@ -445,7 +446,7 @@ export function useChatStream(persistActiveSession = true) {
     }
     for (const file of fileAttachments) {
       userMessage.blocks.push({
-        id: crypto.randomUUID(),
+        id: createUuid(),
         kind: "file",
         title: file.name,
         content: "",

@@ -259,6 +259,7 @@ import ApiKeyManager from './components/ApiKeyManager.vue'
 import LoadingState from './components/LoadingState.vue'
 import AccessDeniedState from './components/AccessDeniedState.vue'
 import { authState } from './services/auth'
+import { createUuid } from './utils/uuid'
 
 // ── 聊天流 ─────────────────────────────────────────
 const chat = useChatStream()
@@ -390,11 +391,11 @@ const formatStoredTime = (iso: string) => {
 }
 
 const cbToBlock = (cb: CB): ChatBlock => {
-  if (cb.type === 'thinking') return { id: crypto.randomUUID(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
-  if (cb.type === 'tool_use') return { id: crypto.randomUUID(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
-  if (cb.type === 'tool_result') return { id: crypto.randomUUID(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
-  if (cb.type === 'image_url') return { id: crypto.randomUUID(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
-  return { id: crypto.randomUUID(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
+  if (cb.type === 'thinking') return { id: createUuid(), kind: 'thinking', title: '💭 思考', content: cb.thinking ?? '', expanded: false }
+  if (cb.type === 'tool_use') return { id: createUuid(), kind: 'tool_use', title: cb.name || '工具调用', content: pretty(cb.input ?? ''), expanded: false }
+  if (cb.type === 'tool_result') return { id: createUuid(), kind: 'tool_result', title: `工具结果${cb.name ? ': ' + cb.name : ''}`, content: cb.content ?? pretty(cb.input ?? ''), expanded: false }
+  if (cb.type === 'image_url') return { id: createUuid(), kind: 'image', title: '图片', content: cb.image_url?.url ?? '', expanded: true }
+  return { id: createUuid(), kind: 'text', title: '正文', content: cb.text ?? '', expanded: false }
 }
 
 /**
@@ -405,7 +406,7 @@ function parseStoredMessages(stored: StoredMsg[]): ChatMessage[] {
   const result: ChatMessage[] = []
   for (const sm of stored) {
     result.push({
-      id: crypto.randomUUID(),
+      id: createUuid(),
       role: sm.role as 'user' | 'assistant',
       roleLabel: sm.role === 'user' ? 'User' : 'Assistant',
       time: formatStoredTime(sm.created_at),
