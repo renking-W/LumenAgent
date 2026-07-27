@@ -204,24 +204,37 @@ npm run build
 Docker 镜像只运行一个 FastAPI/Uvicorn 服务，不需要 Compose 或容器内 Nginx：
 
 ```bash
+# 拉取代码后，在项目根目录构建镜像。
 docker build -t lumen-agent:latest .
 
+# 创建宿主机持久化目录，并授权给镜像内的 lumen 用户。
+mkdir -p lumen_agent/data work_space log
+LUMEN_UID=$(docker run --rm --entrypoint id lumen-agent:latest -u lumen)
+LUMEN_GID=$(docker run --rm --entrypoint id lumen-agent:latest -g lumen)
+chown -R "$LUMEN_UID:$LUMEN_GID" lumen_agent/data work_space log
+chown "$LUMEN_UID:$LUMEN_GID" lumen_agent/config.json
+
+# 后台运行容器；反斜杠必须是每行最后一个字符，后面不能有空格。
 docker run -d \
   --name lumen-agent \
   --restart unless-stopped \
   -p 1675:1675 \
-  -e LLM_API_KEY=replace-with-your-api-key \
-  -e AUTH_ENABLED=true \
-  -e AUTH_JWT_SECRET=replace-with-a-long-random-secret \
-  -e AUTH_INITIAL_ADMIN_USERNAME=admin \
   -e AUTH_INITIAL_ADMIN_PASSWORD=replace-with-a-strong-password \
-  -v lumen-agent-data:/app/lumen_agent/data \
-  -v lumen-agent-workspace:/app/work_space \
-  -v lumen-agent-logs:/app/log \
+  -v "$(pwd)/lumen_agent/config.json:/app/lumen_agent/config.json" \
+  -v "$(pwd)/lumen_agent/data:/app/lumen_agent/data" \
+  -v "$(pwd)/work_space:/app/work_space" \
+  -v "$(pwd)/log:/app/log" \
   lumen-agent:latest
 ```
 
-Dockerfile 默认设置 `HOST=0.0.0.0`、`PORT=1675`，部署后访问 `http://服务器IP:1675`。数据库、向量索引、工作区和日志通过命名卷持久化；SQLite 与进程内 Chroma 只适合运行一个后端容器副本。
+Dockerfile 默认设置 `HOST=0.0.0.0`、`PORT=1675`，部署后访问 `http://服务器IP:1675`。首次创建管理员后，可在前端管理界面继续配置 LLM、Embedding 等参数。`config.json`、数据库、向量索引、工作区和日志均持久化在项目目录中；SQLite 与进程内 Chroma 只适合运行一个后端容器副本。
+
+```bash
+# 查看容器状态、启动日志和工作区初始化结果。
+docker ps --filter name=lumen-agent
+docker logs --tail 200 lumen-agent
+docker exec lumen-agent ls -la /app/work_space
+```
 
 | 运行方式 | 访问地址 | 说明 |
 |----------|----------|------|
