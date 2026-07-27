@@ -11,7 +11,7 @@
       >
         定位到底部
       </el-button>
-      <el-button v-else type="primary" plain @click="$emit('refresh')">
+      <el-button v-else-if="activeView !== 'about'" type="primary" plain @click="$emit('refresh')">
         刷新数据
       </el-button>
       <el-button plain @click="emit('open-api-keys')">
@@ -35,7 +35,7 @@ import { computed } from 'vue'
 import { authState, logout } from '../services/auth'
 
 const props = defineProps<{
-  activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'
+  activeView: 'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs' | 'about'
 }>()
 
 const emit = defineEmits<{
@@ -54,6 +54,7 @@ const pageTitle = computed(() => {
   if (props.activeView === 'knowledge') return 'Knowledge Base'
   if (props.activeView === 'scheduler') return 'Scheduled Tasks'
   if (props.activeView === 'logs') return 'System Logs'
+  if (props.activeView === 'about') return 'About the Author'
   return 'Agent Console'
 })
 
@@ -66,6 +67,7 @@ const pageSubtitle = computed(() => {
   if (props.activeView === 'config') return '查看和编辑系统运行时配置，修改后即时热生效。'
   if (props.activeView === 'knowledge') return '管理知识文档，支持入库文本/文件、检索切片、查看文档详情与重建索引。'
   if (props.activeView === 'scheduler') return '管理 AI 定时任务，支持 cron / interval / date 三种触发模式。'
+  if (props.activeView === 'about') return '认识 LumenAgent 背后的开发者与工程实践。'
   return '支持 SSE 实时渲染思考、工具调用、工具结果与正文内容。'
 })
 </script>

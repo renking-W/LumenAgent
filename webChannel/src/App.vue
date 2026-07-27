@@ -140,11 +140,32 @@
             <span class="nav-desc">系统日志实时监控</span>
           </span>
         </button>
+        <button
+          class="nav-item"
+          :class="{ active: activeView === 'about' }"
+          @click="activeView = 'about'"
+        >
+          <span class="nav-icon"><UserRound :size="18" aria-hidden="true" /></span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">关于作者</span>
+            <span class="nav-desc">了解项目背后的开发者</span>
+          </span>
+        </button>
       </nav>
 
       <!-- ── 侧栏底部信息 ── -->
       <div v-if="!sidebarCollapsed" class="sidebar-footer">
         <span class="sidebar-footer-version">LumenAgent v0.0.1</span>
+        <a
+          class="sidebar-footer-github"
+          href="https://github.com/renking-W/LumenAgent"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="在 GitHub 查看 LumenAgent"
+          aria-label="在 GitHub 查看 LumenAgent"
+        >
+          <Github :size="16" aria-hidden="true" />
+        </a>
       </div>
 
     </el-aside>
@@ -211,6 +232,7 @@
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
         <LogView v-else-if="activeView === 'logs'" />
+        <AboutAuthorView v-else-if="activeView === 'about'" />
       </el-main>
 
       <el-footer v-if="activeView === 'chat'" height="auto" class="composer-wrapper">
@@ -240,6 +262,7 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
+import { Github, UserRound } from 'lucide-vue-next'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage, FileAttachment } from './types'
 import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
@@ -258,6 +281,7 @@ import AppComposer from './components/AppComposer.vue'
 import ApiKeyManager from './components/ApiKeyManager.vue'
 import LoadingState from './components/LoadingState.vue'
 import AccessDeniedState from './components/AccessDeniedState.vue'
+import AboutAuthorView from './components/AboutAuthorView.vue'
 import { authState } from './services/auth'
 import { createUuid } from './utils/uuid'
 
@@ -271,7 +295,7 @@ const statusText = chat.statusText
 const lastUserPrompt = chat.lastUserPrompt
 
 // ── 视图切换（默认为聊天界面）──────────────────
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs' | 'about'>('chat')
 
 // ── UI 状态 ───────────────────────────────────────
 const sidebarVisible = ref(false)
@@ -801,11 +825,33 @@ watch(activeView, async () => {
   margin-top: auto;
   padding: var(--space-3) var(--space-3) 0;
   border-top: 1px solid #D5E3CC;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 .sidebar-footer-version {
   font-size: 0.72rem;
   color: #8AAC7A;
   user-select: none;
+}
+.sidebar-footer-github {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(44, 74, 40, 0.14);
+  border-radius: var(--radius-sm);
+  color: #6B8C5C;
+  background: rgba(255, 255, 255, 0.42);
+  text-decoration: none;
+}
+.sidebar-footer-github:hover {
+  border-color: #8AAC7A;
+  color: #2C4A28;
+  background: var(--color-white);
+  text-decoration: none;
 }
 
 /* ── 移动端遮罩 ── */
