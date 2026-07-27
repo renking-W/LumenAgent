@@ -12,7 +12,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from fastapi.responses import StreamingResponse
 
-from lumen_agent.api.dependency import verify_api_key
 from lumen_agent.api.schemas.vm_dtos import (
     VMExecuteRequest,
     VMLogResponse,

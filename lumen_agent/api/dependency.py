@@ -183,7 +183,7 @@ async def verify_api_key(
     settings: Settings = Depends(get_settings),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> None:
-    """API Key 认证依赖。"""
+    """兼容前端 JWT 与第三方 API Key 的认证依赖。"""
 
     # Router 前置依赖已完成 JWT 认证时，无需再把 JWT 当成 API Key 校验。
     context = getattr(request.state, "auth_context", None)
@@ -203,16 +203,27 @@ async def verify_api_key(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    raw_key = _parse_bearer_token(authorization)
-    if raw_key is None:
+    raw_token = _parse_bearer_token(authorization)
+    if raw_token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format, expected: Bearer <key>",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # 历史 API 同时兼容前端 JWT 与第三方 API Key：优先按 JWT 校验，
+    # JWT 不通过时再沿用原有 API Key 校验，避免把有效 JWT 当成 API Key。
+    if settings.get("AUTH_ENABLED", False):
+        try:
+            jwt_context = await authenticate_access_token(raw_token, settings)
+        except HTTPException:
+            pass
+        else:
+            request.state.auth_context = jwt_context
+            return
+
     # SHA-256 摘要
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    key_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
     # 查 DB
     try:

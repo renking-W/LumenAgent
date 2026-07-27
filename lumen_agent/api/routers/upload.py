@@ -6,10 +6,9 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
-from lumen_agent.api.dependency import verify_api_key
 from lumen_agent.api.schemas.upload_dtos import UploadResponse
 from lumen_agent.application.uitls.dir_guide import DirGuide
 
@@ -32,7 +31,6 @@ def _safe_filename(original_filename: str) -> str:
 @router.post(
     "/upload",
     response_model=UploadResponse,
-    dependencies=[Depends(verify_api_key)],
 )
 async def upload_file(file: UploadFile) -> UploadResponse:
     """上传任意类型文件到 work_space/tmp/，单文件最大 100 MB。"""

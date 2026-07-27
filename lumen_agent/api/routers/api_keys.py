@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from lumen_agent.api.dependency import get_settings, verify_api_key
+from lumen_agent.api.dependency import get_settings
 from lumen_agent.api.schemas.api_key_dtos import (
     ApiKeyCreateRequest,
     ApiKeyCreatedResponse,
