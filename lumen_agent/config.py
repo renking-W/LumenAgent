@@ -41,11 +41,12 @@ def log_config(*, enable_stream: bool = True) -> None:
 
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    _LOG_DIR = Path("log")
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # 写入、读取和清理统一使用项目根目录下的日志路径。
+    log_path = DirGuide.agent_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     file_handler = TimedRotatingFileHandler(
-        filename=str(_LOG_DIR / "agent.log"),
+        filename=str(log_path),
         when="midnight",
         encoding="utf-8",
         backupCount=30,

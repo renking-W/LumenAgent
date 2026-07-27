@@ -86,13 +86,13 @@ class DirGuide:
 
     @classmethod
     def agent_log_path(cls) -> Path:
-        """返回 ``lumen_agent/log/agent.log``。"""
-        return cls._PACKAGE_DIR / "log" / "agent.log"
+        """返回 ``<项目根>/log/agent.log``。"""
+        return cls._PROJECT_ROOT / "log" / "agent.log"
 
     @classmethod
     def machine_log_dir(cls) -> Path:
-        """返回 ``lumen_agent/log/machine_log/``。"""
-        return cls._PACKAGE_DIR / "log" / "machine_log"
+        """返回 ``<项目根>/log/machine_log/``。"""
+        return cls._PROJECT_ROOT / "log" / "machine_log"
 
     # ── Workspace 路径（<项目根>/work_space/ 下） ─────────────────
 
