@@ -29,24 +29,26 @@ def _ensure_runtime_dirs() -> None:
 
 def init_workspace() -> None:
     """初始化 Agent 工作区和项目运行所需目录。"""
+    workspace = DirGuide.workspace_dir()
+    workspace_missing = not workspace.exists()
     _ensure_runtime_dirs()
 
-    workspace = DirGuide.workspace_dir()
-    if workspace.exists():
-        return
+    if workspace_missing:
+        logging.info("工作区不存在，触发初始化：%s", workspace)
 
-    logging.info("工作区不存在，触发初始化：%s", workspace)
-
-    # 创建目录结构
+    # 每次启动都补齐目录结构，兼容仅由 tmp 提前创建工作区的场景。
     (workspace / "memory").mkdir(parents=True, exist_ok=True)
     (workspace / "skills").mkdir(parents=True, exist_ok=True)
     (workspace / "konwledge").mkdir(parents=True, exist_ok=True)
 
-    # 拷贝模板文件
+    # 仅补充缺失的模板文件，避免覆盖用户已经修改的内容。
     for filename in _WORKSPACE_SEED_FILES:
         src = _DOCS_DIR / filename
+        target = workspace / filename
+        if target.exists():
+            continue
         if src.exists():
-            shutil.copy2(src, workspace / filename)
+            shutil.copy2(src, target)
             logging.info("  已拷贝：%s → work_space/%s", filename, filename)
         else:
             logging.warning("  模板文件不存在，跳过：%s", src)
