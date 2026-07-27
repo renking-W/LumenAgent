@@ -26,6 +26,25 @@ def _render_title_prompt(first_message: str) -> str:
     return tpl
 
 
+def _fallback_title(first_message: str) -> str:
+    """标题生成失败时使用用户首条消息作为兜底标题。"""
+    return " ".join(first_message.split()).strip()
+
+
+async def _use_fallback_title(
+    repo: ConversationRepositoryPort,
+    session_id: str,
+    first_message: str,
+) -> None:
+    """把用户首条消息写作标题；空消息不写。"""
+    fallback = _fallback_title(first_message)
+    if not fallback:
+        logging.warning(f"session={session_id} 标题兜底内容为空，跳过")
+        return
+    await repo.update_session_title(session_id, fallback)
+    logging.info(f"session={session_id} 已使用用户消息作为兜底标题: {fallback}")
+
+
 async def maybe_generate_title(
     repo: ConversationRepositoryPort,
     llm: ModelAdapter,
@@ -47,8 +66,9 @@ async def maybe_generate_title(
         prompt = _render_title_prompt(first_message)
         if "{{" in prompt:
             logging.error(
-                f"session={session_id} 标题 prompt 模板占位符未替换，跳过"
+                f"session={session_id} 标题 prompt 模板占位符未替换，使用兜底标题"
             )
+            await _use_fallback_title(repo, session_id, first_message)
             return
 
         raw_title = await llm.chat(
@@ -56,11 +76,18 @@ async def maybe_generate_title(
         )
         title = (raw_title or "").strip().strip('"').strip("'").strip()
         if not title:
-            logging.warning(f"session={session_id} 标题 LLM 返回空，跳过")
+            logging.warning(f"session={session_id} 标题 LLM 返回空，使用兜底标题")
+            await _use_fallback_title(repo, session_id, first_message)
             return
 
         await repo.update_session_title(session_id, title)
         logging.info(f"session={session_id} 标题已自动生成: {title}")
 
-    except Exception:
-        logging.exception(f"session={session_id} 标题生成异常，跳过")
+    except Exception as exc:
+        logging.warning(
+            f"session={session_id} 标题生成失败，使用兜底标题: {exc}"
+        )
+        try:
+            await _use_fallback_title(repo, session_id, first_message)
+        except Exception:
+            logging.exception(f"session={session_id} 兜底标题写入失败，跳过")
