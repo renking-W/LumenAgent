@@ -69,6 +69,8 @@ class KnowledgeSearch(BaseTool):
 class KnowledgeInsert(BaseTool):
     """将文本或文件入库到知识库。"""
 
+    _logger = logging.getLogger(__name__)
+
     name = "knowledge_insert"
     description = "将文本或文件入库到知识库，自动切分、embedding 并写入 Chroma。"
     requires_approval = True
