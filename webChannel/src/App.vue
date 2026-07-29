@@ -142,6 +142,17 @@
         </button>
         <button
           class="nav-item"
+          :class="{ active: activeView === 'weixin' }"
+          @click="activeView = 'weixin'"
+        >
+          <span class="nav-icon"><MessageCircleMore :size="18" aria-hidden="true" /></span>
+          <span v-if="!sidebarCollapsed" class="nav-text">
+            <span class="nav-title">微信接入</span>
+            <span class="nav-desc">绑定个人微信通道</span>
+          </span>
+        </button>
+        <button
+          class="nav-item"
           :class="{ active: activeView === 'about' }"
           @click="activeView = 'about'"
         >
@@ -232,6 +243,14 @@
         <KnowledgeView v-else-if="activeView === 'knowledge'" />
         <SchedulerView v-else-if="activeView === 'scheduler'" />
         <LogView v-else-if="activeView === 'logs'" />
+        <AccessDeniedState
+          v-else-if="activeView === 'weixin' && !isAdmin"
+          title="微信接入仅限管理员"
+          message="微信账号会直接连接完整 Agent 能力，因此仅允许管理员进行绑定和解绑。"
+          :username="authState.user.value?.username"
+          @back="activeView = 'chat'"
+        />
+        <WeixinBindingView v-else-if="activeView === 'weixin'" />
         <AboutAuthorView v-else-if="activeView === 'about'" />
       </el-main>
 
@@ -262,7 +281,7 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
-import { Github, UserRound } from 'lucide-vue-next'
+import { Github, MessageCircleMore, UserRound } from 'lucide-vue-next'
 import type { ToolInfo, SkillInfo, MemoryFileItem, ChatBlock, ChatMessage, FileAttachment } from './types'
 import { useChatStream } from './composables/useDetachedChatStream'
 import AppTopbar from './components/AppTopbar.vue'
@@ -282,6 +301,7 @@ import ApiKeyManager from './components/ApiKeyManager.vue'
 import LoadingState from './components/LoadingState.vue'
 import AccessDeniedState from './components/AccessDeniedState.vue'
 import AboutAuthorView from './components/AboutAuthorView.vue'
+import WeixinBindingView from './components/WeixinBindingView.vue'
 import { authState } from './services/auth'
 import { createUuid } from './utils/uuid'
 
@@ -295,7 +315,7 @@ const statusText = chat.statusText
 const lastUserPrompt = chat.lastUserPrompt
 
 // ── 视图切换（默认为聊天界面）──────────────────
-const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs' | 'about'>('chat')
+const activeView = ref<'chat' | 'tools' | 'skills' | 'memories' | 'mcp' | 'vm' | 'config' | 'knowledge' | 'scheduler' | 'logs' | 'weixin' | 'about'>('chat')
 
 // ── UI 状态 ───────────────────────────────────────
 const sidebarVisible = ref(false)

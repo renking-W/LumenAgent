@@ -32,6 +32,7 @@ lumen_agent/log/
 node_modules/
 webChannel/node_modules/
 webChannel/.vite/
+weixinChannel/data/
 
 /会话摘要开发指南.md
 

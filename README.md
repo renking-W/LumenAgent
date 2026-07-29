@@ -201,17 +201,17 @@ npm run build
 
 ### 7️⃣ Docker 部署
 
-Docker 镜像只运行一个 FastAPI/Uvicorn 服务，不需要 Compose 或容器内 Nginx：
+Docker 镜像只对外提供一个 FastAPI/Uvicorn 服务，不需要 Compose 或容器内 Nginx；微信 Node 子进程由 FastAPI 在容器内部托管：
 
 ```bash
 # 拉取代码后，在项目根目录构建镜像。
 docker build -t lumen-agent:latest .
 
 # 创建宿主机持久化目录，并授权给镜像内的 lumen 用户。
-mkdir -p lumen_agent/data work_space log
+mkdir -p lumen_agent/data work_space log weixinChannel/data
 LUMEN_UID=$(docker run --rm --entrypoint id lumen-agent:latest -u lumen)
 LUMEN_GID=$(docker run --rm --entrypoint id lumen-agent:latest -g lumen)
-chown -R "$LUMEN_UID:$LUMEN_GID" lumen_agent/data work_space log
+chown -R "$LUMEN_UID:$LUMEN_GID" lumen_agent/data work_space log weixinChannel/data
 chown "$LUMEN_UID:$LUMEN_GID" lumen_agent/config.json
 
 # 后台运行容器；反斜杠必须是每行最后一个字符，后面不能有空格。
@@ -224,10 +224,11 @@ docker run -d \
   -v "$(pwd)/lumen_agent/data:/app/lumen_agent/data" \
   -v "$(pwd)/work_space:/app/work_space" \
   -v "$(pwd)/log:/app/log" \
+  -v "$(pwd)/weixinChannel/data:/app/weixinChannel/data" \
   lumen-agent:latest
 ```
 
-Dockerfile 默认设置 `HOST=0.0.0.0`、`PORT=1675`，部署后访问 `http://服务器IP:1675`。首次创建管理员后，可在前端管理界面继续配置 LLM、Embedding 等参数。`config.json`、数据库、向量索引、工作区和日志均持久化在项目目录中；SQLite 与进程内 Chroma 只适合运行一个后端容器副本。
+Dockerfile 默认设置 `HOST=0.0.0.0`、`PORT=1675`，部署后访问 `http://服务器IP:1675`。FastAPI 会同时托管微信 Node 子进程，不需要单独启动第二个服务，也不会额外开放端口。首次创建管理员后，可在前端管理界面继续配置 LLM、Embedding 等参数。`config.json`、数据库、向量索引、工作区、日志和微信登录凭据均持久化在项目目录中；SQLite 与进程内 Chroma 只适合运行一个后端容器副本。
 
 ```bash
 # 查看容器状态、启动日志和工作区初始化结果。
@@ -286,6 +287,7 @@ CLI 支持斜杠命令：`/exit` `/new` `/knowledge`
 |------|------|
 | ⚙️ 系统配置 | 编辑系统运行参数 |
 | 📋 日志 | 实时查看/下载日志文件 |
+| 微信接入 | 管理员扫码绑定个人微信，通道由后端常驻托管 |
 
 ---
 

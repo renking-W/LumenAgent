@@ -30,6 +30,7 @@ from lumen_agent.api.routers import (
     upload as upload_router,
     vm as vm_router,
     vm_ws as vm_ws_router,
+    weixin as weixin_router,
 )
 from lumen_agent.api.dependency import require_admin, require_authenticated
 from lumen_agent.application.uitls.dir_guide import DirGuide
@@ -121,6 +122,15 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logging.exception("初始管理员账号创建失败")
 
+    # ── 启动微信常驻通道，由管理器负责异常退出后的自动重启 ──────
+    try:
+        from lumen_agent.infrastructure.weixin_channel_manager import (
+            get_weixin_channel_manager,
+        )
+
+        await get_weixin_channel_manager().start(get_settings())
+    except Exception:
+        logging.exception("微信通道启动失败")
 
     # ── 启动调度器 + 从 DB 恢复持久化任务 ─────────────────────
     scheduler_enabled = settings.get("SCHEDULER_ENABLED", True)
@@ -140,6 +150,13 @@ async def lifespan(_app: FastAPI):
             logging.exception("调度器启动失败")
 
     yield
+
+    # 先停止微信通道，避免服务关闭期间继续接收新消息。
+    from lumen_agent.infrastructure.weixin_channel_manager import (
+        get_weixin_channel_manager,
+    )
+
+    await get_weixin_channel_manager().stop()
 
     # 先停止仍在运行的后台对话，确保其 finally 完成消息和连接收尾。
     from lumen_agent.infrastructure.chat_run_manager import get_chat_run_manager
@@ -311,6 +328,7 @@ def create_app() -> FastAPI:
     application.include_router(admin_users_router.router, dependencies=admin_dependencies)
     application.include_router(api_keys_router.router, dependencies=admin_dependencies)
     application.include_router(configs_router.router, dependencies=admin_dependencies)
+    application.include_router(weixin_router.router, dependencies=admin_dependencies)
     application.include_router(logs_router.router, dependencies=user_dependencies)
     application.include_router(upload_router.router, dependencies=user_dependencies)
     application.include_router(vm_router.router, dependencies=user_dependencies)
