@@ -14,8 +14,11 @@ const renderer: Partial<import('marked').MarkedExtension['renderer']> = {
     } catch {
       highlighted = text
     }
-    const langClass = language ? ` language-${language}` : ''
-    return `<pre class="hljs-pre"><code class="hljs${langClass}">${highlighted}</code></pre>`
+    // 语言名称同时用于高亮类名和代码块顶部标签，仅保留安全字符。
+    const safeLanguage = language.replace(/[^a-zA-Z0-9_+-]/g, '')
+    const langClass = safeLanguage ? ` language-${safeLanguage}` : ''
+    const languageLabel = safeLanguage || 'code'
+    return `<pre class="hljs-pre" data-language="${languageLabel}"><code class="hljs${langClass}">${highlighted}</code></pre>`
   },
   link({ href, title, text }: import('marked').Tokens.Link) {
     const titleAttr = title ? ` title="${title}"` : ''

@@ -229,9 +229,9 @@ a:hover {
 .md pre {
   position: relative;
   margin: 0.8em 0;
-  padding: 14px 16px;
-  background: var(--color-navy-900);
-  border: 1px solid var(--color-navy-700);
+  padding: 46px 16px 16px;
+  background: #F8FAFC;
+  border: 1px solid #DCE4E8;
   border-radius: var(--radius-lg);
   overflow-x: auto;
   line-height: 1.5;
@@ -242,34 +242,44 @@ a:hover {
   padding: 0;
   border-radius: 0;
   font-size: inherit;
-  color: var(--color-slate-200);
+  color: #243039;
 }
 
-/* ── 代码块顶部装饰条 ── */
+/* ── 代码块顶部语言栏 ── */
 .md pre::before {
-  content: '';
-  display: block;
-  height: 3px;
-  width: 40px;
-  background: var(--color-gold-500);
-  border-radius: 2px;
-  margin-bottom: 12px;
+  content: attr(data-language);
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid #DCE4E8;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: #F1F4F6;
+  color: #64736C;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* ── 复制按钮 ── */
 .copy-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 4px;
+  right: 7px;
   padding: 4px 10px;
   font-size: 0.75rem;
-  border: 1px solid var(--color-navy-600);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--color-navy-700);
-  color: var(--color-slate-300);
+  background: transparent;
+  color: #64736C;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--transition-fast), background var(--transition-fast);
+  opacity: 0.72;
+  transition: opacity var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
   z-index: 2;
   line-height: 1.4;
 }
@@ -277,8 +287,9 @@ a:hover {
   opacity: 1;
 }
 .copy-btn:hover {
-  background: var(--color-navy-600);
-  color: var(--color-white);
+  border-color: #D3DCE1;
+  background: #FFFFFF;
+  color: #243039;
 }
 .copy-btn--ok {
   background: var(--color-success) !important;
@@ -289,7 +300,7 @@ a:hover {
 /* ── highlight.js 微调 ── */
 .hljs {
   background: transparent !important;
-  color: var(--color-slate-200) !important;
+  color: #243039 !important;
 }
 
 /* ── Element Plus 全局微调 ── */
@@ -324,6 +335,6 @@ a:hover {
 @media (max-width: 768px) {
   .md pre {
     font-size: 0.8rem;
-    padding: 10px 12px;
+    padding: 42px 12px 12px;
   }
 }
